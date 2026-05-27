@@ -181,6 +181,28 @@ CREATE TRIGGER profiles_updated_at BEFORE UPDATE ON profiles FOR EACH ROW EXECUT
 CREATE TRIGGER games_updated_at BEFORE UPDATE ON games FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 CREATE TRIGGER game_ingest_queue_updated_at BEFORE UPDATE ON game_ingest_queue FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
+-- Role grants are privileged. Authenticated clients may update profile metadata,
+-- but profile.role must only change through trusted SQL/service-role contexts.
+CREATE OR REPLACE FUNCTION public.prevent_client_profile_role_change()
+RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.role IS DISTINCT FROM OLD.role THEN
+    IF auth.role() = 'service_role' OR current_user IN ('postgres', 'supabase_admin', 'service_role') THEN
+      RETURN NEW;
+    END IF;
+
+    RAISE EXCEPTION 'profile role cannot be changed by client sessions';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER profiles_prevent_client_role_change
+BEFORE UPDATE OF role ON profiles
+FOR EACH ROW EXECUTE FUNCTION public.prevent_client_profile_role_change();
+
 -- Helpful votes maintenance
 CREATE OR REPLACE FUNCTION public.update_helpful_votes()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
@@ -240,7 +262,12 @@ CREATE POLICY "Approved reports are publicly readable" ON reports
 -- Authenticated users can insert their own reports (or anonymous)
 CREATE POLICY "Authenticated users can insert reports" ON reports
   FOR INSERT WITH CHECK (
-    (user_id IS NULL) OR (user_id = auth.uid())
+    status = 'pending'
+    AND helpful_votes = 0
+    AND moderated_by IS NULL
+    AND moderated_at IS NULL
+    AND moderator_notes IS NULL
+    AND ((user_id IS NULL) OR (user_id = auth.uid()))
   );
 
 -- Owners can update their own pending reports
@@ -254,9 +281,17 @@ CREATE POLICY "Users can vote on reports" ON report_votes
 CREATE POLICY "Users can see their own votes" ON report_votes
   FOR SELECT USING (user_id = auth.uid());
 
--- Profiles: users manage their own
-CREATE POLICY "Users can view and update own profile" ON profiles
-  FOR ALL USING (auth.uid() = id);
+-- Profiles: users manage their own non-privileged fields. Role changes are
+-- blocked by profiles_prevent_client_role_change even if clients send role.
+CREATE POLICY "Users can view own profile" ON profiles
+  FOR SELECT USING (auth.uid() = id);
+
+CREATE POLICY "Users can insert own profile" ON profiles
+  FOR INSERT WITH CHECK (auth.uid() = id AND role = 'user');
+
+CREATE POLICY "Users can update own profile" ON profiles
+  FOR UPDATE USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
 
 -- User rigs: owners only
 CREATE POLICY "Users can manage their own rig" ON user_rigs

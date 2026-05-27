@@ -68,25 +68,37 @@ async function igdbRequest(
   endpoint: string,
   body: string
 ): Promise<any[]> {
-  await sleep(RATE_LIMIT_MS)
-  const token = await getIgdbToken(clientId, clientSecret)
-  const res = await fetch(`https://api.igdb.com/v4/${endpoint}`, {
-    method: 'POST',
-    headers: {
-      'Client-ID': clientId,
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'text/plain',
-    },
-    body,
-  })
-  if (res.status === 429) {
-    await sleep(2000)
-    return igdbRequest(clientId, clientSecret, endpoint, body)
+  const maxRetries = 5
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    await sleep(RATE_LIMIT_MS)
+    const token = await getIgdbToken(clientId, clientSecret)
+    const res = await fetch(`https://api.igdb.com/v4/${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Client-ID': clientId,
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'text/plain',
+      },
+      body,
+    })
+
+    if (res.status === 429) {
+      if (attempt === maxRetries) {
+        throw new Error(`IGDB ${endpoint} rate limited after ${maxRetries + 1} attempts`)
+      }
+      await sleep(2000 * (attempt + 1))
+      continue
+    }
+
+    if (!res.ok) {
+      throw new Error(`IGDB ${endpoint} error ${res.status}: ${await res.text()}`)
+    }
+
+    return res.json()
   }
-  if (!res.ok) {
-    throw new Error(`IGDB ${endpoint} error ${res.status}: ${await res.text()}`)
-  }
-  return res.json()
+
+  throw new Error(`IGDB ${endpoint} request failed`)
 }
 
 async function uploadImageToStorage(
@@ -175,30 +187,61 @@ export async function ingestGame(
     const gameRow: Record<string, unknown> = {
       slug: seed.slug,
       name: igdbMatches ? igdbGame.name : seed.name,
-      igdb_id: igdbMatches ? String(igdbGame.id) : null,
-      genres: (igdbGame.genres || []).map((g: any) => g.name),
-      release_year:
-        igdbGame.release_dates?.[0]?.y ||
-        (igdbGame.first_release_date
-          ? new Date(igdbGame.first_release_date * 1000).getFullYear()
-          : null),
-      developer,
-      publisher,
       cover_url: skeletonCover,
       steam_app_id: steamAppId ?? catalogCover?.steamAppId ?? null,
-      ingest_status: 'enriched',
-      last_ingested_at: nowIso,
+    }
+
+    if (igdbMatches) {
+      Object.assign(gameRow, {
+        igdb_id: String(igdbGame.id),
+        genres: (igdbGame.genres || []).map((g: any) => g.name),
+        release_year:
+          igdbGame.release_dates?.[0]?.y ||
+          (igdbGame.first_release_date
+            ? new Date(igdbGame.first_release_date * 1000).getFullYear()
+            : null),
+        developer,
+        publisher,
+        ingest_status: 'enriched',
+        last_ingested_at: nowIso,
+      })
     }
 
     let gameId: string | null = null
     if (!dryRun) {
-      const { error, data } = await client
-        .from('games')
-        .upsert(gameRow, { onConflict: 'slug' })
-        .select('id')
-        .single()
-      if (error) return { ok: false, error: `Upsert: ${error.message}` }
-      gameId = (data as { id: string })?.id ?? null
+      if (igdbMatches) {
+        const { error, data } = await client
+          .from('games')
+          .upsert(gameRow, { onConflict: 'slug' })
+          .select('id')
+          .single()
+        if (error) return { ok: false, error: `Upsert: ${error.message}` }
+        gameId = (data as { id: string })?.id ?? null
+      } else {
+        const { data, error } = await client
+          .from('games')
+          .upsert(
+            {
+              ...gameRow,
+              ingest_status: 'skeleton',
+            },
+            { onConflict: 'slug', ignoreDuplicates: true }
+          )
+          .select('id')
+          .maybeSingle()
+        if (error) return { ok: false, error: `Skeleton insert: ${error.message}` }
+
+        gameId = (data as { id: string } | null)?.id ?? null
+        if (!gameId) {
+          const { data: existing, error: existingErr } = await client
+            .from('games')
+            .select('id')
+            .eq('slug', seed.slug)
+            .single()
+          if (existingErr) return { ok: false, error: `Find skeleton: ${existingErr.message}` }
+          gameId = (existing as { id: string })?.id ?? null
+        }
+      }
     } else {
       gameId = `dry-${seed.slug}`
     }
@@ -258,28 +301,47 @@ export async function ingestGame(
           : m.type === 'cover'
             ? 'cover'
             : 'artwork'
+        const { data: insertedMedia, error } = await client
+          .from('game_media')
+          .insert({
+            game_id: gameId,
+            media_type: mediaType,
+            url: publicUrl,
+            thumbnail_url: publicUrl,
+            sort_order: m.sort,
+            source: 'igdb',
+            attribution: m.attr,
+          })
+          .select('id')
+          .single()
+        if (error) return { ok: false, error: `Insert media: ${error.message}` }
+        mediaCount++
+
         if (mediaType === 'cover') {
-          await client.from('game_media').delete().eq('game_id', gameId).eq('media_type', 'cover')
+          await client
+            .from('game_media')
+            .delete()
+            .eq('game_id', gameId)
+            .eq('media_type', 'cover')
+            .neq('id', (insertedMedia as { id: string }).id)
         }
-        const { error } = await client.from('game_media').insert({
-          game_id: gameId,
-          media_type: mediaType,
-          url: publicUrl,
-          thumbnail_url: publicUrl,
-          sort_order: m.sort,
-          source: 'igdb',
-          attribution: m.attr,
-        })
-        if (!error) mediaCount++
       } else if (dryRun) {
         mediaCount++
       }
     }
 
     if (uploadedCoverForGame && !dryRun && gameId) {
+      const coverUpdate: Record<string, unknown> = {
+        cover_url: uploadedCoverForGame,
+        last_ingested_at: nowIso,
+      }
+      if (igdbMatches) {
+        coverUpdate.ingest_status = 'enriched'
+      }
+
       await client
         .from('games')
-        .update({ cover_url: uploadedCoverForGame, last_ingested_at: nowIso, ingest_status: 'enriched' })
+        .update(coverUpdate)
         .eq('id', gameId)
     }
 

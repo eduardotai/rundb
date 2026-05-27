@@ -21,7 +21,16 @@ import { loadEnvLocal } from './load-env-local'
 
 const PROJECT_REF = 'gyldcsduuzoqqamyudni'
 const ENV_PATH = resolve(process.cwd(), '.env.local')
-const INCREMENTAL_SQL = resolve(process.cwd(), 'supabase/incremental-game-media.sql')
+const INCREMENTAL_SQL_FILES = [
+  {
+    path: resolve(process.cwd(), 'supabase/incremental-game-media.sql'),
+    label: 'game_media',
+  },
+  {
+    path: resolve(process.cwd(), 'supabase/incremental-security-rls.sql'),
+    label: 'security RLS hardening',
+  },
+]
 
 function loadEnvMap(): Record<string, string> {
   loadEnvLocal()
@@ -111,23 +120,25 @@ async function refreshLegacyApiKeys(accessToken: string): Promise<boolean> {
 }
 
 async function applyIncrementalSchema(env: Record<string, string>): Promise<boolean> {
-  const sql = readFileSync(INCREMENTAL_SQL, 'utf8')
-
   if (env.SUPABASE_ACCESS_TOKEN) {
     console.log('Applying incremental schema via Supabase Management API...')
-    await managementQuery(env.SUPABASE_ACCESS_TOKEN, sql)
-    console.log('Schema applied (game_media).')
+    for (const file of INCREMENTAL_SQL_FILES) {
+      await managementQuery(env.SUPABASE_ACCESS_TOKEN, readFileSync(file.path, 'utf8'))
+      console.log(`Schema applied (${file.label}).`)
+    }
     return true
   }
 
   const dbUrl = env.DATABASE_URL || env.SUPABASE_DB_URL
   if (dbUrl) {
     console.log('Applying incremental schema via supabase db query --db-url...')
-    execSync(`npx supabase db query -f "${INCREMENTAL_SQL}" --db-url "${dbUrl}"`, {
-      stdio: 'inherit',
-      cwd: process.cwd(),
-    })
-    console.log('Schema applied (game_media).')
+    for (const file of INCREMENTAL_SQL_FILES) {
+      execSync(`npx supabase db query -f "${file.path}" --db-url "${dbUrl}"`, {
+        stdio: 'inherit',
+        cwd: process.cwd(),
+      })
+      console.log(`Schema applied (${file.label}).`)
+    }
     return true
   }
 
@@ -152,8 +163,10 @@ async function main() {
   const schemaOk = await applyIncrementalSchema(env)
   if (!schemaOk) {
     console.log('\nCould not apply SQL automatically.')
-    console.log('Paste this file into Supabase SQL Editor and click Run:')
-    console.log(`  ${INCREMENTAL_SQL}`)
+    console.log('Paste these files into Supabase SQL Editor and click Run:')
+    for (const file of INCREMENTAL_SQL_FILES) {
+      console.log(`  ${file.path}`)
+    }
     console.log(`  https://supabase.com/dashboard/project/${PROJECT_REF}/sql/new`)
   }
 
