@@ -585,8 +585,92 @@ function parseGenericLinux(text: string): Partial<DetectedHardware> {
 }
 
 /**
+ * ProtonDB-style inxi parser (highest signal for Linux users).
+ * inxi -Fxz or inxi -Fxxxz produces consistently labeled output that is
+ * dramatically richer than raw lspci/lscpu (includes Driver, Kernel, Distro, etc).
+ * We extract the primary fields + stash the extras in raw for future use.
+ */
+function parseInxi(text: string): Partial<DetectedHardware> {
+  const raw: any = { source: 'inxi' };
+  let cpu: string | undefined;
+  let gpu: string | undefined;
+  let ram: number | undefined;
+  let driverVersion: string | undefined;
+  let kernel: string | undefined;
+  let distro: string | undefined;
+  const limitations: string[] = [];
+
+  // CPU line (inxi puts model prominently)
+  const cpuMatch = text.match(/CPU:\s*(.+?)(?:\s+speed:|$|\n)/i);
+  if (cpuMatch?.[1]) {
+    cpu = sanitizeFullName(cpuMatch[1].replace(/\s*\(-.*?\)\s*$/, '').trim());
+    raw.inxiCpu = cpuMatch[1];
+  }
+
+  // GPU line — inxi often has one or more "GPU:" lines
+  const gpuMatch = text.match(/GPU:\s*(.+?)(?:\s+driver:|$|\n)/i) ||
+                   text.match(/Graphics:\s*(.+?)(?:\s+driver:|$|\n)/i);
+  if (gpuMatch?.[1]) {
+    gpu = sanitizeFullName(cleanGpuString(gpuMatch[1]));
+    raw.inxiGpu = gpuMatch[1];
+  }
+
+  // Driver line (gold for ProtonDB-style precision)
+  const driverMatch = text.match(/Driver:\s*(.+?)(?:\s+v:|$|\n)/i) ||
+                      text.match(/driver:\s*(nvidia|amdgpu|radeon|mesa)\s*(?:v:)?\s*([0-9.]+)/i);
+  if (driverMatch) {
+    driverVersion = sanitizeFullName(driverMatch[0].replace(/^Driver:\s*/i, ''));
+    raw.inxiDriver = driverMatch[0];
+  }
+
+  // Kernel
+  const kernelMatch = text.match(/Kernel:\s*(.+?)(?:\s+x86_64|$|\n)/i);
+  if (kernelMatch?.[1]) {
+    kernel = sanitizeFullName(kernelMatch[1]);
+    raw.inxiKernel = kernel;
+  }
+
+  // Distro
+  const distroMatch = text.match(/Distro:\s*(.+?)(?:\s*$|\n)/i) || text.match(/Host:\s*.*?\s+(.+?)(?:\s*$|\n)/i);
+  if (distroMatch?.[1]) {
+    distro = sanitizeFullName(distroMatch[1]);
+    raw.inxiDistro = distro;
+  }
+
+  // Memory (inxi reports GiB)
+  const memMatch = text.match(/Memory:\s*([\d.]+)\s*GiB/i) || text.match(/Memory:\s*(\d+)\s*GB/i);
+  if (memMatch) {
+    ram = Math.round(parseFloat(memMatch[1]));
+    raw.inxiMemory = memMatch[0];
+  }
+
+  // Resolution hint if present (inxi -F sometimes shows it)
+  const resMatch = text.match(/(\d{3,5}x\d{3,5})/);
+  const resolution = resMatch ? resMatch[1] : undefined;
+
+  if (!gpu && !cpu) {
+    limitations.push('inxi output parsed but limited GPU/CPU signals — try inxi -Fxxxz for richer data');
+  }
+  if (!driverVersion) {
+    limitations.push('No driver version found — consider also pasting `vulkaninfo --summary` or `glxinfo -B`');
+  }
+
+  return {
+    cpu,
+    gpu,
+    ram,
+    resolution,
+    driverVersion,
+    raw: { ...raw, inxiKernel: kernel, inxiDistro: distro },
+    limitations: limitations.length ? limitations : undefined,
+    osHint: 'Linux',
+  };
+}
+
+/**
  * Main paste parser — auto-detects format and runs best-effort multi-pass extraction.
  * Robust to noise, partial pastes, mixed line endings, and localized headers.
+ * Now includes strong ProtonDB-style inxi support (the highest-signal Linux path).
  */
 export function parsePaste(pasteText: string): DetectedHardware {
   const timestamp = new Date().toISOString();
@@ -606,6 +690,9 @@ export function parsePaste(pasteText: string): DetectedHardware {
   // Order: most structured first
   if (/dxdiag|Display Devices|Processor:/i.test(text) && /Windows/i.test(text)) {
     parsed = { ...parseDxdiag(text), ...parsed };
+  } else if (/inxi|CPU:|GPU:|Driver:|Kernel:|Distro:/i.test(text)) {
+    // ProtonDB-style inxi output (highest signal for Linux). Check early.
+    parsed = { ...parseInxi(text), ...parsed };
   } else if (/lspci|VGA compatible|3D controller/i.test(text)) {
     parsed = { ...parseLspci(text), ...parsed };
   } else if (/system_profiler|Chipset Model|SPDisplaysDataType|machdep\.cpu/i.test(text) || /Chip:\s*Apple/i.test(text)) {
@@ -657,6 +744,10 @@ export function parsePaste(pasteText: string): DetectedHardware {
     gpu: finalGpu,
     ram,
     resolution,
+    // Richer ProtonDB-style fields (inxi is the main source today)
+    driverVersion: parsed.driverVersion || (parsed as any).driverVersion || undefined,
+    kernel: parsed.kernel || (parsed as any).kernel || undefined,
+    distro: parsed.distro || (parsed as any).distro || undefined,
     raw: { ...(parsed.raw || {}), originalPasteLength: text.length },
     method: 'paste',
     confidence,
@@ -693,6 +784,20 @@ export function companionStub(): DetectedHardware {
     confidence: 0.0,
     timestamp: new Date().toISOString(),
     limitations: ['Not implemented in current MVP slice'],
+  };
+}
+
+/**
+ * Phase 3 Companion Bridge (future)
+ * A small Tauri/Rust desktop app could call native inxi, vulkaninfo, dxdiag, etc.
+ * and POST structured JSON to a localhost bridge or via QR code / clipboard.
+ * The web side only needs to listen for a structured paste or a future /api/companion endpoint.
+ * This stub exists as a documented extension point.
+ */
+export async function companionBridgeHint() {
+  return {
+    available: false,
+    message: 'Tauri companion app is the highest-precision long-term path (full native sysinfo + one-click reports). See plans for details.',
   };
 }
 
@@ -900,7 +1005,8 @@ export const __TEST_SAMPLES = {
   dxdiagRTX4070: `Processor: AMD Ryzen 7 7800X3D 8-Core Processor\nCard name: NVIDIA GeForce RTX 4070\nDedicated Memory: 12115 MB\nCurrent Resolution: 2560 x 1440 (32 bit) (144Hz)`,
   lspci4080: `VGA compatible controller: NVIDIA Corporation AD102 [GeForce RTX 4080]`,
   macM2: `Chip: Apple M2 Pro\nChipset Model: Apple M2 Pro\nMemory: 16 GB`,
-  // ... (more can be added)
+  // New ProtonDB-style inxi sample (the precision path we elevated)
+  inxiLinux4070: `CPU: 8-core AMD Ryzen 7 7800X3D\nGPU: NVIDIA GeForce RTX 4070\nDriver: nvidia v: 560.81\nKernel: 6.8.0-45-generic x86_64\nDistro: Ubuntu 24.04 LTS\nMemory: 31.1 GiB`,
 };
 
 export function __runSelfTest(): { passed: number; failed: number; details: string[] } {
@@ -918,6 +1024,10 @@ export function __runSelfTest(): { passed: number; failed: number; details: stri
 
     const s3 = parsePaste(__TEST_SAMPLES.macM2);
     if (s3.cpu?.includes('M2 Pro')) { passed++; } else { failed++; results.push('mac sample failed'); }
+
+    // New inxi (ProtonDB precision path) test
+    const s4 = parsePaste(__TEST_SAMPLES.inxiLinux4070);
+    if (s4.gpu?.includes('RTX 4070') && s4.driverVersion?.includes('560')) { passed++; } else { failed++; results.push('inxi sample failed'); }
 
     results.push(`Self-test complete: ${passed} passed, ${failed} failed`);
   } catch (e) {

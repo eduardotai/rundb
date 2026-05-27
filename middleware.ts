@@ -1,50 +1,43 @@
-import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { getUserWithTimeout } from '@/lib/supabase/auth-timeout'
 
+/**
+ * Middleware with the same defensive logic as lib/supabase/server.ts.
+ * This was the main source of "app won't load at all" when a stale .env.local
+ * pointed at a dead or unreachable Supabase project.
+ */
 export async function middleware(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({
-    request,
+  let supabaseResponse = NextResponse.next({ request })
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!url || !key) {
+    // No Supabase configured → pure local mode, no auth work, instant response.
+    return supabaseResponse
+  }
+
+  // Only create the real client when we actually have valid config.
+  const { createServerClient } = await import('@supabase/ssr')
+  const supabase = createServerClient(url, key, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll()
+      },
+      setAll(cookiesToSet) {
+        try {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+          supabaseResponse = NextResponse.next({ request })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          )
+        } catch {}
+      },
+    },
   })
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value }) =>
-              request.cookies.set(name, value)
-            )
-            supabaseResponse = NextResponse.next({
-              request,
-            })
-            cookiesToSet.forEach(({ name, value, options }) =>
-              supabaseResponse.cookies.set(name, value, options)
-            )
-          } catch {
-            // The `setAll` method was called from a Server Component.
-            // This can be ignored if you have middleware refreshing
-            // user sessions.
-          }
-        },
-      },
-    }
-  )
-
-  // IMPORTANT: Do not write any logic between createServerClient and
-  // supabase.auth.getUser(). A mistake here can cause users to be
-  // randomly logged out or have stale auth state in Server Components.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  // No route protection here — individual pages (e.g. /profile) decide
-  // how to handle unauthenticated users gracefully.
-  // Protected routes can add checks later if needed.
+  // Never block navigation on a slow/dead Supabase project (stale .env.local).
+  await getUserWithTimeout(() => supabase.auth.getUser())
 
   return supabaseResponse
 }
