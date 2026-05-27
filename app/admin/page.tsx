@@ -305,20 +305,23 @@ export default function AdminPage() {
     if (!USE_REAL) return;
 
     let cancelled = false;
-    setIsReportsLoading(true);
-    getModerationQueueAction(reportFilter)
-      .then((rows) => {
-        if (!cancelled) setRealReports(rows);
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) {
-          setRealReports([]);
-          showUserError(e instanceof Error ? e.message : 'Failed to load moderation queue.');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setIsReportsLoading(false);
-      });
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setIsReportsLoading(true);
+      getModerationQueueAction(reportFilter)
+        .then((rows) => {
+          if (!cancelled) setRealReports(rows);
+        })
+        .catch((e: unknown) => {
+          if (!cancelled) {
+            setRealReports([]);
+            showUserError(e instanceof Error ? e.message : 'Failed to load moderation queue.');
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setIsReportsLoading(false);
+        });
+    });
 
     return () => {
       cancelled = true;

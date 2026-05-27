@@ -225,7 +225,12 @@ export async function moderateReportAction(
   const moderatorId = await requireModerationAccess()
   const supabase = createServiceClient()
 
-  const updatePayload: any = {
+  const updatePayload: {
+    status: ReportStatus
+    moderated_by: string
+    moderated_at: string
+    moderator_notes?: string | null
+  } = {
     status,
     moderated_by: moderatorId,
     moderated_at: new Date().toISOString(),
