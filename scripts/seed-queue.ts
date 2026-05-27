@@ -81,19 +81,51 @@ async function main() {
         continue
       }
 
-      const { data: game, error: gameErr } = await client
+      const { data: existingGame, error: existingGameErr } = await client
         .from('games')
-        .upsert(gameRow, { onConflict: 'slug' })
         .select('id')
-        .single()
+        .eq('slug', seed.slug)
+        .maybeSingle()
 
-      if (gameErr) {
-        console.warn(`  skip ${seed.slug}: ${gameErr.message}`)
+      if (existingGameErr) {
+        console.warn(`  skip ${seed.slug}: ${existingGameErr.message}`)
         skipped++
         continue
       }
 
-      gamesUpserted++
+      let game = existingGame
+      if (!game) {
+        const { data: insertedGame, error: gameErr } = await client
+          .from('games')
+          .insert(gameRow)
+          .select('id')
+          .single()
+
+        if (gameErr) {
+          console.warn(`  skip ${seed.slug}: ${gameErr.message}`)
+          skipped++
+          continue
+        }
+
+        game = insertedGame
+        gamesUpserted++
+      }
+
+      const { data: existingQueue, error: existingQueueErr } = await client
+        .from('game_ingest_queue')
+        .select('id')
+        .eq('slug', seed.slug)
+        .maybeSingle()
+
+      if (existingQueueErr) {
+        console.warn(`  queue skip ${seed.slug}: ${existingQueueErr.message}`)
+        skipped++
+        continue
+      }
+
+      if (existingQueue) {
+        continue
+      }
 
       const queueRow = {
         game_id: game.id,
@@ -107,7 +139,7 @@ async function main() {
 
       const { error: queueErr } = await client
         .from('game_ingest_queue')
-        .upsert(queueRow, { onConflict: 'slug' })
+        .insert(queueRow)
 
       if (queueErr) {
         console.warn(`  queue skip ${seed.slug}: ${queueErr.message}`)
