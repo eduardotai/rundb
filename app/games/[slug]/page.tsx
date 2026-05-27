@@ -21,6 +21,7 @@ import {
 } from '@/lib/data';
 import { Report, ReportFilters, PerformanceTier, Game, UserPC } from '@/lib/types';
 import { cn, gameMediaLoader } from '@/lib/utils';
+import { upgradeCoverImageSrc } from '@/lib/cover-image-url';
 import Image from 'next/image';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
@@ -71,6 +72,7 @@ function GameDetailInner({ game }: { game: Game }) {
   const [myRig, setMyRig] = useState<UserPC | null>(null);
   // Error state for real hero cover (robustness for external real banner URLs)
   const [heroImgError, setHeroImgError] = useState(false);
+  const heroCoverSrc = upgradeCoverImageSrc(game.coverImage, game.steamAppId);
 
   const supabase = createClient();
 
@@ -216,11 +218,12 @@ function GameDetailInner({ game }: { game: Game }) {
               {!heroImgError ? (
                 <Image
                   loader={gameMediaLoader}
-                  src={game.coverImage}
+                  src={heroCoverSrc}
                   alt={game.name}
                   fill
                   className="object-cover object-top"
-                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 60vw, 620px"
+                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 60vw, 720px"
+                  quality={92}
                   priority
                   onError={() => setHeroImgError(true)}
                 />

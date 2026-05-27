@@ -20,6 +20,14 @@ import {
 } from '@/lib/data';
 import type { HardwareAlias, ReportImage, ReportStatus, Game, BulkImportResult } from '@/lib/types';
 import { triggerIngestionAction } from '@/app/actions/reports';  // Agent 4 protected Server Action
+import {
+  getIngestQueueStatsAction,
+  runIngestBatchAction,
+  retryFailedIngestAction,
+  getFailedIngestRowsAction,
+} from '@/app/actions/ingest-queue';
+import type { IngestQueueStats } from '@/lib/types';
+import { USE_REAL } from '@/lib/data';
 import { normalizeSlug } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -89,6 +97,11 @@ export default function AdminPage() {
   // Agent 4: protected Server Action state
   const [ingestActionResult, setIngestActionResult] = useState<string | null>(null);
   const [isIngestingAction, setIsIngestingAction] = useState(false);
+
+  // Ingest queue dashboard (Choice 4 — real Supabase mode)
+  const [queueStats, setQueueStats] = useState<IngestQueueStats | null>(null);
+  const [failedIngestRows, setFailedIngestRows] = useState<Array<{ slug: string; name: string; last_error: string | null }>>([]);
+  const [isRunningIngestBatch, setIsRunningIngestBatch] = useState(false);
 
   // Modals & forms
   const [showImportDialog, setShowImportDialog] = useState(false);
@@ -253,6 +266,50 @@ export default function AdminPage() {
   const clearPhase1 = () => {
     setPhase1Command('');
     setPhase1SimResult(null);
+  };
+
+  const refreshIngestQueue = async () => {
+    if (!USE_REAL) return;
+    try {
+      const stats = await getIngestQueueStatsAction();
+      setQueueStats(stats);
+      const failed = await getFailedIngestRowsAction(10);
+      setFailedIngestRows(
+        failed.map((r) => ({ slug: r.slug, name: r.name, last_error: r.last_error }))
+      );
+    } catch {
+      setQueueStats(null);
+    }
+  };
+
+  React.useEffect(() => {
+    if (canAdmin && USE_REAL) {
+      refreshIngestQueue();
+    }
+  }, [refreshKey, canAdmin]);
+
+  const handleRunIngestBatch = async (batchSize = 10) => {
+    setIsRunningIngestBatch(true);
+    try {
+      const result = await runIngestBatchAction(batchSize);
+      setQueueStats(result.stats);
+      toast.success(`Batch done: ${result.success} ok, ${result.failed} failed`);
+      setRefreshKey((k) => k + 1);
+    } catch (e: unknown) {
+      showUserError(e instanceof Error ? e.message : 'Ingest batch failed');
+    } finally {
+      setIsRunningIngestBatch(false);
+    }
+  };
+
+  const handleRetryFailedIngest = async () => {
+    try {
+      const { reset } = await retryFailedIngestAction();
+      toast.success(`Reset ${reset} failed rows to pending`);
+      setRefreshKey((k) => k + 1);
+    } catch (e: unknown) {
+      showUserError(e instanceof Error ? e.message : 'Retry failed');
+    }
   };
 
   // ===== AGENT 4: PROTECTED SERVER ACTION HANDLER (ingestion trigger + normalize) =====
@@ -649,9 +706,74 @@ export default function AdminPage() {
             <Button variant="outline" onClick={() => setRefreshKey((k) => k + 1)} size="icon"><RefreshCw className="h-4 w-4" /></Button>
           </div>
 
-          {/* PHASE 1 / AGENT 4 REAL INGESTION TRIGGER — protected Server Action + CLI + sim + thumbnails.
-              Protected triggerIngestionAction enforces admin role (see app/actions/reports.ts).
-              Now handles exact 18 games cleanly via shared normalizeSlug. */}
+          {USE_REAL && (
+            <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="font-semibold">Ingest Queue (ProtonDB → IGDB enrich)</div>
+                  <div className="text-xs text-muted-foreground">
+                    Two-phase catalog: skeleton from <code className="text-[10px]">npm run seed:queue</code>, enrich via worker or batch below.
+                  </div>
+                </div>
+                <Button variant="outline" size="sm" onClick={refreshIngestQueue} disabled={!canAdmin}>
+                  <RefreshCw className="h-3.5 w-3.5 mr-1" /> Refresh
+                </Button>
+              </div>
+
+              {queueStats ? (
+                <>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-5 text-center text-sm">
+                    <div className="rounded-lg bg-muted/40 p-2"><div className="text-lg font-semibold">{queueStats.pending}</div><div className="text-[10px] text-muted-foreground uppercase">Pending</div></div>
+                    <div className="rounded-lg bg-muted/40 p-2"><div className="text-lg font-semibold">{queueStats.processing}</div><div className="text-[10px] text-muted-foreground uppercase">Processing</div></div>
+                    <div className="rounded-lg bg-muted/40 p-2"><div className="text-lg font-semibold text-green-500">{queueStats.done}</div><div className="text-[10px] text-muted-foreground uppercase">Done</div></div>
+                    <div className="rounded-lg bg-muted/40 p-2"><div className="text-lg font-semibold text-amber-500">{queueStats.failed}</div><div className="text-[10px] text-muted-foreground uppercase">Failed</div></div>
+                    <div className="rounded-lg bg-muted/40 p-2"><div className="text-lg font-semibold">{queueStats.total}</div><div className="text-[10px] text-muted-foreground uppercase">Total</div></div>
+                  </div>
+                  {queueStats.total > 0 && (
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className="h-full bg-green-500 transition-all"
+                        style={{ width: `${Math.round((queueStats.done / queueStats.total) * 100)}%` }}
+                      />
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" onClick={() => handleRunIngestBatch(10)} disabled={!canAdmin || isRunningIngestBatch}>
+                      {isRunningIngestBatch ? 'Running…' : 'Run batch (10)'}
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => handleRunIngestBatch(50)} disabled={!canAdmin || isRunningIngestBatch}>
+                      Run batch (50)
+                    </Button>
+                    {queueStats.failed > 0 && (
+                      <Button size="sm" variant="outline" onClick={handleRetryFailedIngest} disabled={!canAdmin}>
+                        Retry failed ({queueStats.failed})
+                      </Button>
+                    )}
+                  </div>
+                  {failedIngestRows.length > 0 && (
+                    <div className="text-xs space-y-1 max-h-32 overflow-y-auto">
+                      <div className="font-medium text-muted-foreground">Recent failures</div>
+                      {failedIngestRows.map((r) => (
+                        <div key={r.slug} className="font-mono text-[10px] text-amber-600/90">
+                          {r.name}: {r.last_error ?? 'unknown'}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-[10px] text-muted-foreground">
+                    CLI: <code>npm run build:seed</code> → <code>npm run seed:queue</code> → <code>npm run ingest:worker -- --batch=50</code>.
+                    ProtonDB data ODbL · IGDB · Steam.
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Queue not available — run <code className="text-xs">supabase/incremental-game-ingest-queue.sql</code> then seed.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* PHASE 1 / AGENT 4 REAL INGESTION TRIGGER — protected Server Action + CLI + sim */}
           <div className="rounded-xl border border-border bg-card p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div>

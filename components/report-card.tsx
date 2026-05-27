@@ -47,7 +47,7 @@ export function ReportCard({ report, userRig, onHelpful, onViewFull, compact = f
     navigator.clipboard.writeText(text);
   };
 
-  const hasDetails = !!(report.tweaks || report.issues || report.driverVersion || report.notes);
+  const hasDetails = !!(report.tweaks || report.issues || report.driverVersion || report.notes || (report as any).kernel || (report as any).distro);
 
   return (
     <div
@@ -179,6 +179,16 @@ export function ReportCard({ report, userRig, onHelpful, onViewFull, compact = f
           {report.driverVersion && (
             <div>
               <span className="font-medium text-muted-foreground">Driver:</span> {report.driverVersion}
+            </div>
+          )}
+          {(report as any).kernel && (
+            <div className="text-xs text-muted-foreground">
+              <span className="font-medium">Kernel:</span> {(report as any).kernel}
+            </div>
+          )}
+          {(report as any).distro && (
+            <div className="text-xs text-muted-foreground">
+              <span className="font-medium">Distro:</span> {(report as any).distro}
             </div>
           )}
           {report.issues && (

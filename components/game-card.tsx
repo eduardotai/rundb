@@ -3,10 +3,12 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import Image from 'next/image';
-import { Game, GameStats } from '@/lib/types';
+import { Game, GameStats, PerformanceTier } from '@/lib/types';
 import { getReportsForGame, computeGameStats } from '@/lib/data';
 import { PerformanceBadge } from './performance-badge';
 import { cn, gameMediaLoader } from '@/lib/utils';
+import { upgradeCoverImageSrc } from '@/lib/cover-image-url';
+import { Sparkles } from 'lucide-react';
 
 // Phase 3: GameCard now supports optional precomputed `stats` (from adapter + computeGameStatsFromReports in parent RQ data).
 // When provided (e.g. home trending, games list after wiring): uses real data for badges/counts/FPS.
@@ -25,27 +27,42 @@ interface GameCardProps {
   priority?: boolean;
   /** Optional override for the Next.js Image sizes attribute (responsive breakpoints). */
   imageSizes?: string;
+  /** Compact layout for dense browse grids — tighter body, no FPS block. */
+  variant?: 'default' | 'compact';
 }
 
-export function GameCard({ game, className, stats: providedStats, priority = false, imageSizes }: GameCardProps) {
+export function GameCard({
+  game,
+  className,
+  stats: providedStats,
+  priority = false,
+  imageSizes,
+  variant = 'default',
+}: GameCardProps) {
+  const isCompact = variant === 'compact';
   // Phase 3: prefer provided real stats (from parent RQ + adapter reports), else fallback (compat).
   const stats = providedStats || computeGameStats(game.id);
   const reportCount = stats.totalReports;
 
-  // Dominant tier for quick visual
-  const dominantTier = (Object.entries(stats.tierDistribution) as [string, number][])
-    .sort((a, b) => b[1] - a[1])[0]?.[0] as any;
+  // Dominant tier only when there are real reports (avoid "Excellent" on empty games)
+  const dominantTier: PerformanceTier | null =
+    reportCount > 0
+      ? ((Object.entries(stats.tierDistribution) as [PerformanceTier, number][])
+          .sort((a, b) => b[1] - a[1])[0]?.[0] ?? null)
+      : null;
 
   const avgFps1440 = stats.avgFpsByResolution['2560x1440'] || stats.avgFpsByResolution['1920x1080'];
 
   // Error state for real covers (IGDB/Steam/Supabase etc can transiently fail; graceful fallback, no layout shift)
   const [imgError, setImgError] = useState(false);
+  const coverSrc = upgradeCoverImageSrc(game.coverImage, game.steamAppId);
 
   return (
     <Link
       href={`/games/${game.slug}`}
       className={cn(
-        'group block overflow-hidden rounded-2xl border border-border bg-card transition-all hover:border-slate-600/70 hover:shadow-lg',
+        'group block overflow-hidden border border-border bg-card transition-all hover:border-slate-600/70 hover:shadow-lg',
+        isCompact ? 'rounded-xl' : 'rounded-2xl',
         className
       )}
     >
@@ -55,11 +72,12 @@ export function GameCard({ game, className, stats: providedStats, priority = fal
              Improved responsive sizes + priority control per surface. onError for robustness. */
           <Image
             loader={gameMediaLoader}
-            src={game.coverImage}
+            src={coverSrc}
             alt={game.name}
             fill
             className="object-cover object-top transition-transform duration-300 group-hover:scale-[1.03]"
-            sizes={imageSizes || "(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 280px"}
+            sizes={imageSizes || "(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1280px) 25vw, 360px"}
+            quality={90}
             priority={priority}
             onError={() => setImgError(true)}
           />
@@ -83,52 +101,86 @@ export function GameCard({ game, className, stats: providedStats, priority = fal
           </div>
         )}
 
-        {dominantTier && (
-          <div className="absolute bottom-3 left-3">
-            <PerformanceBadge tier={dominantTier} size="sm" />
+        {/* Cover footer: tier badge + report CTA in one legible bar */}
+        {reportCount === 0 ? (
+          <div
+            className={cn(
+              'absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/75 to-transparent',
+              isCompact ? 'px-2 pb-2 pt-8' : 'px-3 pb-3 pt-10'
+            )}
+          >
+            <div
+              className={cn(
+                'flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-400/35 bg-emerald-500 font-semibold text-white shadow-lg transition-colors group-hover:border-emerald-300/50 group-hover:bg-emerald-400',
+                isCompact ? 'px-2.5 py-1.5 text-[11px]' : 'px-3 py-2 text-xs'
+              )}
+            >
+              <Sparkles className={cn('shrink-0', isCompact ? 'h-3.5 w-3.5' : 'h-4 w-4')} />
+              <span className="text-center leading-tight">
+                <span className="font-bold">New</span>
+                <span className="font-medium opacity-90"> · Be the first to report</span>
+              </span>
+            </div>
           </div>
-        )}
+        ) : (
+          <div
+            className={cn(
+              'absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/95 via-black/70 to-transparent',
+              isCompact ? 'px-2 pb-2 pt-7' : 'px-3 pb-3 pt-10'
+            )}
+          >
+            {dominantTier && (
+              <PerformanceBadge
+                tier={dominantTier}
+                size={isCompact ? 'md' : 'lg'}
+                className="shrink-0 shadow-md ring-1 ring-white/15"
+              />
+            )}
 
-        {/* Premium zero-report treatment (from Workstream D integration):
-            Elegant "New" pill inside the existing cover gradient. No layout shift.
-            Makes newly imported Steam games feel inviting instead of empty. */}
-        {reportCount === 0 && (
-          <div className="absolute bottom-3 right-3 rounded-full bg-emerald-500/90 px-2 py-0.5 text-[10px] font-semibold tracking-[0.25px] text-white backdrop-blur-sm shadow-sm">
-            New · Be the first to report
-          </div>
-        )}
-
-        {reportCount > 0 && (
-          <div className="absolute bottom-3 right-3 rounded-full bg-black/70 px-2 py-0.5 text-xs font-medium text-white backdrop-blur">
-            {reportCount} reports
+            <div
+              className={cn(
+                'ml-auto shrink-0 rounded-lg border border-white/10 bg-black/75 font-semibold text-white shadow-md backdrop-blur-sm',
+                isCompact ? 'px-2 py-1 text-[11px]' : 'px-3 py-1.5 text-xs'
+              )}
+            >
+              {reportCount} {reportCount === 1 ? 'report' : 'reports'}
+            </div>
           </div>
         )}
       </div>
 
-      <div className="p-4">
+      <div className={isCompact ? 'p-2.5' : 'p-4'}>
         <div className="flex items-start justify-between gap-2">
-          <div>
-            <h3 className="font-semibold leading-tight text-foreground group-hover:text-primary transition-colors">
+          <div className="min-w-0">
+            <h3
+              className={cn(
+                'font-semibold leading-tight text-foreground transition-colors group-hover:text-primary',
+                isCompact ? 'text-sm line-clamp-2' : 'text-base'
+              )}
+            >
               {game.name}
             </h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">
+            <p className={cn('mt-0.5 text-muted-foreground truncate', isCompact ? 'text-[11px]' : 'text-xs')}>
               {game.releaseYear} • {game.developer}
             </p>
           </div>
         </div>
 
-        <div className="mt-2 flex flex-wrap gap-1">
-          {game.genres.slice(0, 3).map((genre) => (
+        <div className={cn('flex flex-wrap gap-1', isCompact ? 'mt-1.5' : 'mt-2')}>
+          {game.genres.slice(0, isCompact ? 2 : 3).map((genre) => (
             <span
               key={genre}
-              className="rounded bg-muted px-1.5 py-px text-[10px] font-medium text-muted-foreground"
+              className={cn(
+                'rounded bg-muted font-medium text-muted-foreground',
+                isCompact ? 'px-1.5 py-px text-[10px]' : 'px-1.5 py-px text-[10px]'
+              )}
             >
               {genre}
             </span>
           ))}
         </div>
 
-        {avgFps1440 && (
+        {!isCompact && avgFps1440 && (
           <div className="mt-3 text-sm">
             <span className="font-mono text-lg font-semibold tabular-nums text-foreground">
               {avgFps1440}
@@ -137,7 +189,7 @@ export function GameCard({ game, className, stats: providedStats, priority = fal
           </div>
         )}
 
-        {stats.mostCommonPreset && (
+        {!isCompact && stats.mostCommonPreset && (
           <div className="mt-1 text-xs text-muted-foreground">
             Most common: <span className="font-medium text-foreground">{stats.mostCommonPreset}</span>
           </div>

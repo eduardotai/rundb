@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -16,6 +16,11 @@ import { showUserError, showUserSuccess } from '@/lib/toast';
 import { sanitizeFullName } from '@/lib/sanitize';
 import { HardwareCombobox } from '@/components/hardware-combobox';
 import { normalizeHardwareSync } from '@/lib/normalize-hardware';
+import { HardwareDetectButton } from '@/components/hardware-detect-button';
+import { DetectedHardwareBanner } from '@/components/detected-hardware-banner';
+import { PasteHardwareModal } from '@/components/paste-hardware-modal';
+import type { DetectedHardware } from '@/lib/types';
+import { loadMyRigAsync, loadUserDevices } from '@/lib/data';
 
 const formSchema = z.object({
   gameId: z.string().min(1),
@@ -61,6 +66,34 @@ const PRESETS: GraphicsPreset[] = ['Low', 'Medium', 'High', 'Ultra', 'Custom'];
 export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: SubmitReportDialogProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Hardware Identification (Plan 4) — same pattern as compatibility-checker + profile editor
+  const [detectedRig, setDetectedRig] = useState<DetectedHardware | null>(null);
+  const [detectionState, setDetectionState] = useState<'idle' | 'detecting' | 'detected' | 'applied'>('idle');
+  const [pasteModalOpen, setPasteModalOpen] = useState(false);
+  const [savedDevices, setSavedDevices] = useState<any[]>([]);
+
+  // Auto-load saved rig when dialog opens (Phase 1 polish)
+  // Also load multiple saved devices for Phase 2 selector
+  useEffect(() => {
+    if (open) {
+      const t = setTimeout(async () => {
+        try {
+          const saved = await loadMyRigAsync();
+          if (saved && !form.getValues('cpu') && !form.getValues('gpu')) {
+            if (saved.cpu) form.setValue('cpu', saved.cpu);
+            if (saved.gpu) form.setValue('gpu', saved.gpu);
+            if (saved.ram) form.setValue('ram', saved.ram);
+            if (saved.resolution) form.setValue('resolution', saved.resolution);
+          }
+          // Phase 2: load multiple devices for selector
+          const devices = await (loadUserDevices as any)();
+          if (Array.isArray(devices) && devices.length > 0) setSavedDevices(devices);
+        } catch {}
+      }, 120);
+      return () => clearTimeout(t);
+    }
+  }, [open]);
+
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema) as any, // zodResolver + coerce types edge case
     defaultValues: {
@@ -73,6 +106,48 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
       avgFps: 60,
     },
   });
+
+  // Detection handlers (consistent with other surfaces)
+  const handleDetected = (result: DetectedHardware) => {
+    setDetectedRig(result);
+    setDetectionState('detected');
+  };
+
+  const openPasteModal = () => setPasteModalOpen(true);
+
+  const applyDetectedToForm = (detected: DetectedHardware) => {
+    if (detected.cpu) form.setValue('cpu', detected.cpu);
+    if (detected.gpu) form.setValue('gpu', detected.gpu);
+    if (detected.ram) form.setValue('ram', detected.ram);
+    if (detected.resolution) form.setValue('resolution', detected.resolution);
+    if (detected.driverVersion) form.setValue('driverVersion', detected.driverVersion);
+
+    setDetectionState('applied');
+    setDetectedRig(null);
+  };
+
+  const handleClearDetection = () => {
+    setDetectedRig(null);
+    setDetectionState('idle');
+  };
+
+  // Quick "Use my saved rig" prefill (very useful in submit flow)
+  const useSavedRig = async () => {
+    try {
+      const saved = await loadMyRigAsync();
+      if (saved) {
+        if (saved.cpu) form.setValue('cpu', saved.cpu);
+        if (saved.gpu) form.setValue('gpu', saved.gpu);
+        if (saved.ram) form.setValue('ram', saved.ram);
+        if (saved.resolution) form.setValue('resolution', saved.resolution);
+        showUserSuccess('Loaded your saved rig');
+      } else {
+        showUserError('No saved rig found. Use Detect or fill manually.');
+      }
+    } catch {
+      showUserError('Could not load saved rig.');
+    }
+  };
 
   const onSubmit = async (values: FormValues) => {
     setIsSubmitting(true);
@@ -126,30 +201,103 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
         </DialogHeader>
 
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5 pt-2" noValidate>
-          {/* Hardware row — now powered by Hardware Catalog */}
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div>
-              <Label>CPU</Label>
-              <HardwareCombobox
-                value={form.watch('cpu')}
-                onChange={(val) => form.setValue('cpu', val)}
-                componentType="cpu"
-                placeholder="Search Ryzen 7 7800X3D, i5-13600K..."
-              />
-              {form.formState.errors.cpu && (
-                <p className="mt-1 text-xs text-destructive">{form.formState.errors.cpu.message}</p>
-              )}
+          {/* Hardware row — now with full Identify My Hardware support (browser + paste, ProtonDB-style inxi on Linux) */}
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <Label>CPU</Label>
+                  <HardwareDetectButton
+                    mode="browser"
+                    onDetect={handleDetected}
+                    state={detectionState}
+                    onRequestPaste={openPasteModal}
+                  />
+                </div>
+                <HardwareCombobox
+                  value={form.watch('cpu')}
+                  onChange={(val) => form.setValue('cpu', val)}
+                  componentType="cpu"
+                  placeholder="Search Ryzen 7 7800X3D, i5-13600K..."
+                />
+                {form.formState.errors.cpu && (
+                  <p className="mt-1 text-xs text-destructive">{form.formState.errors.cpu.message}</p>
+                )}
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <Label>GPU</Label>
+                  <HardwareDetectButton
+                    mode="browser"
+                    onDetect={handleDetected}
+                    state={detectionState}
+                    onRequestPaste={openPasteModal}
+                  />
+                </div>
+                <HardwareCombobox
+                  value={form.watch('gpu')}
+                  onChange={(val) => form.setValue('gpu', val)}
+                  componentType="gpu"
+                  placeholder="Search RTX 4070 Ti, RX 7800 XT..."
+                />
+                {form.formState.errors.gpu && (
+                  <p className="mt-1 text-xs text-destructive">{form.formState.errors.gpu.message}</p>
+                )}
+              </div>
             </div>
-            <div>
-              <Label>GPU</Label>
-              <HardwareCombobox
-                value={form.watch('gpu')}
-                onChange={(val) => form.setValue('gpu', val)}
-                componentType="gpu"
-                placeholder="Search RTX 4070 Ti, RX 7800 XT..."
-              />
-              {form.formState.errors.gpu && (
-                <p className="mt-1 text-xs text-destructive">{form.formState.errors.gpu.message}</p>
+
+            {/* Detection banner (educational + Apply button). Same component as checker/profile. */}
+            <DetectedHardwareBanner
+              detected={detectedRig}
+              onApply={applyDetectedToForm}
+              onRefine={() => setDetectedRig(null)}
+              onDismiss={handleClearDetection}
+              onTryPaste={openPasteModal}
+              applied={detectionState === 'applied'}
+            />
+
+            {/* Quick actions + Phase 2 multi-device selector */}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={useSavedRig}
+                className="h-7 text-xs"
+              >
+                Use my saved rig
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={openPasteModal}
+                className="h-7 text-xs"
+              >
+                Paste system info (most accurate)
+              </Button>
+
+              {savedDevices.length > 1 && (
+                <select
+                  className="h-7 text-xs rounded border bg-background px-2"
+                  onChange={(e) => {
+                    const dev = savedDevices.find(d => d.id === e.target.value);
+                    if (dev) {
+                      form.setValue('cpu', dev.cpu);
+                      form.setValue('gpu', dev.gpu);
+                      form.setValue('ram', dev.ram);
+                      if (dev.resolution) form.setValue('resolution', dev.resolution);
+                    }
+                  }}
+                  defaultValue=""
+                >
+                  <option value="" disabled>Choose saved device…</option>
+                  {savedDevices.map((d: any) => (
+                    <option key={d.id} value={d.id}>
+                      {d.label || 'Unnamed'} — {d.gpu}
+                    </option>
+                  ))}
+                </select>
               )}
             </div>
           </div>
@@ -263,6 +411,21 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
               : 'Demo mode: report saved locally (localStorage) for this browser only.'}
           </p>
         </form>
+
+        {/* Paste modal (inxi / dxdiag / Steam sysinfo — the ProtonDB precision path) */}
+        <PasteHardwareModal
+          open={pasteModalOpen}
+          onOpenChange={setPasteModalOpen}
+          onApply={(r) => {
+            // Apply directly into the form (also sets driverVersion when present)
+            if (r.cpu) form.setValue('cpu', r.cpu);
+            if (r.gpu) form.setValue('gpu', r.gpu);
+            if (r.ram) form.setValue('ram', r.ram);
+            if (r.resolution) form.setValue('resolution', r.resolution);
+            if (r.driverVersion) form.setValue('driverVersion', r.driverVersion);
+            setPasteModalOpen(false);
+          }}
+        />
       </DialogContent>
     </Dialog>
   );
