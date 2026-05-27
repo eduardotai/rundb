@@ -37,7 +37,10 @@ import { useQuery } from '@tanstack/react-query'
 // Agent 2 / PR 2: Public cover resolver + enrichment (Steam/IGDB/RAWG direct + game_media)
 import * as coverResolver from './game-cover-resolver'
 
-const USE_REAL = process.env.NEXT_PUBLIC_USE_REAL_DATA === 'true'
+export const USE_REAL = process.env.NEXT_PUBLIC_USE_REAL_DATA === 'true'
+
+// Convenience: tells UI/components whether the hardware catalog is coming from live DB
+export const HARDWARE_CATALOG_LIVE = USE_REAL;
 
 // ============================================
 // DB <-> TYPE MAPPERS (snake_case Postgres -> camelCase app types)
@@ -1128,6 +1131,11 @@ export {
   getCatalogVersionInfo,
   HARDWARE_CATALOG_VERSION,
 } from './hardware-catalog'
+
+// Convenient non-Static aliases (used by hardware-combobox and other surfaces)
+export { findHardwareByQuery } from './hardware-catalog'
+export { getAllHardwareCatalog } from './hardware-catalog'
+export { getHardwareEntry } from './hardware-catalog'
 
 export {
   normalizeHardware,
