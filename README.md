@@ -23,6 +23,7 @@ Built as a beautiful, self-contained frontend demo with rich mock data that feel
 - TanStack Table (used lightly in reports browser)
 - Lucide icons + Sonner toasts + framer-motion (light)
 - Pure mock data in `lib/mock-data.ts` (18 games, 55+ realistic reports)
+- **Hardware Catalog** (Phase 6+): Structured database of real CPUs/GPUs with `perfIndex`, powering autocomplete, dramatically improved similarity matching, and future validation. Static curated (no runtime API dependency). See `lib/hardware-catalog.ts` + `lib/normalize-hardware.ts` + `components/hardware-combobox.tsx`.
 
 ## Quick Start
 

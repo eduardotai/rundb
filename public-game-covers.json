@@ -1,0 +1,126 @@
+{
+  "meta": {
+    "description": "Reusable public direct URL map for the exact 18 mock games in lib/mock-data.ts (and bulk import fallback). Replaces all 18+ picsum.photos placeholders with authentic high-quality game art from official CDNs. Intended for consumption by Agent 2 (enrichment), Agent 5 (resolver seeds), Agent 4 (admin/ingest), and verification. All URLs are hotlinkable, stable, and already permitted in next.config.ts remotePatterns.",
+    "version": "1.0.0",
+    "generatedBy": "Agent 1 - PR 1: Mock Seed Modernization",
+    "date": "2026-05-26",
+    "sources": [
+      "Steam CDN: https://cdn.cloudflare.steamstatic.com/steam/apps/{appId}/library_600x900.jpg (preferred vertical 600x900 covers for cards/heroes)",
+      "IGDB Image CDN: https://images.igdb.com/igdb/image/upload/t_cover_big/{hash}.jpg (for non-Steam titles: VALORANT, League of Legends, Alan Wake 2, Hades II)"
+    ],
+    "attributionPolicy": "All images © their respective rights holders (game studios/publishers). For demo, educational, and non-commercial informational use only. Do not hotlink in production without proper licensing or ingest-to-Storage pipeline. UI should display subtle attribution where feasible (see Game.coverAttribution).",
+    "usage": "import covers from './public-game-covers.json'; const url = covers.covers['cyberpunk-2077'].url; Also see bulkImportFallback."
+  },
+  "covers": {
+    "cyberpunk-2077": {
+      "url": "https://cdn.cloudflare.steamstatic.com/steam/apps/1091500/library_600x900.jpg",
+      "source": "Steam",
+      "steamAppId": "1091500",
+      "attribution": "© CD Projekt RED. Steam library asset."
+    },
+    "elden-ring": {
+      "url": "https://cdn.cloudflare.steamstatic.com/steam/apps/1245620/library_600x900.jpg",
+      "source": "Steam",
+      "steamAppId": "1245620",
+      "attribution": "© FromSoftware / Bandai Namco. Steam library asset."
+    },
+    "black-myth-wukong": {
+      "url": "https://cdn.cloudflare.steamstatic.com/steam/apps/2358720/library_600x900.jpg",
+      "source": "Steam",
+      "steamAppId": "2358720",
+      "attribution": "© Game Science. Steam library asset."
+    },
+    "starfield": {
+      "url": "https://cdn.cloudflare.steamstatic.com/steam/apps/1716740/library_600x900.jpg",
+      "source": "Steam",
+      "steamAppId": "1716740",
+      "attribution": "© Bethesda Game Studios / Bethesda Softworks. Steam library asset."
+    },
+    "baldurs-gate-3": {
+      "url": "https://cdn.cloudflare.steamstatic.com/steam/apps/1086940/library_600x900.jpg",
+      "source": "Steam",
+      "steamAppId": "1086940",
+      "attribution": "© Larian Studios. Steam library asset."
+    },
+    "helldivers-2": {
+      "url": "https://cdn.cloudflare.steamstatic.com/steam/apps/553850/library_600x900.jpg",
+      "source": "Steam",
+      "steamAppId": "553850",
+      "attribution": "© Arrowhead Game Studios / Sony. Steam library asset."
+    },
+    "alan-wake-2": {
+      "url": "https://images.igdb.com/igdb/image/upload/t_cover_big/co6jar.jpg",
+      "source": "IGDB",
+      "igdbImageId": "co6jar",
+      "attribution": "© Remedy Entertainment / Epic Games Publishing. IGDB cover."
+    },
+    "hogwarts-legacy": {
+      "url": "https://cdn.cloudflare.steamstatic.com/steam/apps/990080/library_600x900.jpg",
+      "source": "Steam",
+      "steamAppId": "990080",
+      "attribution": "© Avalanche Software / Warner Bros. Games. Steam library asset."
+    },
+    "the-witcher-3": {
+      "url": "https://cdn.cloudflare.steamstatic.com/steam/apps/292030/library_600x900.jpg",
+      "source": "Steam",
+      "steamAppId": "292030",
+      "attribution": "© CD Projekt RED. Steam library asset."
+    },
+    "counter-strike-2": {
+      "url": "https://cdn.cloudflare.steamstatic.com/steam/apps/730/library_600x900.jpg",
+      "source": "Steam",
+      "steamAppId": "730",
+      "attribution": "© Valve. Steam library asset."
+    },
+    "valorant": {
+      "url": "https://images.igdb.com/igdb/image/upload/t_cover_big/cobtjo.jpg",
+      "source": "IGDB",
+      "igdbImageId": "cobtjo",
+      "attribution": "© Riot Games. IGDB cover."
+    },
+    "league-of-legends": {
+      "url": "https://images.igdb.com/igdb/image/upload/t_cover_big/cobpn7.jpg",
+      "source": "IGDB",
+      "igdbImageId": "cobpn7",
+      "attribution": "© Riot Games. IGDB cover."
+    },
+    "dragon-age-veilguard": {
+      "url": "https://cdn.cloudflare.steamstatic.com/steam/apps/1845910/library_600x900.jpg",
+      "source": "Steam",
+      "steamAppId": "1845910",
+      "attribution": "© BioWare / Electronic Arts. Steam library asset."
+    },
+    "monster-hunter-wilds": {
+      "url": "https://cdn.cloudflare.steamstatic.com/steam/apps/2246340/library_600x900.jpg",
+      "source": "Steam",
+      "steamAppId": "2246340",
+      "attribution": "© Capcom. Steam library asset."
+    },
+    "palworld": {
+      "url": "https://cdn.cloudflare.steamstatic.com/steam/apps/1623730/library_600x900.jpg",
+      "source": "Steam",
+      "steamAppId": "1623730",
+      "attribution": "© Pocketpair. Steam library asset."
+    },
+    "hades-2": {
+      "url": "https://images.igdb.com/igdb/image/upload/t_cover_big/scka7e.jpg",
+      "source": "IGDB",
+      "igdbImageId": "scka7e",
+      "attribution": "© Supergiant Games. IGDB cover."
+    },
+    "warhammer-darktide": {
+      "url": "https://cdn.cloudflare.steamstatic.com/steam/apps/1361210/library_600x900.jpg",
+      "source": "Steam",
+      "steamAppId": "1361210",
+      "attribution": "© Fatshark. Steam library asset."
+    },
+    "factorio": {
+      "url": "https://cdn.cloudflare.steamstatic.com/steam/apps/427520/library_600x900.jpg",
+      "source": "Steam",
+      "steamAppId": "427520",
+      "attribution": "© Wube Software. Steam library asset."
+    }
+  },
+  "bulkImportFallback": "https://cdn.cloudflare.steamstatic.com/steam/apps/730/library_600x900.jpg",
+  "reportImagesDefault": []
+}
