@@ -1100,6 +1100,24 @@ export type { ResolvedCover } from './game-cover-resolver'
 // (Future: higher-level unified enricher combining IDs + covers + full external metadata.)
 
 // ============================================
+// HARDWARE IDENTIFICATION (Plan 4 Hybrid — now live)
+// Pure client-only. Re-exported for convenience.
+// ============================================
+export {
+  detectHardware,
+  detectBrowser,
+  parsePaste,
+  applyHardwareAliases,
+  getNormalizedRig,
+} from './hardware-detector';
+
+export type {
+  DetectedHardware,
+  DetectionMethod,
+  DetectionMode,
+} from './hardware-detector';
+
+// ============================================
 // HELPERS (pure, no data source change needed)
 // ============================================
 
@@ -1133,18 +1151,10 @@ export {
 } from './hardware-catalog'
 
 // Convenient non-Static aliases (used by hardware-combobox and other surfaces)
-export { findHardwareByQuery } from './hardware-catalog'
-export { getAllHardwareCatalog } from './hardware-catalog'
-export { getHardwareEntry } from './hardware-catalog'
-
-export {
-  normalizeHardware,
-  normalizeHardwareSync,
-  getPerfIndexForRaw,
-} from './normalize-hardware'
+export { findHardwareByQuery, getHardwareEntry } from './hardware-catalog'
 
 // Live (Supabase) catalog access — used when NEXT_PUBLIC_USE_REAL_DATA=true
-export async function getAllHardwareCatalog(): Promise<any[]> {
+export async function getAllHardwareCatalogAsync(): Promise<any[]> {
   if (USE_REAL) {
     try {
       const { createClient } = await import('@/lib/supabase/client')

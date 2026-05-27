@@ -20,7 +20,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { useQuery } from '@tanstack/react-query';
-import { getAllHardwareCatalog, findHardwareByQuery } from '@/lib/data';
+import { getAllHardwareCatalogAsync, findHardwareByQuery } from '@/lib/data';
 import type { HardwareCatalogEntry } from '@/lib/types';
 
 interface HardwareComboboxProps {
@@ -43,11 +43,11 @@ export function HardwareCombobox({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
 
-  // Load catalog (cached by React Query)
+  // Load catalog — prefers live DB when real data mode is enabled
   const { data: allEntries = [] } = useQuery({
-    queryKey: ['hardware-catalog'],
-    queryFn: () => getAllHardwareCatalog(),
-    staleTime: 1000 * 60 * 30, // 30 min
+    queryKey: ['hardware-catalog', process.env.NEXT_PUBLIC_USE_REAL_DATA],
+    queryFn: () => getAllHardwareCatalogAsync(),
+    staleTime: 1000 * 60 * 10,
   });
 
   const filtered = React.useMemo(() => {
