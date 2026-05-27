@@ -23,6 +23,7 @@ import { showUserError, showUserSuccess } from '@/lib/toast';
 import { Monitor, Save, Trash2, X, Cpu } from 'lucide-react';
 import { HardwareDetectButton } from '@/components/hardware-detect-button';
 import { DetectedHardwareBanner } from '@/components/detected-hardware-banner';
+import { PasteHardwareModal } from '@/components/paste-hardware-modal';
 import type { DetectedHardware } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { sanitizeFullName } from '@/lib/sanitize';
@@ -51,6 +52,7 @@ export function CompatibilityChecker({ embedded = false, preselectedGameSlug }: 
   // Hardware Identification (Plan 4) — client-only state
   const [detectedRig, setDetectedRig] = useState<DetectedHardware | null>(null);
   const [detectionState, setDetectionState] = useState<'idle' | 'detecting' | 'detected' | 'applied'>('idle');
+  const [pasteModalOpen, setPasteModalOpen] = useState(false);
 
   // Phase 2 complete: Predictions computed async so they can use real DB reports + similarity scoring
   // when NEXT_PUBLIC_USE_REAL_DATA=true (via predictForUserRigAsync + getReportsForGameAsync)
@@ -216,6 +218,8 @@ export function CompatibilityChecker({ embedded = false, preselectedGameSlug }: 
     setDetectedRig(result);
     setDetectionState('detected');
   };
+
+  const openPasteModal = () => setPasteModalOpen(true);
   const applyDetectedToForm = (result: DetectedHardware) => {
     if (result.cpu) setCpu(result.cpu);
     if (result.gpu) setGpu(result.gpu);
@@ -285,7 +289,7 @@ export function CompatibilityChecker({ embedded = false, preselectedGameSlug }: 
                   mode="browser"
                   onDetect={handleDetected}
                   state={detectionState}
-                  onRequestPaste={() => { /* TODO: open paste modal from B */ }}
+                  onRequestPaste={openPasteModal}
                 />
               </div>
               <HardwareCombobox

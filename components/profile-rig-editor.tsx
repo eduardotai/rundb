@@ -9,6 +9,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { showUserError, showUserSuccess } from '@/lib/toast';
 import { sanitizeFullName } from '@/lib/sanitize';
+import { HardwareDetectButton } from '@/components/hardware-detect-button';
+import { DetectedHardwareBanner } from '@/components/detected-hardware-banner';
+import { PasteHardwareModal } from '@/components/paste-hardware-modal';
+import type { DetectedHardware } from '@/lib/types';
 import { HardwareCombobox } from '@/components/hardware-combobox';
 import { MAIN_RESOLUTIONS } from '@/lib/types';
 
@@ -43,6 +47,10 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Hardware Identification (Plan 4)
+  const [detectedRig, setDetectedRig] = useState<DetectedHardware | null>(null);
+  const [pasteModalOpen, setPasteModalOpen] = useState(false);
 
   const supabase = createClient();
 
@@ -186,7 +194,18 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
         <CardContent className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label>CPU</Label>
+              <div className="flex items-center justify-between mb-1">
+                <Label>CPU</Label>
+                <HardwareDetectButton
+                  mode="browser"
+                  onDetect={(r) => {
+                    if (r.cpu) updateField('cpu', r.cpu);
+                    if (r.gpu) updateField('gpu', r.gpu);
+                    if (r.ram) updateField('ram', r.ram);
+                  }}
+                  onRequestPaste={() => setPasteModalOpen(true)}
+                />
+              </div>
               <HardwareCombobox
                 value={rig.cpu}
                 onChange={(val) => updateField('cpu', val)}
@@ -258,6 +277,17 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
 
           <div className="text-xs text-muted-foreground border-t pt-4">
             Tip: Saving here writes to the <code>profiles</code> table (main_* fields). The CompatibilityChecker
+
+      <PasteHardwareModal
+        open={pasteModalOpen}
+        onOpenChange={setPasteModalOpen}
+        onApply={(r) => {
+          if (r.cpu) updateField('cpu', r.cpu);
+          if (r.gpu) updateField('gpu', r.gpu);
+          if (r.ram) updateField('ram', r.ram);
+          setPasteModalOpen(false);
+        }}
+      />
             (and header/game pages) prefer <code>user_rigs</code> for logged-in users but fall back to your profile
             data; localStorage only for guests. Full DB persistence complete (see data.ts Phase 2 adapter).
           </div>

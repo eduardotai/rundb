@@ -477,6 +477,46 @@ CREATE POLICY "Moderators and admins can insert hardware catalog entries"
 
 CREATE POLICY "Moderators and admins can update hardware catalog entries"
   ON hardware_catalog FOR UPDATE
+
+-- ============================================================
+-- Hardware Identification (Plan 4) - Additive columns + Steam linking
+-- ============================================================
+
+-- Optional columns on user_rigs and reports for detection provenance
+ALTER TABLE user_rigs ADD COLUMN IF NOT EXISTS detection_method text;
+ALTER TABLE user_rigs ADD COLUMN IF NOT EXISTS detected_raw jsonb;
+
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS detection_method text;
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS detected_raw jsonb;
+
+-- Steam linking table (from Plan 2 + C)
+CREATE TABLE IF NOT EXISTS linked_accounts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  provider text NOT NULL CHECK (provider IN ('steam')),
+  provider_user_id text NOT NULL,
+  provider_data jsonb,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  UNIQUE (user_id, provider),
+  UNIQUE (provider, provider_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_linked_accounts_user ON linked_accounts(user_id);
+
+ALTER TABLE linked_accounts ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can manage own linked accounts" ON linked_accounts
+  FOR ALL USING (user_id = auth.uid());
+
+CREATE POLICY "Public can see linked Steam for verification badges" ON linked_accounts
+  FOR SELECT USING (provider = 'steam');
+
+-- Denorm columns on profiles for fast display
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS steam_id text;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS steam_persona text;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS steam_avatar_url text;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS steam_linked_at timestamptz;
   USING (
     EXISTS (
       SELECT 1 FROM profiles 
