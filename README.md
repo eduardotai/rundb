@@ -23,7 +23,9 @@ Built as a beautiful, self-contained frontend demo with rich mock data that feel
 - TanStack Table (used lightly in reports browser)
 - Lucide icons + Sonner toasts + framer-motion (light)
 - Pure mock data in `lib/mock-data.ts` (18 games, 55+ realistic reports)
-- **Hardware Catalog** (Phase 6+): Structured database of real CPUs/GPUs with `perfIndex`, powering autocomplete, dramatically improved similarity matching, and future validation. Static curated (no runtime API dependency). See `lib/hardware-catalog.ts` + `lib/normalize-hardware.ts` + `components/hardware-combobox.tsx`.
+- **Hardware Catalog** (Phase 6+ — now live): Structured database of real CPUs/GPUs with `perfIndex`. Powers beautiful autocomplete in Submit/Profile/Compatibility, much smarter similarity, and future validation. 
+  - **Static mode** (default): Zero-config, works everywhere.
+  - **Live production mode**: Set `NEXT_PUBLIC_USE_REAL_DATA=true` + run the `hardware_catalog` table (see `supabase/schema.sql`). Admin can seed + manage entries live. The combobox and predictions automatically prefer live data.
 
 ## Quick Start
 

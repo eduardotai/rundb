@@ -20,7 +20,10 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { showUserError, showUserSuccess } from '@/lib/toast';
-import { Monitor, Save, Trash2, X } from 'lucide-react';
+import { Monitor, Save, Trash2, X, Cpu } from 'lucide-react';
+import { HardwareDetectButton } from '@/components/hardware-detect-button';
+import { DetectedHardwareBanner } from '@/components/detected-hardware-banner';
+import type { DetectedHardware } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { sanitizeFullName } from '@/lib/sanitize';
 import { HardwareCombobox } from '@/components/hardware-combobox';
@@ -44,6 +47,10 @@ export function CompatibilityChecker({ embedded = false, preselectedGameSlug }: 
   const [isLoadingRig, setIsLoadingRig] = useState(true);
   const [isLoadingGames, setIsLoadingGames] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Hardware Identification (Plan 4) — client-only state
+  const [detectedRig, setDetectedRig] = useState<DetectedHardware | null>(null);
+  const [detectionState, setDetectionState] = useState<'idle' | 'detecting' | 'detected' | 'applied'>('idle');
 
   // Phase 2 complete: Predictions computed async so they can use real DB reports + similarity scoring
   // when NEXT_PUBLIC_USE_REAL_DATA=true (via predictForUserRigAsync + getReportsForGameAsync)
@@ -204,6 +211,24 @@ export function CompatibilityChecker({ embedded = false, preselectedGameSlug }: 
     }
   };
 
+  // Hardware Identification handlers (Plan 4 Hybrid)
+  const handleDetected = (result: DetectedHardware) => {
+    setDetectedRig(result);
+    setDetectionState('detected');
+  };
+  const applyDetectedToForm = (result: DetectedHardware) => {
+    if (result.cpu) setCpu(result.cpu);
+    if (result.gpu) setGpu(result.gpu);
+    if (result.ram) setRam(result.ram);
+    if (result.resolution) setResolution(result.resolution);
+    setDetectionState('applied');
+    setDetectedRig(null);
+  };
+  const handleClearDetection = () => {
+    setDetectedRig(null);
+    setDetectionState('idle');
+  };
+
   const clearRig = async () => {
     setMyRig(null);
     setCpu('');
@@ -245,7 +270,7 @@ export function CompatibilityChecker({ embedded = false, preselectedGameSlug }: 
           <p className="text-sm text-muted-foreground">
             Save your hardware once. See predicted performance + matching reports across games.
             {process.env.NEXT_PUBLIC_USE_REAL_DATA === 'true' && (
-              <span className="ml-1 text-emerald-400">(using real database reports)</span>
+              <span className="ml-1 text-emerald-400">(using real database reports + live hardware catalog)</span>
             )}
           </p>
         </CardHeader>
@@ -254,13 +279,28 @@ export function CompatibilityChecker({ embedded = false, preselectedGameSlug }: 
           {/* Rig form */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
             <div className="lg:col-span-2">
-              <Label>CPU</Label>
+              <div className="flex items-center justify-between">
+                <Label>CPU</Label>
+                <HardwareDetectButton
+                  mode="browser"
+                  onDetect={handleDetected}
+                  state={detectionState}
+                  onRequestPaste={() => { /* TODO: open paste modal from B */ }}
+                />
+              </div>
               <HardwareCombobox
                 value={cpu}
                 onChange={(val) => setCpu(val)}
                 componentType="cpu"
                 placeholder="Search Ryzen 7 7800X3D or i5-13600K..."
                 disabled={isSaving || isLoadingRig}
+              />
+              <DetectedHardwareBanner
+                detected={detectedRig}
+                onApply={applyDetectedToForm}
+                onRefine={() => setDetectedRig(null)}
+                onDismiss={handleClearDetection}
+                applied={detectionState === 'applied'}
               />
             </div>
             <div className="lg:col-span-2">

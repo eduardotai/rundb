@@ -52,20 +52,19 @@ export function HardwareCombobox({
 
   const filtered = React.useMemo(() => {
     if (!search.trim()) {
-      // Show popular first when no search
       return allEntries
-        .filter((e) => !componentType || e.componentType === componentType)
-        .sort((a, b) => (b.perfIndex || 0) - (a.perfIndex || 0))
+        .filter((e: any) => !componentType || e.componentType === componentType)
+        .sort((a: any, b: any) => (b.perfIndex || 0) - (a.perfIndex || 0))
         .slice(0, 18);
     }
     return findHardwareByQuery(search, 18).filter(
-      (e) => !componentType || e.componentType === componentType
+      (e: any) => !componentType || e.componentType === componentType
     );
   }, [search, allEntries, componentType]);
 
-  const selectedEntry = allEntries.find((e) => e.canonical === value);
+  const selectedEntry = (allEntries as any[]).find((e: any) => e.canonical === value);
 
-  const handleSelect = (entry: HardwareCatalogEntry | null, customValue?: string) => {
+  const handleSelect = (entry: any, customValue?: string) => {
     if (entry) {
       onChange(entry.canonical, entry.canonical);
     } else if (customValue) {
@@ -125,7 +124,7 @@ export function HardwareCombobox({
             </CommandEmpty>
 
             <CommandGroup heading="Catalog Matches">
-              {filtered.map((entry) => (
+              {filtered.map((entry: any) => (
                 <CommandItem
                   key={entry.canonical}
                   value={entry.canonical}

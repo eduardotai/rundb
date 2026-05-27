@@ -128,6 +128,13 @@ export interface UserPC {
   // Hardware Catalog (added Phase 6+ database) — optional for full backward compat
   canonicalCpu?: string;
   canonicalGpu?: string;
+
+  // Hardware Identification (Plan 4 Hybrid feature)
+  // Additive only — never populated automatically on load.
+  // Set only when user explicitly uses "Identify My Hardware" and saves.
+  detectionMethod?: DetectionMethod;
+  detectedAt?: string; // ISO timestamp
+  detectedRaw?: Record<string, unknown>; // raw strings from browser/paste for alias learning
 }
 
 // Filter shapes used across UI
@@ -193,6 +200,50 @@ export interface HardwareAlias {
   vendor?: string;
   series?: string;
   createdAt: string;
+}
+
+// ============================================
+// Hardware Identification (Plan 4 Hybrid "Identify My Hardware")
+// ============================================
+
+export type DetectionMethod =
+  | 'browser'   // WebGL UNMASKED_RENDERER + WebGPU + navigator heuristics
+  | 'paste'     // user-provided dxdiag / lspci / system_profiler / Steam sysinfo etc.
+  | 'steam'     // enrichment only (Steam provides ZERO per-user CPU/GPU/RAM)
+  | 'manual'    // explicit user typing
+  | 'companion'; // future Tauri/Rust desktop bridge
+
+export interface DetectedHardware {
+  cpu?: string;
+  gpu?: string;
+  ram?: number;
+  resolution?: string;
+
+  raw: Record<string, unknown>; // raw unprocessed values (for debugging + alias learning)
+  method: DetectionMethod;
+  confidence: number; // 0.0–1.0
+  timestamp: string; // ISO
+  limitations?: string[];
+  osHint?: string;
+}
+
+// Steam linking (Plan 2 + C)
+export interface LinkedAccount {
+  id: string;
+  user_id: string;
+  provider: 'steam';
+  provider_user_id: string;
+  provider_data?: Record<string, any>;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface SteamProfileSnapshot {
+  steamId: string;
+  personaName?: string;
+  avatarUrl?: string;
+  profileUrl?: string;
+  linkedAt: string;
 }
 
 export interface AdminReport extends Report {
