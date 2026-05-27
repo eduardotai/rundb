@@ -72,6 +72,19 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
   const [pasteModalOpen, setPasteModalOpen] = useState(false);
   const [savedDevices, setSavedDevices] = useState<any[]>([]);
 
+  const form = useForm<FormValues>({
+    resolver: zodResolver(formSchema) as any, // zodResolver + coerce types edge case
+    defaultValues: {
+      gameId: game.id,
+      cpu: '',
+      gpu: '',
+      ram: 32,
+      resolution: '2560x1440',
+      settingsPreset: 'High',
+      avgFps: 60,
+    },
+  });
+
   // Auto-load saved rig when dialog opens (Phase 1 polish)
   // Also load multiple saved devices for Phase 2 selector
   useEffect(() => {
@@ -93,19 +106,6 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
       return () => clearTimeout(t);
     }
   }, [open]);
-
-  const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema) as any, // zodResolver + coerce types edge case
-    defaultValues: {
-      gameId: game.id,
-      cpu: '',
-      gpu: '',
-      ram: 32,
-      resolution: '2560x1440',
-      settingsPreset: 'High',
-      avgFps: 60,
-    },
-  });
 
   // Detection handlers (consistent with other surfaces)
   const handleDetected = (result: DetectedHardware) => {

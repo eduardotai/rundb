@@ -42,7 +42,7 @@ export function sanitizeEmail(raw: string): string {
  * - Hard cap at 128 chars (prevents abuse with huge strings)
  */
 export function sanitizePassword(raw: string): string {
-  let pwd = raw.trim();
+  const pwd = raw.trim();
   return pwd.length > 128 ? pwd.slice(0, 128) : pwd;
 }
 

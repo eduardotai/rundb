@@ -226,7 +226,7 @@ async function detectViaWebGPU(): Promise<Partial<BrowserDetectionInternals>> {
   }
 
   try {
-    // @ts-expect-error
+    // @ts-expect-error WebGPU requestAdapter is not in default Navigator typings
     const adapter = await nav.gpu.requestAdapter();
     if (adapter) {
       // requestAdapterInfo() is the modern path (some browsers expose description)
@@ -715,7 +715,7 @@ export function parsePaste(pasteText: string): DetectedHardware {
   // Always sanitize final fields
   const cpu = parsed.cpu ? sanitizeFullName(parsed.cpu) : undefined;
   const gpu = parsed.gpu ? sanitizeFullName(parsed.gpu) : undefined;
-  let ram = parsed.ram;
+  const ram = parsed.ram;
   const resolution = parsed.resolution;
 
   // Alias pass (sync)

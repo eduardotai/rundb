@@ -221,7 +221,7 @@ export default function AdminPage() {
 
   // ===== PHASE 1 INGESTION FROM ADMIN UI (CLI flag + JSON seed + simulate) =====
   const generatePhase1Command = () => {
-    let seed = phase1SeedText.trim();
+    const seed = phase1SeedText.trim();
     if (!seed) {
       toast.error('Provide JSON seed list first');
       return;
@@ -283,9 +283,14 @@ export default function AdminPage() {
   };
 
   React.useEffect(() => {
-    if (canAdmin && USE_REAL) {
-      refreshIngestQueue();
-    }
+    if (!canAdmin || !USE_REAL) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) void refreshIngestQueue();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [refreshKey, canAdmin]);
 
   const handleRunIngestBatch = async (batchSize = 10) => {

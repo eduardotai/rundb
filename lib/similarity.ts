@@ -15,6 +15,7 @@
 
 import type { Report, UserPC } from './types';
 import { getPerfIndexForRaw, normalizeHardwareSync } from './normalize-hardware';
+import { extractGpuSeries, getCpuTier } from './mock-data';
 
 /**
  * Main exported function used everywhere (ReportCard, predictions, etc.).
@@ -40,7 +41,6 @@ export function calculateHardwareAwareSimilarity(
     else if (delta <= 28) score += 9;
     else score += 3;
   } else {
-    const { extractGpuSeries } = require('./mock-data');
     const reportSeries = extractGpuSeries(report.gpu);
     const userSeries = extractGpuSeries(userRig.gpu);
     if (reportSeries && userSeries && reportSeries === userSeries) score += 18;
@@ -56,7 +56,6 @@ export function calculateHardwareAwareSimilarity(
     else if (delta <= 12) score += 9;
     else if (delta <= 20) score += 5;
   } else {
-    const { getCpuTier } = require('./mock-data');
     const reportTier = getCpuTier(report.cpu);
     const userTier = getCpuTier(userRig.cpu);
     if (reportTier === userTier) score += 11;

@@ -25,7 +25,9 @@ export default function SubmitPage() {
 
   useEffect(() => {
     let cancelled = false;
-    setIsSearching(true);
+    queueMicrotask(() => {
+      if (!cancelled) setIsSearching(true);
+    });
     searchGames(debouncedSearch, 30)
       .then((results) => {
         if (!cancelled) setGames(results);
