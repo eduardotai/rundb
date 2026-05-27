@@ -3,10 +3,10 @@
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { 
+import {
   getAdminOverviewStats, 
   getModerationQueue, 
-  updateReportStatus, 
+  updateReportStatus,
   getHardwareAliases, 
   addHardwareAlias, 
   updateHardwareAlias, 
@@ -18,8 +18,12 @@ import {
   updateImageStatus,
   deleteReportImage,
 } from '@/lib/data';
-import type { HardwareAlias, ReportImage, ReportStatus, Game, BulkImportResult } from '@/lib/types';
-import { triggerIngestionAction } from '@/app/actions/reports';  // Agent 4 protected Server Action
+import type { AdminReport, HardwareAlias, ReportImage, ReportStatus, Game, BulkImportResult } from '@/lib/types';
+import {
+  getModerationQueueAction,
+  moderateReportAction,
+  triggerIngestionAction,
+} from '@/app/actions/reports';  // Agent 4 protected Server Action
 import {
   getIngestQueueStatsAction,
   runIngestBatchAction,
@@ -84,6 +88,9 @@ export default function AdminPage() {
 
   // Data states — compute via memos from pure getters to avoid setState-in-effect
   const [reportFilter, setReportFilter] = useState<ReportStatus | 'all'>('pending');
+  const [realReports, setRealReports] = useState<AdminReport[]>([]);
+  const [isReportsLoading, setIsReportsLoading] = useState(false);
+  const [isModeratingReport, setIsModeratingReport] = useState(false);
   const [aliasSearch, setAliasSearch] = useState('');
   const [gameSearch, setGameSearch] = useState('');
   const [imageFilter, setImageFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
@@ -121,8 +128,8 @@ export default function AdminPage() {
   const [actionStatus, setActionStatus] = useState<ReportStatus>('approved');
   const [moderatorNotes, setModeratorNotes] = useState('');
 
-  const canModerate = demoRole === 'moderator' || demoRole === 'admin';
-  const canAdmin = demoRole === 'admin';
+  const canModerate = USE_REAL || demoRole === 'moderator' || demoRole === 'admin';
+  const canAdmin = USE_REAL || demoRole === 'admin';
 
   const persistRole = (role: DemoRole) => {
     setDemoRole(role);
@@ -134,7 +141,8 @@ export default function AdminPage() {
 
   // Reactive data via useMemo (avoids setState inside effects)
   const stats = useMemo(() => getAdminOverviewStats(), [refreshKey]);
-  const reports = useMemo(() => getModerationQueue(reportFilter), [reportFilter, refreshKey]);
+  const mockReports = useMemo(() => getModerationQueue(reportFilter), [reportFilter, refreshKey]);
+  const reports = USE_REAL ? realReports : mockReports;
   const aliases = useMemo(() => getHardwareAliases(aliasSearch), [aliasSearch, refreshKey]);
   const games = useMemo(() => getAllGamesForAdmin(), [refreshKey]);
   const images = useMemo(() => getReportImages(imageFilter), [imageFilter, refreshKey]);
@@ -293,6 +301,33 @@ export default function AdminPage() {
     };
   }, [refreshKey, canAdmin]);
 
+  React.useEffect(() => {
+    if (!USE_REAL) return;
+
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setIsReportsLoading(true);
+      getModerationQueueAction(reportFilter)
+        .then((rows) => {
+          if (!cancelled) setRealReports(rows);
+        })
+        .catch((e: unknown) => {
+          if (!cancelled) {
+            setRealReports([]);
+            showUserError(e instanceof Error ? e.message : 'Failed to load moderation queue.');
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setIsReportsLoading(false);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reportFilter, refreshKey]);
+
   const handleRunIngestBatch = async (batchSize = 10) => {
     setIsRunningIngestBatch(true);
     try {
@@ -376,11 +411,27 @@ export default function AdminPage() {
     setShowNotesDialog(true);
   };
 
-  const performModerationAction = (reportId: string, status: ReportStatus, notes?: string) => {
+  const performModerationAction = async (reportId: string, status: ReportStatus, notes?: string) => {
     if (!canModerate) {
       toast.error('Insufficient permissions (demo role)');
       return;
     }
+    if (USE_REAL) {
+      setIsModeratingReport(true);
+      try {
+        await moderateReportAction(reportId, status, notes);
+        toast.success(`Report ${status}`, { description: notes ? 'Notes saved' : undefined });
+        setRefreshKey((k) => k + 1);
+      } catch (e: unknown) {
+        showUserError(e instanceof Error ? e.message : 'Failed to update status');
+      } finally {
+        setIsModeratingReport(false);
+        setShowNotesDialog(false);
+        setActiveReportId('');
+      }
+      return;
+    }
+
     const ok = updateReportStatus(reportId, status, notes);
     if (ok) {
       toast.success(`Report ${status}`, { description: notes ? 'Notes saved' : undefined });
@@ -393,7 +444,7 @@ export default function AdminPage() {
   };
 
   const quickModerate = (reportId: string, status: ReportStatus) => {
-    performModerationAction(reportId, status);
+    void performModerationAction(reportId, status);
   };
 
   // ===== HARDWARE ALIASES =====
@@ -575,7 +626,7 @@ export default function AdminPage() {
               <h2 className="text-xl font-semibold">Moderation Queue</h2>
               <p className="text-sm text-muted-foreground">Review, approve, reject or flag user-submitted reports.</p>
             </div>
-            <Button variant="outline" size="sm" onClick={() => setRefreshKey((k) => k + 1)}>
+            <Button variant="outline" size="sm" onClick={() => setRefreshKey((k) => k + 1)} disabled={isReportsLoading}>
               <RefreshCw className="mr-2 h-4 w-4" /> Refresh
             </Button>
           </div>
@@ -608,10 +659,10 @@ export default function AdminPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {reports.length === 0 && (
+                {(isReportsLoading || reports.length === 0) && (
                   <TableRow>
                     <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
-                      No reports match the current filter.
+                      {isReportsLoading ? 'Loading moderation queue...' : 'No reports match the current filter.'}
                     </TableCell>
                   </TableRow>
                 )}
@@ -645,7 +696,7 @@ export default function AdminPage() {
                           size="sm" 
                           variant="ghost" 
                           className="h-7 text-green-400 hover:bg-green-950/60 hover:text-green-300"
-                          disabled={!canModerate}
+                          disabled={!canModerate || isModeratingReport}
                           onClick={() => quickModerate(r.id, 'approved')}
                         >
                           <Check className="h-3.5 w-3.5" />
@@ -654,7 +705,7 @@ export default function AdminPage() {
                           size="sm" 
                           variant="ghost" 
                           className="h-7 text-red-400 hover:bg-red-950/60 hover:text-red-300"
-                          disabled={!canModerate}
+                          disabled={!canModerate || isModeratingReport}
                           onClick={() => quickModerate(r.id, 'rejected')}
                         >
                           <X className="h-3.5 w-3.5" />
@@ -663,7 +714,7 @@ export default function AdminPage() {
                           size="sm" 
                           variant="ghost" 
                           className="h-7 hover:bg-accent/70"
-                          disabled={!canModerate}
+                          disabled={!canModerate || isModeratingReport}
                           onClick={() => openNotesForAction(r.id, 'flagged')}
                         >
                           <Flag className="h-3.5 w-3.5" />
@@ -672,7 +723,7 @@ export default function AdminPage() {
                           size="sm" 
                           variant="ghost" 
                           className="h-7 text-xs hover:bg-accent/70"
-                          disabled={!canModerate}
+                          disabled={!canModerate || isModeratingReport}
                           onClick={() => openNotesForAction(r.id, r.status === 'pending' ? 'approved' : r.status || 'approved')}
                         >
                           Notes
@@ -1176,8 +1227,11 @@ export default function AdminPage() {
           />
           <DialogFooter>
             <Button variant="ghost" className="hover:bg-accent/70" onClick={() => setShowNotesDialog(false)}>Cancel</Button>
-            <Button onClick={() => performModerationAction(activeReportId, actionStatus, moderatorNotes || undefined)}>
-              Confirm {actionStatus}
+            <Button
+              disabled={isModeratingReport || !activeReportId}
+              onClick={() => void performModerationAction(activeReportId, actionStatus, moderatorNotes || undefined)}
+            >
+              {isModeratingReport ? 'Saving...' : `Confirm ${actionStatus}`}
             </Button>
           </DialogFooter>
         </DialogContent>
