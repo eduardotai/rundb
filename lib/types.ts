@@ -80,6 +80,8 @@ export interface Game {
   steamAppId?: string;
   igdbId?: string;
   externalIdAttribution?: string; // From Agent 5 resolver (source + credit for the IDs)
+  /** Supabase ingest_status — skeleton rows await background enrichment */
+  ingestStatus?: 'skeleton' | 'enriched' | 'failed';
 }
 
 export interface Report {
@@ -135,6 +137,26 @@ export interface UserPC {
   detectionMethod?: DetectionMethod;
   detectedAt?: string; // ISO timestamp
   detectedRaw?: Record<string, unknown>; // raw strings from browser/paste for alias learning
+
+  // Rich ProtonDB-style details (populated when user uses high-quality paste like inxi)
+  driverVersion?: string;
+  kernel?: string;
+  distro?: string;
+}
+
+// Phase 2: Multi-device support (ProtonDB "My Devices" style)
+export interface UserDevice {
+  id?: string;           // DB id when persisted
+  label: string;         // User-friendly name e.g. "Desktop RTX 4080", "Laptop", "Steam Deck"
+  cpu: string;
+  gpu: string;
+  ram: number;
+  resolution?: string;
+  isPrimary?: boolean;
+  driverVersion?: string;
+  kernel?: string;
+  distro?: string;
+  updatedAt?: string;
 }
 
 // Filter shapes used across UI
@@ -182,6 +204,10 @@ export interface SubmitReportInput {
   ramSpeed?: string;
   customSettingsNotes?: string;
 
+  // Rich ProtonDB-style fields captured via detection (inxi etc.)
+  kernel?: string;
+  distro?: string;
+
   // Hardware Catalog (added Phase 6+ database) — optional, populated by normalization layer
   canonicalCpu?: string;
   canonicalGpu?: string;
@@ -218,6 +244,12 @@ export interface DetectedHardware {
   gpu?: string;
   ram?: number;
   resolution?: string;
+
+  // Richer fields captured from high-signal sources (inxi, dxdiag, Steam sysinfo, etc.)
+  // These are the ProtonDB-style details that make reports much more valuable.
+  driverVersion?: string;
+  kernel?: string;
+  distro?: string;
 
   raw: Record<string, unknown>; // raw unprocessed values (for debugging + alias learning)
   method: DetectionMethod;
@@ -266,4 +298,22 @@ export interface BulkImportResult {
   success: number;
   errors: Array<{ row: number; message: string }>;
   imported: Game[];
+}
+
+export interface GamesPageResult {
+  games: Game[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export type IngestQueueStatus = 'pending' | 'processing' | 'done' | 'failed';
+
+export interface IngestQueueStats {
+  pending: number;
+  processing: number;
+  done: number;
+  failed: number;
+  total: number;
 }

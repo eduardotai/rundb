@@ -12,11 +12,16 @@ export async function optimizeAndUploadToGameMedia(
   destPath: string,
   options: { width?: number; quality?: number; format?: 'webp' | 'avif' } = {}
 ): Promise<string> {
-  const { width = 1200, quality = 82, format = 'webp' } = options
+  const { width = 1200, quality = 88, format = 'webp' } = options
 
   const optimizedBuffer = await sharp(buffer)
-    .resize(width, null, { fit: 'inside', withoutEnlargement: true, fastShrinkOnLoad: true })
-    .toFormat(format, { quality, effort: 6 })
+    .resize(width, null, {
+      fit: 'inside',
+      withoutEnlargement: false,
+      fastShrinkOnLoad: false,
+    })
+    .sharpen({ sigma: 0.6, m1: 0.5, m2: 0.25 })
+    .toFormat(format, { quality, effort: 4 })
     .toBuffer()
 
   const contentType = format === 'avif' ? 'image/avif' : 'image/webp'

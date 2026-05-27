@@ -2,13 +2,10 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { AuthButton } from '@/components/auth-button';
 import { MyRigIndicator } from '@/components/my-rig-indicator';
-import { createClient } from '@/lib/supabase/server';
+import { getStaffAccess } from '@/lib/admin-access';
 
 export async function SiteHeader() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user, isAdmin } = await getStaffAccess();
 
   // My Rig indicator is a separate client component (full DB persistence via user_rigs/profiles for logged-in,
   // localStorage guest fallback only; see my-rig-indicator.tsx + data.ts adapter per Master Plan).
@@ -26,7 +23,9 @@ export async function SiteHeader() {
             <Link href="/games" className="text-muted-foreground hover:text-foreground transition">Browse Games</Link>
             <Link href="/reports" className="text-muted-foreground hover:text-foreground transition">Reports</Link>
             <Link href="/compatibility" className="text-muted-foreground hover:text-foreground transition">Compatibility</Link>
-            <Link href="/admin" className="text-amber-400 hover:text-amber-300 transition font-medium">Admin</Link>
+            {isAdmin && (
+              <Link href="/admin" className="text-amber-400 hover:text-amber-300 transition font-medium">Admin</Link>
+            )}
           </nav>
         </div>
 

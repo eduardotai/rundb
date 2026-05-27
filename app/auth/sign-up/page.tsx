@@ -262,6 +262,13 @@ function SignUpForm() {
             </Button>
           </div>
 
+          {/* Privacy tools note: the play.google.com/log ERR_BLOCKED_BY_CLIENT noise some users see
+              during Google OAuth is harmless telemetry from Google's consent page (blocked by uBO etc.).
+              The redirect flow loads zero Google scripts until the button is clicked. */}
+          <p className="text-[11px] text-muted-foreground/70 pt-0.5">
+            Privacy tools (uBlock, Brave, etc.) may block some Google background requests. Sign-up still works.
+          </p>
+
           {/* Email signup form */}
           <form onSubmit={form.handleSubmit(handleEmailSignUp)} className="space-y-4" noValidate>
             <div className="space-y-2">

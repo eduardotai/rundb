@@ -32,6 +32,8 @@
  */
 
 import { resolveGameExternalIds } from './game-id-resolver'
+import { steamLibraryCoverUrl, upgradeCoverImageSrc } from './cover-image-url'
+import { getCatalogCover, SLUG_STEAM_APP_IDS } from './game-cover-catalog'
 
 export interface ResolvedCover {
   url: string
@@ -59,6 +61,8 @@ const STEAM_APPIDS: Record<string, number | null> = {
   'hades-2': 2218750,
   'warhammer-darktide': 1361210,
   'factorio': 427520,
+  'the-last-of-us-part-i': 1888930,
+  'assassins-creed-valhalla': 2208920,
 }
 
 /**
@@ -160,6 +164,16 @@ const CURATED_PUBLIC_URLS: Record<string, { url: string; source: ResolvedCover['
     source: 'steam',
     attribution: '© Valve Corporation / Wube Software. Steam CDN direct link.',
   },
+  'the-last-of-us-part-i': {
+    url: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1888930/library_600x900.jpg',
+    source: 'steam',
+    attribution: '© Valve Corporation / Naughty Dog / Sony. Steam CDN direct link.',
+  },
+  'assassins-creed-valhalla': {
+    url: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2208920/library_600x900.jpg',
+    source: 'steam',
+    attribution: '© Valve Corporation / Ubisoft. Steam CDN direct link.',
+  },
 }
 
 // In-memory cache for async resolutions (RAWG/IGDB dynamic for unknowns + ID lookups)
@@ -175,8 +189,8 @@ function isPicsumUrl(url: string | undefined): boolean {
   return !!url && url.includes('picsum.photos')
 }
 
-function makeSteamUrl(appId: number, variant: 'library_600x900' | 'header' = 'library_600x900'): string {
-  return `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/${variant}.jpg`
+function makeSteamUrl(appId: number): string {
+  return steamLibraryCoverUrl(appId, true)
 }
 
 /**
@@ -187,13 +201,27 @@ function makeSteamUrl(appId: number, variant: 'library_600x900' | 'header' = 'li
 export function resolveCoverForGameSync(game: { slug: string; name?: string }): ResolvedCover {
   const slug = game.slug
 
-  // 1. Exact curated override (best quality + attribution)
-  if (CURATED_PUBLIC_URLS[slug]) {
-    return { ...CURATED_PUBLIC_URLS[slug] }
+  // 0. Canonical catalog (mock-data / verified Steam library art) — always wins
+  const catalog = getCatalogCover(slug)
+  if (catalog) {
+    return {
+      url: catalog.url,
+      source: catalog.source,
+      attribution: catalog.attribution,
+    }
   }
 
-  // 2. Dynamic Steam from AppID map
-  const appId = STEAM_APPIDS[slug]
+  // 1. Exact curated override (legacy map — non-catalog titles)
+  if (CURATED_PUBLIC_URLS[slug]) {
+    const curated = CURATED_PUBLIC_URLS[slug]
+    return {
+      ...curated,
+      url: upgradeCoverImageSrc(curated.url),
+    }
+  }
+
+  // 2. Dynamic Steam from AppID map (catalog + legacy)
+  const appId = STEAM_APPIDS[slug] ?? (SLUG_STEAM_APP_IDS[slug] ? Number(SLUG_STEAM_APP_IDS[slug]) : undefined)
   if (appId) {
     return {
       url: makeSteamUrl(appId),

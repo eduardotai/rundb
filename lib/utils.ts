@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
+import { buildCoverLoaderUrl } from "@/lib/cover-image-url"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -12,20 +13,16 @@ export function cn(...inputs: ClassValue[]) {
  *   import Image from 'next/image'
  *   import { gameMediaLoader } from '@/lib/utils'
  */
-export function gameMediaLoader({ src, width, quality }: { src: string; width: number; quality?: number }): string {
-  if (!src) return src
-  try {
-    const url = new URL(src)
-    if (url.hostname.includes('supabase.co') && url.pathname.includes('/game-media')) {
-      const w = Math.min(Math.max(width, 100), 2400)
-      url.searchParams.set('width', String(w))
-      url.searchParams.set('quality', String(quality || 82))
-      return url.href
-    }
-    return src
-  } catch {
-    return src
-  }
+export function gameMediaLoader({
+  src,
+  width,
+  quality,
+}: {
+  src: string
+  width: number
+  quality?: number
+}): string {
+  return buildCoverLoaderUrl(src, width, quality ?? 85)
 }
 
 /**

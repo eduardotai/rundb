@@ -26,6 +26,7 @@ Built as a beautiful, self-contained frontend demo with rich mock data that feel
 - **Hardware Catalog** (Phase 6+ — now live): Structured database of real CPUs/GPUs with `perfIndex`. Powers beautiful autocomplete in Submit/Profile/Compatibility, much smarter similarity, and future validation. 
   - **Static mode** (default): Zero-config, works everywhere.
   - **Live production mode**: Set `NEXT_PUBLIC_USE_REAL_DATA=true` + run the `hardware_catalog` table (see `supabase/schema.sql`). Admin can seed + manage entries live. The combobox and predictions automatically prefer live data.
+- **Identify My Hardware** (Phase 1 complete): Browser scan + high-precision paste (dxdiag on Windows, **inxi -Fxxxz** on Linux — the same method ProtonDB uses for accurate driver/kernel/distro). Detection is fully client-side, opt-in, and feeds directly into reports and "My Rig". Rich fields (driver, kernel, distro) are captured and surfaced.
 
 ## Quick Start
 
@@ -142,6 +143,14 @@ create table reports (
 5. Add real upvoting with a `votes` table + trigger to maintain `helpful_votes`
 
 The current UI and components require almost zero changes.
+
+### Authentication & Privacy Tools
+We use Supabase redirect-based OAuth (Google + Discord) + email/password + anonymous guests.  
+The Google flow uses the recommended pattern: custom buttons → `signInWithOAuth` with full-page redirect (zero Google Identity scripts or preloads until the user explicitly clicks).  
+
+Users with aggressive ad blockers / privacy tools (uBlock Origin + EasyPrivacy, Brave Shields, AdGuard, etc.) may see `net::ERR_BLOCKED_BY_CLIENT` console errors for `https://play.google.com/log?...` (SAPISIDHASH telemetry) during the Google consent step. **This is harmless Google-side diagnostic traffic** — the OAuth succeeds 100% and no app functionality is affected.
+
+The small note on `/auth/sign-in` and `/auth/sign-up` explains it inline. Alternatives (Discord, email, guest) are always available and never trigger it.
 
 ## Scripts
 
