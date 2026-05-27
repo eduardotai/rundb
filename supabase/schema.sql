@@ -27,7 +27,26 @@ CREATE TABLE games (
   official_rec_reqs jsonb,
   igdb_id text,
   steam_app_id text,
+  ingest_status text CHECK (ingest_status IN ('skeleton', 'enriched', 'failed')),
   last_ingested_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Ingest queue for two-phase catalog growth (ProtonDB seed → background enrich)
+CREATE TABLE game_ingest_queue (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  game_id uuid REFERENCES games(id) ON DELETE CASCADE,
+  steam_app_id text NOT NULL,
+  name text NOT NULL,
+  slug text NOT NULL UNIQUE,
+  priority int NOT NULL DEFAULT 0,
+  report_count int NOT NULL DEFAULT 0,
+  status text NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'processing', 'done', 'failed')),
+  attempts int NOT NULL DEFAULT 0,
+  last_error text,
+  locked_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -138,6 +157,12 @@ CREATE INDEX idx_reports_resolution ON reports (resolution);
 CREATE INDEX idx_reports_status ON reports (status) WHERE status = 'approved';
 
 CREATE INDEX idx_games_slug ON games (slug);
+CREATE INDEX idx_games_ingest_status ON games (ingest_status);
+CREATE INDEX idx_queue_status_priority ON game_ingest_queue (status, priority);
+
+-- Trigram search for /games browse at scale (requires pg_trgm extension)
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX idx_games_name_trgm ON games USING gin (name gin_trgm_ops);
 
 -- ============================================
 -- TRIGGERS & FUNCTIONS
@@ -154,6 +179,7 @@ $$;
 
 CREATE TRIGGER profiles_updated_at BEFORE UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 CREATE TRIGGER games_updated_at BEFORE UPDATE ON games FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+CREATE TRIGGER game_ingest_queue_updated_at BEFORE UPDATE ON game_ingest_queue FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
 -- Helpful votes maintenance
 CREATE OR REPLACE FUNCTION public.update_helpful_votes()
@@ -197,6 +223,7 @@ FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 -- ============================================
 
 ALTER TABLE games ENABLE ROW LEVEL SECURITY;
+ALTER TABLE game_ingest_queue ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_rigs ENABLE ROW LEVEL SECURITY;
@@ -227,9 +254,25 @@ CREATE POLICY "Users can vote on reports" ON report_votes
 CREATE POLICY "Users can see their own votes" ON report_votes
   FOR SELECT USING (user_id = auth.uid());
 
--- Profiles: users manage their own
-CREATE POLICY "Users can view and update own profile" ON profiles
-  FOR ALL USING (auth.uid() = id);
+-- Profiles: users manage their own non-privileged fields.
+-- Role changes must be performed with the service role or direct database access.
+CREATE POLICY "Users can view own profile" ON profiles
+  FOR SELECT USING (auth.uid() = id);
+
+CREATE POLICY "Users can insert own profile" ON profiles
+  FOR INSERT WITH CHECK (auth.uid() = id AND role = 'user');
+
+CREATE POLICY "Users can update own profile fields" ON profiles
+  FOR UPDATE USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
+
+REVOKE INSERT, UPDATE ON profiles FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON profiles TO anon, authenticated;
+GRANT INSERT (id, username, avatar_url, main_cpu, main_gpu, main_ram, preferred_resolution)
+  ON profiles TO authenticated;
+GRANT UPDATE (id, username, avatar_url, main_cpu, main_gpu, main_ram, preferred_resolution)
+  ON profiles TO authenticated;
+GRANT ALL ON profiles TO service_role;
 
 -- User rigs: owners only
 CREATE POLICY "Users can manage their own rig" ON user_rigs
@@ -340,7 +383,9 @@ CREATE OR REPLACE FUNCTION public.submit_report(
   p_issues text DEFAULT NULL,
   p_driver_version text DEFAULT NULL,
   p_ram_speed text DEFAULT NULL,
-  p_custom_settings_notes text DEFAULT NULL
+  p_custom_settings_notes text DEFAULT NULL,
+  p_kernel text DEFAULT NULL,
+  p_distro text DEFAULT NULL
 ) RETURNS uuid
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
@@ -385,14 +430,14 @@ BEGIN
     cpu, gpu, ram, ram_speed, resolution, refresh_rate,
     settings_preset, custom_settings_notes,
     avg_fps, fps_1_percent_low, performance_tier,
-    notes, tweaks, issues, driver_version,
+    notes, tweaks, issues, driver_version, kernel, distro,
     status
   ) VALUES (
     p_game_id, v_user_id, v_game_name,
     p_cpu, p_gpu, p_ram, p_ram_speed, p_resolution, p_refresh_rate,
     p_settings_preset, p_custom_settings_notes,
     p_avg_fps, p_fps_1_percent_low, v_tier,
-    p_notes, p_tweaks, p_issues, p_driver_version,
+    p_notes, p_tweaks, p_issues, p_driver_version, p_kernel, p_distro,
     'pending'
   ) RETURNING id INTO v_report_id;
 
@@ -477,6 +522,30 @@ CREATE POLICY "Moderators and admins can insert hardware catalog entries"
 
 CREATE POLICY "Moderators and admins can update hardware catalog entries"
   ON hardware_catalog FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM profiles
+      WHERE profiles.id = auth.uid()
+        AND profiles.role IN ('moderator', 'admin')
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM profiles
+      WHERE profiles.id = auth.uid()
+        AND profiles.role IN ('moderator', 'admin')
+    )
+  );
+
+CREATE POLICY "Moderators and admins can delete hardware catalog entries"
+  ON hardware_catalog FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM profiles
+      WHERE profiles.id = auth.uid()
+        AND profiles.role IN ('moderator', 'admin')
+    )
+  );
 
 -- ============================================================
 -- Hardware Identification (Plan 4) - Additive columns + Steam linking
@@ -486,8 +555,27 @@ CREATE POLICY "Moderators and admins can update hardware catalog entries"
 ALTER TABLE user_rigs ADD COLUMN IF NOT EXISTS detection_method text;
 ALTER TABLE user_rigs ADD COLUMN IF NOT EXISTS detected_raw jsonb;
 
+-- Richer ProtonDB-style hardware details (Phase 1)
+-- These are captured from high-quality pastes (especially inxi) and browser detection where possible.
+ALTER TABLE user_rigs ADD COLUMN IF NOT EXISTS driver_version text;
+ALTER TABLE user_rigs ADD COLUMN IF NOT EXISTS kernel text;
+ALTER TABLE user_rigs ADD COLUMN IF NOT EXISTS distro text;
+
+-- Phase 2 Multi-Device support (ProtonDB "My Devices" parity)
+-- Allow users to have multiple named rigs (like "Desktop", "Laptop", "Steam Deck").
+-- We add label + is_primary. The old UNIQUE(user_id) is dropped so multiple rigs are possible.
+ALTER TABLE user_rigs ADD COLUMN IF NOT EXISTS label text;
+ALTER TABLE user_rigs ADD COLUMN IF NOT EXISTS is_primary boolean DEFAULT false;
+
+-- Note: To fully support multiples, the original UNIQUE(user_id) constraint should be dropped manually
+-- once in production (or via migration). The data layer will treat the most recent primary as "My Rig".
+
 ALTER TABLE reports ADD COLUMN IF NOT EXISTS detection_method text;
 ALTER TABLE reports ADD COLUMN IF NOT EXISTS detected_raw jsonb;
+
+-- Richer hardware details on reports (driver_version already existed; adding kernel + distro for precision parity)
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS kernel text;
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS distro text;
 
 -- Steam linking table (from Plan 2 + C)
 CREATE TABLE IF NOT EXISTS linked_accounts (
@@ -517,23 +605,6 @@ ALTER TABLE profiles ADD COLUMN IF NOT EXISTS steam_id text;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS steam_persona text;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS steam_avatar_url text;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS steam_linked_at timestamptz;
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles 
-      WHERE profiles.id = auth.uid() 
-        AND profiles.role IN ('moderator', 'admin')
-    )
-  );
-
-CREATE POLICY "Moderators and admins can delete hardware catalog entries"
-  ON hardware_catalog FOR DELETE
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles 
-      WHERE profiles.id = auth.uid() 
-        AND profiles.role IN ('moderator', 'admin')
-    )
-  );
 
 -- Optional denorm columns on reports (recommended for production scale)
 -- Run these when you want server-side similarity pruning:

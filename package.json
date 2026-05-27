@@ -3,11 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "ingest:games": "tsx scripts/ingest-games.ts"
+    "ingest:games": "tsx scripts/ingest-games.ts",
+    "build:seed": "tsx scripts/build-protondb-seed.ts",
+    "seed:queue": "tsx scripts/seed-queue.ts",
+    "ingest:worker": "tsx scripts/ingest-games-worker.ts",
+    "seed:games": "tsx scripts/seed-games-mock.ts",
+    "setup:supabase": "tsx scripts/setup-supabase-real.ts",
+    "reingest:covers": "tsx scripts/reingest-covers-all.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

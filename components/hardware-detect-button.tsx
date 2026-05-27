@@ -165,7 +165,6 @@ async function runBrowserDetection(): Promise<DetectedHardware> {
   // 4. Basic WebGPU (very new, graceful)
   try {
     if ('gpu' in navigator) {
-      // @ts-ignore - experimental
       const adapter = await (navigator as any).gpu?.requestAdapter?.();
       if (adapter?.info?.description) {
         raw.webgpu = adapter.info.description;

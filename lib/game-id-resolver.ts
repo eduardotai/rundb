@@ -22,27 +22,19 @@
  */
 
 import type { Game } from './types';
+import { SLUG_STEAM_APP_IDS } from './game-cover-catalog';
 
 // ============================================
 // STATIC STEAM-FIRST APPID MAP (curated, zero-cost, high confidence)
 // Keys = canonical slugs used across seeds/ingest/admin (see normalizeSlug in utils)
 // Values verified against official Steam store (as of 2026 data snapshot)
+// Catalog from mock-data is merged in as the primary source.
 // ============================================
 const STEAM_APPID_MAP: Record<string, string> = {
-  'cyberpunk-2077': '1091500',
-  'elden-ring': '1245620',
-  'baldurs-gate-3': '1086940',
-  'black-myth-wukong': '2358720',
-  'helldivers-2': '553850',
-  'alan-wake-2': '1977060',
-  'starfield': '1716740',
+  ...SLUG_STEAM_APP_IDS,
+  // Legacy slug aliases
   'the-witcher-3-wild-hunt': '292030',
-  'doom-eternal': '782330',
-  'control': '870780',
-  'metro-exodus': '412020',
-  'red-dead-redemption-2': '1174180',
-  'death-stranding': '1190460',
-  'hades': '1145360',
+  'resident-evil-4': '2050650',
 };
 
 // ============================================
@@ -162,7 +154,7 @@ async function resilientFetch(url: string, init?: RequestInit, retries = 1): Pro
 // ============================================
 // STEAM-FIRST RESOLUTION LAYERS
 // ============================================
-async function tryStaticMap(name: string, slug?: string): Promise<Partial<ExternalIdResolution> | null> {
+function resolveStaticMap(name: string, slug?: string): Partial<ExternalIdResolution> | null {
   const key = makeCacheKey(name, slug);
   const direct = STEAM_APPID_MAP[key];
   if (direct) {
@@ -187,6 +179,35 @@ async function tryStaticMap(name: string, slug?: string): Promise<Partial<Extern
     }
   }
   return null;
+}
+
+async function tryStaticMap(name: string, slug?: string): Promise<Partial<ExternalIdResolution> | null> {
+  return resolveStaticMap(name, slug);
+}
+
+/**
+ * Sync static-map lookup only. Safe for client components (no network, no Server Actions).
+ */
+export function resolveGameExternalIdsSync(name: string, slug?: string): ExternalIdResolution {
+  if (!name || typeof name !== 'string') {
+    return {
+      source: 'none',
+      attribution: ATTRIBUTIONS.none,
+      confidence: 0,
+      cached: false,
+    };
+  }
+
+  const partial = resolveStaticMap(name, slug);
+  return {
+    steamAppId: partial?.steamAppId,
+    igdbId: partial?.igdbId,
+    rawgId: partial?.rawgId,
+    source: partial?.source || 'none',
+    attribution: partial?.attribution || ATTRIBUTIONS.none,
+    confidence: partial?.confidence ?? 0,
+    cached: false,
+  };
 }
 
 async function trySteamPublicSearch(name: string): Promise<Partial<ExternalIdResolution> | null> {

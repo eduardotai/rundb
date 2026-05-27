@@ -29,6 +29,7 @@ import type {
   AdminReport,
   ReportImage,
   BulkImportResult,
+  GamesPageResult,
 } from './types'
 
 // React Query hooks (Phase 3 migration). useQuery only — no react state primitives needed here anymore.
@@ -36,8 +37,15 @@ import { useQuery } from '@tanstack/react-query'
 
 // Agent 2 / PR 2: Public cover resolver + enrichment (Steam/IGDB/RAWG direct + game_media)
 import * as coverResolver from './game-cover-resolver'
+import { getCatalogCover } from './game-cover-catalog'
+import { upgradeCoverImageSrc } from './cover-image-url'
 
 export const USE_REAL = process.env.NEXT_PUBLIC_USE_REAL_DATA === 'true'
+
+/** True when public Supabase env vars are present (real network client, not the no-op stub). */
+export function isSupabaseConfigured(): boolean {
+  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+}
 
 // Convenience: tells UI/components whether the hardware catalog is coming from live DB
 export const HARDWARE_CATALOG_LIVE = USE_REAL;
@@ -66,6 +74,7 @@ function mapDbGameToGame(row: any): Game {
     steamAppId: row.steam_app_id || undefined,
     igdbId: row.igdb_id || undefined,
     externalIdAttribution: row.external_id_attribution || undefined,
+    ingestStatus: row.ingest_status || undefined,
   }
 }
 
@@ -144,81 +153,56 @@ export function getGameMediaSync(gameId: string): any[] {
 
 /**
  * Enrich an array of (already mapped) games with real covers.
- * Priority: DB cover_url (already in mapper) > primary game_media cover row > public resolver (Steam/IGDB direct).
- * Works for both mock paths (!USE_REAL) and real paths.
- * Always produces distinct non-picsum banners for the seeded 18 (via resolver map).
+ * Sync catalog/resolver first; optional async game_media only for unknown imports.
+ * Never calls Server Actions — safe from client components (e.g. /games React Query).
  */
 export async function enrichGamesWithCovers(games: Game[]): Promise<Game[]> {
   if (!games?.length) return games
 
-  // Fast path: most already good from DB or prior enrichment
-  const needsWork = games.some(g => !g.coverImage || g.coverImage.includes('picsum.photos'))
-  if (!needsWork) return games
+  const base = enrichGamesWithCoversSync(games)
 
-  // For small catalogs (18 + imports) we enrich in parallel safely.
-  const enriched = await Promise.all(
-    games.map(async (g) => {
-      if (g.coverImage && !g.coverImage.includes('picsum.photos')) return g
+  if (!USE_REAL) return base
 
-      // Try to pull a primary cover from game_media if we have id (real mode)
-      let mediaCover: string | null = null
-      if (USE_REAL && g.id) {
-        try {
-          const media = await getGameMedia(g.id)
-          const coverRow = media.find((m: any) => m.media_type === 'cover' && m.url)
-          if (coverRow?.url) mediaCover = coverRow.url
-        } catch {}
-      }
+  return Promise.all(
+    base.map(async (g) => {
+      // Catalog covers are authoritative; skip ingested media for known slugs
+      if (getCatalogCover(g.slug) || !g.id) return g
 
-      if (mediaCover) {
-        // Prefer attribution from game_media row when present (real covers path)
-        const coverRow = (await getGameMedia(g.id).catch(() => [] as any[])).find((m: any) => m.media_type === 'cover' && m.url)
-        return { ...g, coverImage: mediaCover, coverAttribution: coverRow?.attribution || g.coverAttribution }
-      }
+      try {
+        const media = await getGameMedia(g.id)
+        const coverRow = media.find((m: any) => m.media_type === 'cover' && m.url)
+        if (coverRow?.url) {
+          return {
+            ...g,
+            coverImage: upgradeCoverImageSrc(coverRow.url, g.steamAppId),
+            coverAttribution: coverRow.attribution || g.coverAttribution,
+          }
+        }
+      } catch {}
 
-      // Resolver (public Steam/IGDB/RAWG direct) — makes real banners in demo mode too.
-      // Client-safe wrapper: on the browser we go through a Server Action to avoid
-      // CORS + key exposure + per-client rate limits (Agent 5 review fix).
-      const resolved = await resolveCoverForGameClientSafe({ slug: g.slug, name: g.name })
-
-      // Also resolve external IDs and backfill them (high-priority Agent 5 item).
-      // This ensures steamAppId / igdbId / externalIdAttribution get populated for unknown games.
-      const idRes = await resolveGameExternalIdsClientSafe(g.name || '', g.slug)
-
-      return {
-        ...g,
-        coverImage: resolved.url,
-        coverAttribution: resolved.attribution || g.coverAttribution,
-        steamAppId: idRes.steamAppId || g.steamAppId,
-        igdbId: idRes.igdbId || g.igdbId,
-        externalIdAttribution: idRes.attribution || g.externalIdAttribution,
-      }
+      return g
     })
   )
-
-  return enriched
 }
 
 /**
- * Client-safe async cover resolution.
- * On the server: calls the real resolver directly.
- * On the client: delegates to a Server Action (avoids CORS, key leakage, and per-user rate limits).
- * This is the main fix for the Agent 5 "client boundary" issue.
+ * Cover resolution safe for client + server.
+ * Client uses sync static catalog (no Server Actions — avoids HMR / deployment ID mismatches).
+ * Server may use async resolver for unknown titles (RAWG/IGDB network fallbacks).
  */
 async function resolveCoverForGameClientSafe(game: { slug: string; name?: string }) {
   if (typeof window !== 'undefined') {
-    const { resolveCoverForGameAction } = await import('@/app/actions/resolver')
-    return resolveCoverForGameAction(game)
+    return coverResolver.resolveCoverForGameSync(game)
   }
   const { resolveCoverForGame } = await import('@/lib/game-cover-resolver')
   return resolveCoverForGame(game)
 }
 
-/** Client-safe wrappers for external ID resolution (Agent 5). */
+/** External ID resolution safe for client + server (static map only on client). */
 async function resolveGameExternalIdsClientSafe(name: string, slug?: string) {
   if (typeof window !== 'undefined') {
-    const { resolveGameExternalIdsAction } = await import('@/app/actions/resolver')
-    return resolveGameExternalIdsAction(name, slug)
+    const { resolveGameExternalIdsSync } = await import('@/lib/game-id-resolver')
+    return resolveGameExternalIdsSync(name, slug)
   }
   const { resolveGameExternalIds } = await import('@/lib/game-id-resolver')
   return resolveGameExternalIds(name, slug)
@@ -226,20 +210,38 @@ async function resolveGameExternalIdsClientSafe(name: string, slug?: string) {
 
 async function resolveSteamAppIdClientSafe(name: string, slug?: string) {
   if (typeof window !== 'undefined') {
-    const { resolveSteamAppIdAction } = await import('@/app/actions/resolver')
-    return resolveSteamAppIdAction(name, slug)
+    const { resolveGameExternalIdsSync } = await import('@/lib/game-id-resolver')
+    return resolveGameExternalIdsSync(name, slug).steamAppId
   }
   const { resolveSteamAppId } = await import('@/lib/game-id-resolver')
   return resolveSteamAppId(name, slug)
 }
 
-/** Sync enrich (for getGameBySlug + getAllGamesSync legacy paths). Uses only static resolver map. */
+/** Sync enrich (for getGameBySlug + getAllGamesSync legacy paths). Uses catalog + static resolver map. */
 export function enrichGamesWithCoversSync(games: Game[]): Game[] {
   if (!games?.length) return games
   return games.map((g) => {
-    if (g.coverImage && !g.coverImage.includes('picsum.photos')) return g
+    const catalog = getCatalogCover(g.slug)
+    if (catalog) {
+      return {
+        ...g,
+        coverImage: upgradeCoverImageSrc(catalog.url, catalog.steamAppId || g.steamAppId),
+        coverAttribution: catalog.attribution || g.coverAttribution,
+        steamAppId: catalog.steamAppId || g.steamAppId,
+      }
+    }
+    if (g.coverImage && !g.coverImage.includes('picsum.photos')) {
+      return {
+        ...g,
+        coverImage: upgradeCoverImageSrc(g.coverImage, g.steamAppId),
+      }
+    }
     const resolved = coverResolver.resolveCoverForGameSync({ slug: g.slug, name: g.name })
-    return { ...g, coverImage: resolved.url, coverAttribution: resolved.attribution || g.coverAttribution }
+    return {
+      ...g,
+      coverImage: upgradeCoverImageSrc(resolved.url, g.steamAppId),
+      coverAttribution: resolved.attribution || g.coverAttribution,
+    }
   })
 }
 
@@ -249,6 +251,13 @@ export function enrichGamesWithCoversSync(games: Game[]): Game[] {
 
 export async function getAllGames(): Promise<Game[]> {
   if (USE_REAL) {
+    if (!isSupabaseConfigured()) {
+      console.warn(
+        '[data] USE_REAL=true but Supabase is not configured — using mock games. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.'
+      )
+      return enrichGamesWithCoversSync(mock.getAllGames())
+    }
+
     const { createClient } = await import('@/lib/supabase/client')
     const supabase = createClient()
 
@@ -263,11 +272,147 @@ export async function getAllGames(): Promise<Game[]> {
       return enrichGamesWithCoversSync(fallback) // still get real banners via resolver even on DB error
     }
 
-    const mapped = (data || []).map(mapDbGameToGame)
+    const rows = data || []
+    if (rows.length === 0) {
+      console.warn(
+        '[data] Supabase games table is empty. Run: npm run seed:games (or npm run ingest:games with IGDB credentials).'
+      )
+      if (process.env.NODE_ENV === 'development') {
+        return enrichGamesWithCoversSync(mock.getAllGames())
+      }
+      return []
+    }
+
+    const mapped = rows.map(mapDbGameToGame)
     return enrichGamesWithCovers(mapped) // DB cover_url + game_media + public resolver
   }
   const mockGames = mock.getAllGames()
   return enrichGamesWithCoversSync(mockGames) // !USE_REAL: resolver supplies real public banners (no picsum)
+}
+
+export interface GetGamesPageParams {
+  page?: number
+  pageSize?: number
+  search?: string
+  genre?: string
+  sort?: 'name' | 'year'
+}
+
+/** Paginated games browse — use when catalog exceeds ~500 rows (real Supabase mode). */
+export async function getGamesPage(params: GetGamesPageParams = {}): Promise<GamesPageResult> {
+  const page = Math.max(1, params.page ?? 1)
+  const pageSize = Math.min(100, Math.max(1, params.pageSize ?? 48))
+  const search = params.search?.trim() ?? ''
+  const genre = params.genre?.trim() ?? ''
+  const sort = params.sort ?? 'name'
+
+  if (!USE_REAL || !isSupabaseConfigured()) {
+    let games = mock.getAllGames()
+    if (search) {
+      const q = search.toLowerCase()
+      games = games.filter(
+        (g) =>
+          g.name.toLowerCase().includes(q) ||
+          g.developer.toLowerCase().includes(q) ||
+          g.slug.includes(q)
+      )
+    }
+    if (genre) games = games.filter((g) => g.genres.includes(genre))
+    if (sort === 'name') games.sort((a, b) => a.name.localeCompare(b.name))
+    else if (sort === 'year') games.sort((a, b) => b.releaseYear - a.releaseYear)
+
+    const total = games.length
+    const start = (page - 1) * pageSize
+    const slice = games.slice(start, start + pageSize)
+    return {
+      games: enrichGamesWithCoversSync(slice),
+      total,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    }
+  }
+
+  const { createClient } = await import('@/lib/supabase/client')
+  const supabase = createClient()
+
+  let query = supabase.from('games').select('*', { count: 'exact' })
+
+  if (search) query = query.ilike('name', `%${search}%`)
+  if (genre) query = query.contains('genres', [genre])
+
+  if (sort === 'name') query = query.order('name', { ascending: true })
+  else if (sort === 'year') query = query.order('release_year', { ascending: false, nullsFirst: false })
+  else query = query.order('name', { ascending: true })
+
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+  const { data, error, count } = await query.range(from, to)
+
+  if (error) {
+    console.error('[data] getGamesPage error:', error)
+    return { games: [], total: 0, page, pageSize, totalPages: 1 }
+  }
+
+  const total = count ?? 0
+  const mapped = (data || []).map(mapDbGameToGame)
+  const enriched = await enrichGamesWithCovers(mapped)
+
+  return {
+    games: enriched,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  }
+}
+
+/** Debounced game search for submit picker (real mode scales to 10k+). */
+export async function searchGames(query: string, limit = 25): Promise<Game[]> {
+  const q = query.trim()
+  if (!q) {
+    if (USE_REAL && isSupabaseConfigured()) {
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('games')
+        .select('*')
+        .order('name', { ascending: true })
+        .limit(limit)
+      if (data?.length) return enrichGamesWithCovers(data.map(mapDbGameToGame))
+    }
+    const all = mock.getAllGames().slice(0, limit)
+    return enrichGamesWithCoversSync(all)
+  }
+
+  if (USE_REAL && isSupabaseConfigured()) {
+    const { createClient } = await import('@/lib/supabase/client')
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('games')
+      .select('*')
+      .ilike('name', `%${q}%`)
+      .order('name', { ascending: true })
+      .limit(limit)
+
+    if (error) {
+      console.error('[data] searchGames error:', error)
+      return []
+    }
+    return enrichGamesWithCovers((data || []).map(mapDbGameToGame))
+  }
+
+  const lower = q.toLowerCase()
+  const filtered = mock
+    .getAllGames()
+    .filter(
+      (g) =>
+        g.name.toLowerCase().includes(lower) ||
+        g.slug.includes(lower) ||
+        g.developer.toLowerCase().includes(lower)
+    )
+    .slice(0, limit)
+  return enrichGamesWithCoversSync(filtered)
 }
 
 // Keep synchronous version for components that haven't migrated yet (will be removed)
@@ -392,7 +537,7 @@ export async function getReportsForGameAsync(
       }
 
       // Ensure consistent newest-first order after client filtering
-      reports.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      reports.sort((a: Report, b: Report) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
       return reports
     } catch (err: any) {
@@ -650,6 +795,8 @@ export async function addUserReport(
       driverVersion: (report as any).driverVersion,
       ramSpeed: (report as any).ramSpeed,
       customSettingsNotes: (report as any).customSettingsNotes,
+      kernel: (report as any).kernel,
+      distro: (report as any).distro,
     }
     return submitReportAction(normalized)
   }
@@ -727,7 +874,7 @@ export async function loadMyRigAsync(): Promise<UserPC | null> {
         // Preferred: user_rigs table (current saved hardware for compatibility checker)
         const { data: rigRow, error: rigErr } = await supabase
           .from('user_rigs')
-          .select('cpu, gpu, ram, resolution')
+          .select('cpu, gpu, ram, resolution, driver_version, kernel, distro')
           .eq('user_id', user.id)
           .maybeSingle()
 
@@ -737,7 +884,10 @@ export async function loadMyRigAsync(): Promise<UserPC | null> {
             gpu: rigRow.gpu,
             ram: rigRow.ram,
             resolution: rigRow.resolution || undefined,
-          }
+            driverVersion: rigRow.driver_version || undefined,
+            kernel: rigRow.kernel || undefined,
+            distro: rigRow.distro || undefined,
+          } as UserPC
         }
 
         // Fallback: profiles table (main_* fields, kept in sync with ProfileRigEditor)
@@ -788,6 +938,9 @@ export async function saveMyRigAsync(rig: UserPC): Promise<void> {
             gpu: rig.gpu,
             ram: rig.ram,
             resolution: rig.resolution || null,
+            driver_version: (rig as any).driverVersion || null,
+            kernel: (rig as any).kernel || null,
+            distro: (rig as any).distro || null,
           }, { onConflict: 'user_id' })
 
         if (rigErr) {
@@ -849,6 +1002,119 @@ export async function clearMyRigAsync(): Promise<void> {
     }
   }
   mock.clearMyRig()
+}
+
+// ============================================
+// PHASE 2: Multi-Device ("My Devices") support
+// These functions enable ProtonDB-style multiple named rigs per user.
+// loadUserDevices / saveUserDevice are additive and do not break existing loadMyRigAsync.
+// For backward compat, loadMyRigAsync continues to return the primary (or most recent) rig.
+// ============================================
+
+export interface UserDeviceInput {
+  label: string;
+  cpu: string;
+  gpu: string;
+  ram: number;
+  resolution?: string;
+  isPrimary?: boolean;
+  driverVersion?: string;
+  kernel?: string;
+  distro?: string;
+}
+
+export async function loadUserDevices(): Promise<import('./types').UserDevice[]> {
+  if (USE_REAL) {
+    try {
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+
+      if (user?.id) {
+        const { data, error } = await supabase
+          .from('user_rigs')
+          .select('id, label, cpu, gpu, ram, resolution, driver_version, kernel, distro, is_primary, updated_at')
+          .eq('user_id', user.id)
+          .order('is_primary', { ascending: false })
+          .order('updated_at', { ascending: false })
+
+        if (!error && data) {
+          return data.map((row: any) => ({
+            id: row.id,
+            label: row.label || 'Unnamed Rig',
+            cpu: row.cpu,
+            gpu: row.gpu,
+            ram: row.ram,
+            resolution: row.resolution || undefined,
+            isPrimary: row.is_primary || false,
+            driverVersion: row.driver_version || undefined,
+            kernel: row.kernel || undefined,
+            distro: row.distro || undefined,
+            updatedAt: row.updated_at,
+          }))
+        }
+      }
+    } catch (err) {
+      console.warn('[data] loadUserDevices error, falling back to empty list', err)
+    }
+  }
+  // Mock path: return a couple of example devices for demo
+  return mock.loadUserDevices?.() || []
+}
+
+export async function saveUserDevice(device: UserDeviceInput & { id?: string }): Promise<void> {
+  if (USE_REAL) {
+    try {
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user?.id) {
+        console.warn('[data] saveUserDevice: no authenticated user')
+        return
+      }
+
+      const payload: any = {
+        user_id: user.id,
+        label: device.label || 'My Rig',
+        cpu: device.cpu,
+        gpu: device.gpu,
+        ram: device.ram,
+        resolution: device.resolution || null,
+        driver_version: device.driverVersion || null,
+        kernel: device.kernel || null,
+        distro: device.distro || null,
+        is_primary: device.isPrimary || false,
+      }
+
+      if (device.id) {
+        const { error } = await supabase.from('user_rigs').update(payload).eq('id', device.id)
+        if (error) console.warn('[data] saveUserDevice update failed', error.message)
+      } else {
+        const { error } = await supabase.from('user_rigs').insert(payload)
+        if (error) console.warn('[data] saveUserDevice insert failed', error.message)
+      }
+      return
+    } catch (err) {
+      console.warn('[data] saveUserDevice Supabase error', err)
+    }
+  }
+  // Mock fallback (if mock supports it)
+  mock.saveUserDevice?.(device as any)
+}
+
+export async function deleteUserDevice(id: string): Promise<void> {
+  if (USE_REAL) {
+    try {
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
+      const { error } = await supabase.from('user_rigs').delete().eq('id', id)
+      if (error) console.warn('[data] deleteUserDevice failed', error.message)
+      return
+    } catch (err) {
+      console.warn('[data] deleteUserDevice error', err)
+    }
+  }
+  mock.deleteUserDevice?.(id)
 }
 
 // ============================================
@@ -1075,8 +1341,8 @@ export function useGame(slug: string) {
 // - game-cover-resolver: High-quality banners (uses ID resolver for unknowns, heavy cache, rate limits)
 // Single source for demo seeds + runtime enrichment. Attribution always stored.
 //
-// Client code importing from here gets the safe wrappers (Server Action delegation on browser).
-// Server / seed scripts can import the raw ones from game-id-resolver directly when needed.
+// Client code importing from here gets sync-safe wrappers in the browser (no Server Actions).
+// Server / seed scripts can import the raw async ones from game-id-resolver when network fallbacks are needed.
 export {
   resolveCoverForGameClientSafe as resolveCoverForGame,
   resolveGameExternalIdsClientSafe as resolveGameExternalIds,
@@ -1089,6 +1355,7 @@ export {
   enrichGameWithExternalIds,
   clearResolverCache,
   getResolverStats,
+  resolveGameExternalIdsSync,
   ATTRIBUTIONS,
   type ExternalIdResolution,
 } from './game-id-resolver'
@@ -1194,21 +1461,4 @@ export async function getHardwareCatalogEntry(canonical: string) {
   return getHardwareEntry(canonical)
 }
 
-// Server-safe version for Server Actions (no client supabase)
-export async function getHardwareCatalogServer() {
-  if (USE_REAL) {
-    try {
-      const { createClient } = await import('@/lib/supabase/server')
-      const supabase = await createClient()
-
-      const { data } = await supabase
-        .from('hardware_catalog')
-        .select('*')
-        .order('perf_index', { ascending: false })
-
-      if (data?.length) return data
-    } catch {}
-  }
-  const { getAllHardwareCatalog } = await import('./hardware-catalog')
-  return getAllHardwareCatalog()
-}
+// Server-only hardware catalog: import from '@/lib/data-server' in Server Actions / RSC.

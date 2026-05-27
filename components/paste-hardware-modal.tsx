@@ -16,6 +16,7 @@ import { showUserSuccess, showUserError } from '@/lib/toast';
 import { sanitizeFullName } from '@/lib/sanitize';
 import { ClipboardCopy } from 'lucide-react';
 import type { DetectedHardware } from '@/lib/types';
+import { parsePaste } from '@/lib/hardware-detector';
 
 interface PasteHardwareModalProps {
   open: boolean;
@@ -32,19 +33,20 @@ export function PasteHardwareModal({ open, onOpenChange, onApply }: PasteHardwar
   const EXAMPLES: Record<string, { cmd: string; hint: string }> = {
     windows: {
       cmd: `dxdiag /t %TEMP%\\rundb_dxdiag.txt && type %TEMP%\\rundb_dxdiag.txt`,
-      hint: 'Run in Command Prompt or PowerShell. Copy the entire output.',
+      hint: 'Best Windows accuracy. Run in Command Prompt or PowerShell, then paste the full file content.',
     },
     linux: {
-      cmd: `lspci -v | grep -iE 'vga|3d|display'; lscpu | grep -i 'model name'; free -h | grep Mem; xrandr | grep current`,
-      hint: 'Run in terminal. Paste relevant sections.',
+      // ProtonDB gold standard: inxi gives driver, kernel, distro + clean CPU/GPU strings.
+      cmd: `inxi -Fxxxz`,
+      hint: 'Highest-signal Linux path (like ProtonDB). Install inxi if missing (apt/dnf/pacman install inxi). For even more: inxi -Fxxxz && vulkaninfo --summary',
     },
     macos: {
       cmd: `system_profiler SPHardwareDataType SPDisplaysDataType`,
       hint: 'Run in Terminal. Look for Chip, Model, Resolution.',
     },
     steam: {
-      cmd: `Steam → Help → System Information (copy GPU/CPU/RAM sections)`,
-      hint: 'In Steam: Help → System Information. Paste Processor + Video sections.',
+      cmd: `Steam → Help → System Information (right-click → Copy all text)`,
+      hint: 'Strong cross-platform baseline. Paste the full block (Processor + Video Card sections are most useful).',
     },
   };
 
@@ -58,66 +60,6 @@ export function PasteHardwareModal({ open, onOpenChange, onApply }: PasteHardwar
     }
   };
 
-  const parsePaste = (text: string): DetectedHardware => {
-    const raw: any = { sourceTextSample: text.slice(0, 280) };
-    let cpu: string | undefined;
-    let gpu: string | undefined;
-    let ram: number | undefined;
-    let resolution: string | undefined;
-    let confidence = 0.55;
-    const limitations: string[] = ['Parsed from pasted text — please review'];
-
-    // dxdiag / common Windows
-    const procMatch = text.match(/Processor:\s*(.+?)(?:\n|Memory|Display|$)/i);
-    if (procMatch?.[1]) {
-      cpu = sanitizeFullName(procMatch[1].replace(/\(.*\)/g, '').trim());
-      confidence = Math.max(confidence, 0.88);
-    }
-
-    const gpuMatch = text.match(/(?:Card name|Name|Video Card|Chipset Model):\s*(.+?)(?:\n|$)/i);
-    if (gpuMatch?.[1]) {
-      gpu = sanitizeFullName(gpuMatch[1]);
-      confidence = Math.max(confidence, 0.9);
-    }
-
-    const ramMatch = text.match(/(?:Memory:\s*|Installed RAM:\s*)(\d+)\s*(MB|GB)/i);
-    if (ramMatch) {
-      let val = parseInt(ramMatch[1], 10);
-      if (ramMatch[2].toUpperCase() === 'MB') val = Math.round(val / 1024);
-      if (val >= 4 && val <= 128) ram = val;
-    }
-
-    const resMatch = text.match(/(?:Current Resolution|Resolution):\s*(\d+x\d+)/i);
-    if (resMatch?.[1]) resolution = resMatch[1];
-
-    // Linux / macOS fallbacks
-    if (!cpu) {
-      const cpuL = text.match(/model name\s*:\s*(.+)/i) || text.match(/Chip:\s*(.+)/i);
-      if (cpuL) cpu = sanitizeFullName(cpuL[1]);
-    }
-    if (!gpu) {
-      const vga = text.match(/VGA compatible.*?:\s*(.+?)(?:\n|$)/i);
-      if (vga) gpu = sanitizeFullName(vga[1]);
-    }
-
-    if (!cpu && !gpu) {
-      limitations.push('Limited info found — try selecting more of the output');
-      confidence = 0.35;
-    }
-
-    return {
-      cpu,
-      gpu,
-      ram,
-      resolution,
-      raw,
-      method: 'paste',
-      confidence: Math.min(0.96, Math.max(0.3, confidence)),
-      timestamp: new Date().toISOString(),
-      limitations,
-    };
-  };
-
   const handleParse = () => {
     if (!pasteText.trim()) {
       showUserError('Paste some output first.');
@@ -126,6 +68,7 @@ export function PasteHardwareModal({ open, onOpenChange, onApply }: PasteHardwar
     setIsParsing(true);
     setTimeout(() => {
       try {
+        // Use the robust multi-format parser from hardware-detector (includes strong inxi support)
         const result = parsePaste(pasteText);
         setParsed(result);
         showUserSuccess('Parsed', `Confidence ${Math.round(result.confidence * 100)}%`);
@@ -160,7 +103,7 @@ export function PasteHardwareModal({ open, onOpenChange, onApply }: PasteHardwar
         <DialogHeader>
           <DialogTitle>Paste Hardware Output (Most Accurate)</DialogTitle>
           <DialogDescription>
-            Run a native command or Steam System Information. Parsed locally in your browser.
+            Run a native command (inxi recommended on Linux — the same approach ProtonDB uses for high-precision reports). Parsed 100% locally in your browser.
           </DialogDescription>
         </DialogHeader>
 
@@ -192,7 +135,7 @@ export function PasteHardwareModal({ open, onOpenChange, onApply }: PasteHardwar
             <Textarea
               value={pasteText}
               onChange={(e) => setPasteText(e.target.value)}
-              placeholder="Paste dxdiag, lspci, system_profiler, or Steam System Information output..."
+              placeholder="Paste inxi -Fxxxz (Linux), dxdiag /t (Windows), Steam System Information, or system_profiler (macOS)..."
               className="h-40 font-mono text-sm"
             />
           </div>
@@ -218,8 +161,11 @@ export function PasteHardwareModal({ open, onOpenChange, onApply }: PasteHardwar
           )}
         </div>
 
-        <div className="text-[11px] text-muted-foreground pt-2 border-t">
-          Parsed 100% in your browser. Nothing is sent until you Save your rig.
+        <div className="text-[11px] text-muted-foreground pt-2 border-t space-y-1">
+          <div>Parsed 100% in your browser. Nothing is sent until you Save.</div>
+          <div className="text-[10px] opacity-80">
+            Linux tip: <code className="font-mono">inxi -Fxxxz</code> gives the same high-precision data ProtonDB uses (driver, kernel, distro).
+          </div>
         </div>
       </DialogContent>
     </Dialog>

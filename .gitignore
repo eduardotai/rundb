@@ -24,6 +24,9 @@
 .DS_Store
 *.pem
 
+# large generated seed files
+/seeds/protondb-top-10k.json
+
 # debug
 npm-debug.log*
 yarn-debug.log*
@@ -39,3 +42,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# cursor / editor
+.cursor/
+
+# turbo
+.turbo

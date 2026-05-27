@@ -50,7 +50,7 @@ import {
 // ============================================
 // REAL BANNERS (Agent 1 / PR 1): All 18 coverImage values modernized from picsum.photos
 // to distinct official high-quality public CDN art (no duplicates).
-// Sources: Steam library_600x900.jpg (vertical covers) + IGDB t_cover_big.
+// Sources: Steam library_600x900_2x.jpg (vertical covers) + IGDB t_cover_big.
 // See public-game-covers.json (root) for the reusable machine-readable map + full
 // attributions/Steam AppIDs/IGDB hashes for Agents 2/4/5 + future resolver/ingest.
 // These domains are whitelisted in next.config.ts. Hotlink for demo only; prefer
@@ -62,7 +62,7 @@ export const GAMES: Game[] = [
     id: 'g1',
     slug: 'cyberpunk-2077',
     name: 'Cyberpunk 2077',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1091500/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1091500/library_600x900_2x.jpg',
     genres: ['Action', 'RPG', 'Open World'],
     releaseYear: 2020,
     developer: 'CD Projekt RED',
@@ -74,7 +74,7 @@ export const GAMES: Game[] = [
     id: 'g2',
     slug: 'elden-ring',
     name: 'Elden Ring',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1245620/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1245620/library_600x900_2x.jpg',
     genres: ['Action', 'RPG'],
     releaseYear: 2022,
     developer: 'FromSoftware',
@@ -86,7 +86,7 @@ export const GAMES: Game[] = [
     id: 'g3',
     slug: 'black-myth-wukong',
     name: 'Black Myth: Wukong',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2358720/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2358720/library_600x900_2x.jpg',
     genres: ['Action', 'Adventure'],
     releaseYear: 2024,
     developer: 'Game Science',
@@ -98,7 +98,7 @@ export const GAMES: Game[] = [
     id: 'g4',
     slug: 'starfield',
     name: 'Starfield',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1716740/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1716740/library_600x900_2x.jpg',
     genres: ['RPG', 'Sci-Fi', 'Open World'],
     releaseYear: 2023,
     developer: 'Bethesda Game Studios',
@@ -109,7 +109,7 @@ export const GAMES: Game[] = [
     id: 'g5',
     slug: 'baldurs-gate-3',
     name: "Baldur's Gate 3",
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1086940/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1086940/library_600x900_2x.jpg',
     genres: ['RPG', 'Strategy'],
     releaseYear: 2023,
     developer: 'Larian Studios',
@@ -121,7 +121,7 @@ export const GAMES: Game[] = [
     id: 'g6',
     slug: 'helldivers-2',
     name: 'Helldivers 2',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/553850/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/553850/library_600x900_2x.jpg',
     genres: ['Action', 'Shooter', 'Co-op'],
     releaseYear: 2024,
     developer: 'Arrowhead Game Studios',
@@ -144,7 +144,7 @@ export const GAMES: Game[] = [
     id: 'g8',
     slug: 'hogwarts-legacy',
     name: 'Hogwarts Legacy',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/990080/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/990080/library_600x900_2x.jpg',
     genres: ['Action', 'RPG', 'Open World'],
     releaseYear: 2023,
     developer: 'Avalanche Software',
@@ -156,7 +156,7 @@ export const GAMES: Game[] = [
     id: 'g9',
     slug: 'the-witcher-3',
     name: 'The Witcher 3: Wild Hunt',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/292030/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/292030/library_600x900_2x.jpg',
     genres: ['Action', 'RPG', 'Open World'],
     releaseYear: 2015,
     developer: 'CD Projekt RED',
@@ -168,7 +168,7 @@ export const GAMES: Game[] = [
     id: 'g10',
     slug: 'counter-strike-2',
     name: 'Counter-Strike 2',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/730/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/730/library_600x900_2x.jpg',
     genres: ['FPS', 'Competitive'],
     releaseYear: 2023,
     developer: 'Valve',
@@ -199,7 +199,7 @@ export const GAMES: Game[] = [
     id: 'g13',
     slug: 'dragon-age-veilguard',
     name: 'Dragon Age: The Veilguard',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1845910/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1845910/library_600x900_2x.jpg',
     genres: ['RPG', 'Action'],
     releaseYear: 2024,
     developer: 'BioWare',
@@ -210,7 +210,7 @@ export const GAMES: Game[] = [
     id: 'g14',
     slug: 'monster-hunter-wilds',
     name: 'Monster Hunter Wilds',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2246340/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2246340/library_600x900_2x.jpg',
     genres: ['Action', 'Hunting'],
     releaseYear: 2025,
     developer: 'Capcom',
@@ -220,7 +220,7 @@ export const GAMES: Game[] = [
     id: 'g15',
     slug: 'palworld',
     name: 'Palworld',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1623730/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1623730/library_600x900_2x.jpg',
     genres: ['Action', 'Survival', 'Open World'],
     releaseYear: 2024,
     developer: 'Pocketpair',
@@ -240,7 +240,7 @@ export const GAMES: Game[] = [
     id: 'g17',
     slug: 'warhammer-darktide',
     name: 'Warhammer 40,000: Darktide',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1361210/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1361210/library_600x900_2x.jpg',
     genres: ['Action', 'Shooter', 'Co-op'],
     releaseYear: 2022,
     developer: 'Fatshark',
@@ -250,7 +250,7 @@ export const GAMES: Game[] = [
     id: 'g18',
     slug: 'factorio',
     name: 'Factorio',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/427520/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/427520/library_600x900_2x.jpg',
     genres: ['Strategy', 'Simulation'],
     releaseYear: 2020,
     developer: 'Wube Software',
@@ -264,7 +264,7 @@ export const GAMES: Game[] = [
     id: 'g19',
     slug: 'red-dead-redemption-2',
     name: 'Red Dead Redemption 2',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1174180/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1174180/library_600x900_2x.jpg',
     genres: ['Action', 'Adventure', 'Open World'],
     releaseYear: 2019,
     developer: 'Rockstar Games',
@@ -274,7 +274,7 @@ export const GAMES: Game[] = [
     id: 'g20',
     slug: 'grand-theft-auto-v',
     name: 'Grand Theft Auto V',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/271590/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/271590/library_600x900_2x.jpg',
     genres: ['Action', 'Adventure', 'Open World'],
     releaseYear: 2015,
     developer: 'Rockstar North',
@@ -284,7 +284,7 @@ export const GAMES: Game[] = [
     id: 'g21',
     slug: 'god-of-war',
     name: 'God of War',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1593500/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1593500/library_600x900_2x.jpg',
     genres: ['Action', 'Adventure'],
     releaseYear: 2022,
     developer: 'Santa Monica Studio',
@@ -294,7 +294,7 @@ export const GAMES: Game[] = [
     id: 'g22',
     slug: 'marvels-spider-man-remastered',
     name: "Marvel's Spider-Man Remastered",
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1817190/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1817190/library_600x900_2x.jpg',
     genres: ['Action', 'Adventure'],
     releaseYear: 2022,
     developer: 'Insomniac Games',
@@ -304,7 +304,7 @@ export const GAMES: Game[] = [
     id: 'g23',
     slug: 'horizon-forbidden-west',
     name: 'Horizon Forbidden West',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1656320/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1656320/library_600x900_2x.jpg',
     genres: ['Action', 'RPG', 'Open World'],
     releaseYear: 2024,
     developer: 'Guerrilla Games',
@@ -314,7 +314,7 @@ export const GAMES: Game[] = [
     id: 'g24',
     slug: 'star-wars-jedi-survivor',
     name: 'Star Wars Jedi: Survivor',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1774580/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1774580/library_600x900_2x.jpg',
     genres: ['Action', 'Adventure'],
     releaseYear: 2023,
     developer: 'Respawn Entertainment',
@@ -324,7 +324,7 @@ export const GAMES: Game[] = [
     id: 'g25',
     slug: 'resident-evil-4-remake',
     name: 'Resident Evil 4',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2050650/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2050650/library_600x900_2x.jpg',
     genres: ['Action', 'Horror', 'Survival'],
     releaseYear: 2023,
     developer: 'Capcom',
@@ -334,7 +334,7 @@ export const GAMES: Game[] = [
     id: 'g26',
     slug: 'diablo-iv',
     name: 'Diablo IV',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2344520/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2344520/library_600x900_2x.jpg',
     genres: ['Action', 'RPG'],
     releaseYear: 2023,
     developer: 'Blizzard Entertainment',
@@ -344,7 +344,7 @@ export const GAMES: Game[] = [
     id: 'g27',
     slug: 'forza-horizon-5',
     name: 'Forza Horizon 5',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1551360/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1551360/library_600x900_2x.jpg',
     genres: ['Racing', 'Open World'],
     releaseYear: 2021,
     developer: 'Playground Games',
@@ -354,7 +354,7 @@ export const GAMES: Game[] = [
     id: 'g28',
     slug: 'control',
     name: 'Control',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/870780/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/870780/library_600x900_2x.jpg',
     genres: ['Action', 'Adventure'],
     releaseYear: 2019,
     developer: 'Remedy Entertainment',
@@ -364,7 +364,7 @@ export const GAMES: Game[] = [
     id: 'g29',
     slug: 'death-stranding',
     name: 'Death Stranding',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1190460/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1190460/library_600x900_2x.jpg',
     genres: ['Action', 'Adventure'],
     releaseYear: 2020,
     developer: 'Kojima Productions',
@@ -374,7 +374,7 @@ export const GAMES: Game[] = [
     id: 'g30',
     slug: 'doom-eternal',
     name: 'DOOM Eternal',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/782330/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/782330/library_600x900_2x.jpg',
     genres: ['Action', 'Shooter'],
     releaseYear: 2020,
     developer: 'id Software',
@@ -384,7 +384,8 @@ export const GAMES: Game[] = [
     id: 'g31',
     slug: 'the-last-of-us-part-i',
     name: 'The Last of Us Part I',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1881540/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1888930/library_600x900_2x.jpg',
+    steamAppId: '1888930',
     genres: ['Action', 'Adventure'],
     releaseYear: 2023,
     developer: 'Naughty Dog',
@@ -394,7 +395,8 @@ export const GAMES: Game[] = [
     id: 'g32',
     slug: 'assassins-creed-valhalla',
     name: "Assassin's Creed Valhalla",
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2457240/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2208920/library_600x900_2x.jpg',
+    steamAppId: '2208920',
     genres: ['Action', 'RPG', 'Open World'],
     releaseYear: 2020,
     developer: 'Ubisoft Montreal',
@@ -404,7 +406,7 @@ export const GAMES: Game[] = [
     id: 'g33',
     slug: 'apex-legends',
     name: 'Apex Legends',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1172470/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1172470/library_600x900_2x.jpg',
     genres: ['Action', 'Shooter', 'Battle Royale'],
     releaseYear: 2019,
     developer: 'Respawn Entertainment',
@@ -414,7 +416,7 @@ export const GAMES: Game[] = [
     id: 'g34',
     slug: 'destiny-2',
     name: 'Destiny 2',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1085660/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1085660/library_600x900_2x.jpg',
     genres: ['Action', 'Shooter', 'MMO'],
     releaseYear: 2017,
     developer: 'Bungie',
@@ -424,7 +426,7 @@ export const GAMES: Game[] = [
     id: 'g35',
     slug: 'warframe',
     name: 'Warframe',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/230410/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/230410/library_600x900_2x.jpg',
     genres: ['Action', 'Shooter'],
     releaseYear: 2013,
     developer: 'Digital Extremes',
@@ -434,7 +436,7 @@ export const GAMES: Game[] = [
     id: 'g36',
     slug: 'path-of-exile',
     name: 'Path of Exile',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/238960/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/238960/library_600x900_2x.jpg',
     genres: ['Action', 'RPG'],
     releaseYear: 2013,
     developer: 'Grinding Gear Games',
@@ -444,7 +446,7 @@ export const GAMES: Game[] = [
     id: 'g37',
     slug: 'last-epoch',
     name: 'Last Epoch',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/899770/library_600x900.jpg',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/899770/library_600x900_2x.jpg',
     genres: ['Action', 'RPG'],
     releaseYear: 2024,
     developer: 'Eleventh Hour Games',
@@ -595,6 +597,33 @@ export function saveMyRig(rig: UserPC) {
 export function clearMyRig() {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(LS_MY_RIG);
+}
+
+// Phase 2 mock multi-device support (demo only)
+export function loadUserDevices(): any[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem('rundb_user_devices');
+    return raw ? JSON.parse(raw) : [
+      { id: 'demo1', label: 'Desktop RTX 4080', cpu: 'AMD Ryzen 7 7800X3D', gpu: 'NVIDIA GeForce RTX 4080', ram: 32, resolution: '2560x1440', isPrimary: true },
+      { id: 'demo2', label: 'Laptop 4070', cpu: 'Intel Core i7-13700H', gpu: 'NVIDIA GeForce RTX 4070', ram: 16, resolution: '1920x1200', isPrimary: false },
+    ];
+  } catch { return []; }
+}
+
+export function saveUserDevice(device: any) {
+  if (typeof window === 'undefined') return;
+  const devices = loadUserDevices();
+  const idx = devices.findIndex(d => d.id === device.id);
+  if (idx >= 0) devices[idx] = { ...devices[idx], ...device };
+  else devices.push({ ...device, id: device.id || 'dev_' + Date.now() });
+  localStorage.setItem('rundb_user_devices', JSON.stringify(devices));
+}
+
+export function deleteUserDevice(id: string) {
+  if (typeof window === 'undefined') return;
+  const devices = loadUserDevices().filter(d => d.id !== id);
+  localStorage.setItem('rundb_user_devices', JSON.stringify(devices));
 }
 
 // ============================================
@@ -1078,7 +1107,7 @@ export function bulkImportGames(rows: any[]): BulkImportResult {
         id: 'imp-' + Date.now().toString(36) + '-' + index,
         slug,
         name,
-        coverImage: row.coverImage || row.cover_url || 'https://cdn.cloudflare.steamstatic.com/steam/apps/730/library_600x900.jpg',
+        coverImage: row.coverImage || row.cover_url || 'https://cdn.cloudflare.steamstatic.com/steam/apps/730/library_600x900_2x.jpg',
         coverAttribution: row.coverAttribution || row.cover_attribution || row.attribution,
         genres: Array.isArray(row.genres) ? row.genres : String(row.genres || 'Action').split(',').map((s: string) => s.trim()),
         releaseYear: Number(row.releaseYear || row.year || 2024),
