@@ -12,7 +12,10 @@ function normalizeTitle(value: string): string {
 }
 
 function titleTokens(value: string): string[] {
-  return normalizeTitle(value).split(' ').filter(Boolean)
+  return normalizeTitle(value)
+    .split(' ')
+    .filter(Boolean)
+    .map((token) => (isVersionToken(token) ? canonicalVersionToken(token) : token))
 }
 
 function isVersionToken(token: string): boolean {
