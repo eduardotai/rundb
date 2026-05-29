@@ -184,10 +184,21 @@ export async function ingestGame(
       catalogCover?.url ??
       (steamAppId ? steamLibraryCoverUrl(steamAppId) : null)
 
+    let existingGame: { id: string; cover_url: string | null } | null = null
+    if (!dryRun) {
+      const { data, error } = await client
+        .from('games')
+        .select('id, cover_url')
+        .eq('slug', seed.slug)
+        .maybeSingle()
+      if (error) return { ok: false, error: `Find game: ${error.message}` }
+      existingGame = data as { id: string; cover_url: string | null } | null
+    }
+
     const gameRow: Record<string, unknown> = {
       slug: seed.slug,
       name: igdbMatches ? igdbGame.name : seed.name,
-      cover_url: skeletonCover,
+      cover_url: existingGame?.cover_url ?? skeletonCover,
       steam_app_id: steamAppId ?? catalogCover?.steamAppId ?? null,
     }
 
@@ -318,16 +329,30 @@ export async function ingestGame(
         mediaCount++
 
         if (mediaType === 'cover') {
-          await client
+          const { error: deleteCoverErr } = await client
             .from('game_media')
             .delete()
             .eq('game_id', gameId)
             .eq('media_type', 'cover')
             .neq('id', (insertedMedia as { id: string }).id)
+          if (deleteCoverErr) return { ok: false, error: `Dedupe cover: ${deleteCoverErr.message}` }
+        } else if (mediaType === 'screenshot') {
+          const { error: deleteScreenshotErr } = await client
+            .from('game_media')
+            .delete()
+            .eq('game_id', gameId)
+            .eq('media_type', 'screenshot')
+            .eq('sort_order', m.sort)
+            .neq('id', (insertedMedia as { id: string }).id)
+          if (deleteScreenshotErr) return { ok: false, error: `Dedupe screenshot: ${deleteScreenshotErr.message}` }
         }
       } else if (dryRun) {
         mediaCount++
       }
+    }
+
+    if (mediaToProcess.length > 0 && mediaCount === 0) {
+      return { ok: false, gameId: gameId ?? undefined, error: 'No media uploaded' }
     }
 
     if (uploadedCoverForGame && !dryRun && gameId) {
@@ -339,10 +364,11 @@ export async function ingestGame(
         coverUpdate.ingest_status = 'enriched'
       }
 
-      await client
+      const { error: coverUpdateErr } = await client
         .from('games')
         .update(coverUpdate)
         .eq('id', gameId)
+      if (coverUpdateErr) return { ok: false, error: `Update cover: ${coverUpdateErr.message}` }
     }
 
     return { ok: true, gameId: gameId ?? undefined, mediaUploaded: mediaCount }

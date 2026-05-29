@@ -6,6 +6,7 @@
     "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
+    "test": "tsx --test",
     "lint": "eslint",
     "ingest:games": "tsx scripts/ingest-games.ts",
     "build:seed": "tsx scripts/build-protondb-seed.ts",
