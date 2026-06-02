@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { showUserError, showUserSuccess } from '@/lib/toast';
 import { Eye, EyeOff, Loader2, CheckCircle2 } from 'lucide-react';
 import { sanitizeEmail, sanitizePassword, sanitizeFullName } from '@/lib/sanitize';
+import { getSafeAuthRedirectPath } from '@/lib/auth-redirect';
 
 // Brand icons for OAuth buttons (kept inline to avoid extra deps)
 function GoogleIcon({ className = "h-5 w-5" }: { className?: string }) {
@@ -87,7 +88,7 @@ function SignUpForm() {
 
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get('next') || '/';
+  const next = getSafeAuthRedirectPath(searchParams.get('next'));
 
   const supabase = createClient();
 
