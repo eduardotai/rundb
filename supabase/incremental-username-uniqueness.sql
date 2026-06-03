@@ -7,20 +7,14 @@
 --
 -- The main schema.sql already contains these definitions for fresh setups.
 
--- 1. Case-insensitive unique constraint on username.
---    (lower(username) expression; allows multiple NULLs for guests/pre-signup)
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint 
-    WHERE conrelid = 'public.profiles'::regclass 
-      AND conname = 'profiles_username_unique'
-  ) THEN
-    ALTER TABLE public.profiles
-      ADD CONSTRAINT profiles_username_unique UNIQUE (lower(username));
-  END IF;
-END
-$$;
+-- 1. Case-insensitive unique index on username (the proper way to enforce
+--    uniqueness on an expression like lower(username) in Postgres).
+--    This prevents duplicate usernames (case-insensitive) at the DB level.
+--    Multiple NULLs are allowed (for guests etc.).
+DROP INDEX IF EXISTS profiles_username_unique;
+
+CREATE UNIQUE INDEX IF NOT EXISTS profiles_username_unique 
+  ON public.profiles (lower(username));
 
 -- 2. RPC for pre-registration check (SECURITY DEFINER so anon can call it safely).
 --    Returns true if the (trimmed) username is already used by someone else.
@@ -45,6 +39,7 @@ GRANT EXECUTE ON FUNCTION public.is_username_taken(text) TO anon, authenticated;
 -- Notes:
 -- - The public read policy for basic profile fields ("Public can view basic profile info for report authors")
 --   added in incremental-security-rls.sql provides a fallback for direct .from('profiles') queries.
--- - If you have existing duplicate usernames (different casing), the constraint creation will fail.
---   Deduplicate first (e.g. keep the oldest or most complete one) then retry.
+-- - If you have existing duplicate usernames (different casing), this CREATE UNIQUE INDEX will fail.
+--   Deduplicate first (e.g. UPDATE or DELETE rows so lower(username) values are unique) then retry.
 -- - After applying, test by trying to sign up with an existing email and an existing username.
+-- - This file + the matching block in schema.sql use the correct Postgres syntax (unique index on expression).

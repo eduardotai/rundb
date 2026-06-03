@@ -67,18 +67,11 @@ CREATE TABLE profiles (
 
 -- Usernames must be unique across accounts (case-insensitive; nulls for guests are fine).
 -- This prevents two users from registering the same display name at signup time.
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint 
-    WHERE conrelid = 'public.profiles'::regclass 
-      AND conname = 'profiles_username_unique'
-  ) THEN
-    ALTER TABLE public.profiles
-      ADD CONSTRAINT profiles_username_unique UNIQUE (lower(username));
-  END IF;
-END
-$$;
+-- Use a unique index on the expression (the supported way in Postgres for this).
+DROP INDEX IF EXISTS profiles_username_unique;
+
+CREATE UNIQUE INDEX IF NOT EXISTS profiles_username_unique 
+  ON public.profiles (lower(username));
 
 -- User Rigs (current saved hardware for compatibility checker)
 CREATE TABLE user_rigs (
