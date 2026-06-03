@@ -16,9 +16,28 @@
  */
 
 import { createClient } from '@/lib/supabase/server'
-import type { Report, SubmitReportInput, PerformanceTier, ReportStatus, GraphicsPreset } from '@/lib/types'
+import { getStaffAccess } from '@/lib/admin-access'
+import { createServiceClient } from '@/lib/supabase/service'
+import type { AdminReport, Report, SubmitReportInput, PerformanceTier, ReportStatus, GraphicsPreset } from '@/lib/types'
 import { normalizeSlug } from '@/lib/utils'
 import { normalizeHardwareSync } from '@/lib/normalize-hardware'
+
+const REPORT_STATUSES: ReportStatus[] = ['pending', 'approved', 'rejected', 'flagged']
+
+function assertReportStatus(status: ReportStatus): ReportStatus {
+  if (!REPORT_STATUSES.includes(status)) {
+    throw new Error('Invalid report status.')
+  }
+  return status
+}
+
+async function requireModerationAccess(): Promise<string> {
+  const access = await getStaffAccess()
+  if (!access.user || !access.canModerate) {
+    throw new Error('Access denied. Moderator or admin role required.')
+  }
+  return access.user.id
+}
 
 function calculatePerformanceTier(avgFps: number): PerformanceTier {
   if (avgFps >= 90) return 'Excellent'
@@ -202,42 +221,75 @@ export async function moderateReportAction(
   newStatus: ReportStatus,
   moderatorNotes?: string
 ): Promise<void> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const status = assertReportStatus(newStatus)
+  const moderatorId = await requireModerationAccess()
+  const supabase = createServiceClient()
 
-  if (!user) {
-    throw new Error('Authentication required for moderation.')
-  }
-
-  // Defense-in-depth: verify moderator/admin role
-  const { data: profile, error: profileErr } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (profileErr || !profile || !['moderator', 'admin'].includes(profile.role)) {
-    throw new Error('Access denied. Moderator or admin role required.')
-  }
-
-  const updatePayload: any = {
-    status: newStatus,
-    moderated_by: user.id,
+  const updatePayload: {
+    status: ReportStatus
+    moderated_by: string
+    moderated_at: string
+    moderator_notes?: string | null
+  } = {
+    status,
+    moderated_by: moderatorId,
     moderated_at: new Date().toISOString(),
   }
   if (moderatorNotes !== undefined) {
     updatePayload.moderator_notes = moderatorNotes.trim() || null
   }
 
-  const { error: updateErr } = await supabase
+  const { data: updated, error: updateErr } = await supabase
     .from('reports')
     .update(updatePayload)
     .eq('id', reportId)
+    .select('id')
+    .single()
 
-  if (updateErr) {
+  if (updateErr || !updated) {
     console.error('[moderateReportAction] update error', updateErr)
-    throw new Error(updateErr.message || 'Failed to update report status.')
+    throw new Error(updateErr?.message || 'Failed to update report status.')
   }
+}
+
+/**
+ * Fetch the real moderation queue for /admin.
+ * Uses service-role reads only after staff authorization, so pending/rejected rows
+ * are visible without exposing privileged records to arbitrary clients.
+ */
+export async function getModerationQueueAction(
+  filterStatus?: ReportStatus | 'all'
+): Promise<AdminReport[]> {
+  await requireModerationAccess()
+  const supabase = createServiceClient()
+
+  const statusFilter =
+    filterStatus && filterStatus !== 'all' ? assertReportStatus(filterStatus) : null
+
+  let query = supabase
+    .from('reports')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(200)
+
+  if (statusFilter) {
+    query = query.eq('status', statusFilter)
+  }
+
+  const { data, error } = await query
+
+  if (error) {
+    console.error('[getModerationQueueAction] select error', error)
+    throw new Error(error.message || 'Failed to load moderation queue.')
+  }
+
+  return (data || [])
+    .map((row) => mapDbReportToReport(row) as AdminReport)
+    .sort((a, b) => {
+      if (a.status === 'pending' && b.status !== 'pending') return -1
+      if (a.status !== 'pending' && b.status === 'pending') return 1
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    })
 }
 
 /**

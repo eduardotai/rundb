@@ -7,7 +7,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { ensureGameMediaBucket, optimizeAndUploadToGameMedia } from '@/lib/server/game-media'
 import { normalizeSlug } from '@/lib/utils'
 import { getCatalogCover } from '@/lib/game-cover-catalog'
-import { igdbTitleMatchesSeed } from '@/lib/igdb-game-match'
+import { igdbGameMatchesSeed } from '@/lib/igdb-game-match'
 import { steamLibraryCoverUrl } from '@/lib/cover-image-url'
 
 const RATE_LIMIT_MS = 300
@@ -171,7 +171,13 @@ export async function ingestGame(
     }
 
     const igdbGame = igdbGames[0]
-    const igdbMatches = igdbTitleMatchesSeed(seed.name, igdbGame.name || '')
+    const igdbMatches = igdbGameMatchesSeed(seed.name, igdbGame, steamAppId)
+    if (steamAppId && !igdbMatches) {
+      return {
+        ok: false,
+        error: `IGDB result did not match Steam AppID ${steamAppId} for "${seed.name}"`,
+      }
+    }
 
     const involved = igdbGame.involved_companies || []
     const devEntry = involved.find((c: any) => c.developer)
