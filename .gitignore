@@ -49,6 +49,9 @@ next-env.d.ts
 # turbo
 .turbo
 
+# superpowers visual brainstorming (local mockups, auto-generated)
+.superpowers/
+
 # AI / session context (temporary files from planning/implementation sessions)
 CONTEXT.md
 context/

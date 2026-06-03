@@ -23,7 +23,8 @@ import {
   resolveAbbreviation,
   findHardwareByQuery,
 } from './hardware-catalog';
-import { USE_REAL } from './data';
+
+const USE_REAL = process.env.NEXT_PUBLIC_USE_REAL_DATA === 'true';
 
 // Lazy import to avoid pulling localStorage code into server bundles unnecessarily
 async function safeLoadAliases(): Promise<Array<{ rawString: string; canonical: string }>> {
