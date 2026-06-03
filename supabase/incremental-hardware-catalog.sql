@@ -11,17 +11,24 @@
 --      npm run copy:sql:hardware     # <--- easiest! copies to clipboard automatically
 --      # or manually:
 --      Get-Content supabase\incremental-hardware-catalog.sql | Set-Clipboard
--- 2. Go to https://supabase.com/dashboard/project/YOUR_REF/sql/new
+-- 2. IMPORTANT: Use YOUR OWN Supabase project (not the demo ref in old messages).
+--    Go to your own Supabase project's SQL Editor:
+--      https://supabase.com/dashboard/project/YOUR_REF/sql/new
+--      (Replace YOUR_REF with the ref from your project's URL or Settings > API.
+--       Example: if your project URL is https://abc123xyz.supabase.co then use abc123xyz)
 -- 3. Paste (Ctrl+V). The first line must start with "-- Incremental" (a comment), NOT with ">" or "grokbuild@".
 --    If you see ">" or npm output at the top, you copied the wrong thing (terminal prompt).
 --    Delete everything and re-copy using the Get-Content command above.
 -- 4. Click "Run" (or Ctrl+Enter).
 -- 5. After it succeeds, come back here and run: npm run seed:hardware
 --
--- Alternative (easiest if you have the token):
+-- Alternative (easiest if you have the token for *your* project):
 --   npm run setup:supabase   (requires SUPABASE_ACCESS_TOKEN or DATABASE_URL in .env.local)
 --
 -- For brand new projects: you can also just run the full supabase/schema.sql instead.
+--
+-- NOTE: The old hardcoded project ref (gyldcsduuzoqqamyudni) was for the original demo.
+-- Always use the SQL Editor + keys from *your own* Supabase project that matches your .env.local.
 -- =============================================================================
 
 -- 1. Hardware catalog table (full v2-large definition)

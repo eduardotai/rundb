@@ -71,16 +71,17 @@ async function main() {
     console.log(`Done. Seeded ${done} hardware catalog entries.`);
   } catch (e: any) {
     console.error('Hardware seed failed:', e?.message || e);
-    console.log('\nTip: Make sure .env.local contains:');
-    console.log('  NEXT_PUBLIC_SUPABASE_URL=...');
-    console.log('  SUPABASE_SERVICE_ROLE_KEY=...  (the service_role key, NOT the anon key)');
-    console.log('\nAlso ensure the hardware_catalog table exists:');
-    console.log('  - Fresh DB: paste & run the full supabase/schema.sql in Supabase SQL Editor.');
-    console.log('  - Existing DB: paste supabase/incremental-hardware-catalog.sql (or run `npm run setup:supabase` if SUPABASE_ACCESS_TOKEN / DATABASE_URL is set).');
+    console.log('\nTip: Make sure .env.local contains YOUR Supabase project (create one at https://supabase.com if needed):');
+    console.log('  NEXT_PUBLIC_SUPABASE_URL=https://YOUR-REF.supabase.co');
+    console.log('  SUPABASE_SERVICE_ROLE_KEY=...  (go to your project Settings > API and copy the service_role key, NOT anon)');
+    console.log('\nAlso ensure the hardware_catalog table exists in YOUR project:');
+    console.log('  - Open your project'\''s SQL Editor: https://supabase.com/dashboard/project/YOUR-REF/sql/new');
+    console.log('  - Fresh DB: paste & run the full supabase/schema.sql');
+    console.log('  - Existing DB: paste supabase/incremental-hardware-catalog.sql (or run `npm run setup:supabase` if you have access token for *your* project)');
     console.log('');
     console.log('  On Windows/PowerShell, get CLEAN SQL (no > prompts):');
     console.log('    npm run copy:sql:hardware     # easiest - copies directly to clipboard');
-    console.log('  Then paste into Supabase SQL Editor. First line must be a -- comment.');
+    console.log('  Then paste into YOUR project'\''s SQL Editor. First line must be a -- comment.');
     console.log('  If it starts with ">" you accidentally included terminal output.');
     console.log('');
     console.log('Then try again: npm run seed:hardware');
