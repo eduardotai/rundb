@@ -100,6 +100,9 @@ export async function submitReportAction(input: SubmitReportInput): Promise<Repo
   }
 
   const avgFps = input.avgFps
+  if (typeof avgFps !== 'number' || !Number.isFinite(avgFps) || avgFps < 1 || avgFps > 600) {
+    throw new Error('Average FPS must be a number between 1 and 600.')
+  }
   const tier = calculatePerformanceTier(avgFps)
 
   // Hardware Catalog normalization (server-safe)

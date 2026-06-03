@@ -32,11 +32,11 @@ const formSchema = z.object({
     .min(3, 'GPU is required')
     .max(80, 'GPU name is too long')
     .transform((v) => sanitizeFullName(v)),
-  ram: z.coerce.number().min(4).max(128),
+  ram: z.coerce.number().min(4, 'RAM must be at least 4 GB').max(128, 'RAM must be at most 128 GB'),
   resolution: z.string().min(3).max(20),
   refreshRate: z.coerce.number().optional(),
   settingsPreset: z.enum(['Low', 'Medium', 'High', 'Ultra', 'Custom']),
-  avgFps: z.coerce.number().min(1).max(600),
+  avgFps: z.coerce.number().min(1, 'Average FPS must be at least 1').max(600, 'Average FPS must be at most 600'),
   fps1PercentLow: z.coerce.number().optional(),
   notes: z.string()
     .max(500, 'Notes are too long')
@@ -83,6 +83,7 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
       settingsPreset: 'High',
       avgFps: 60,
     },
+    mode: 'onTouched',
   });
 
   // Auto-load saved rig when dialog opens (Phase 1 polish)
@@ -116,11 +117,11 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
   const openPasteModal = () => setPasteModalOpen(true);
 
   const applyDetectedToForm = (detected: DetectedHardware) => {
-    if (detected.cpu) form.setValue('cpu', detected.cpu);
-    if (detected.gpu) form.setValue('gpu', detected.gpu);
-    if (detected.ram) form.setValue('ram', detected.ram);
-    if (detected.resolution) form.setValue('resolution', detected.resolution);
-    if (detected.driverVersion) form.setValue('driverVersion', detected.driverVersion);
+    if (detected.cpu) form.setValue('cpu', detected.cpu, { shouldValidate: true });
+    if (detected.gpu) form.setValue('gpu', detected.gpu, { shouldValidate: true });
+    if (detected.ram) form.setValue('ram', detected.ram, { shouldValidate: true });
+    if (detected.resolution) form.setValue('resolution', detected.resolution, { shouldValidate: true });
+    if (detected.driverVersion) form.setValue('driverVersion', detected.driverVersion, { shouldValidate: true });
 
     setDetectionState('applied');
     setDetectedRig(null);
@@ -136,10 +137,10 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
     try {
       const saved = await loadMyRigAsync();
       if (saved) {
-        if (saved.cpu) form.setValue('cpu', saved.cpu);
-        if (saved.gpu) form.setValue('gpu', saved.gpu);
-        if (saved.ram) form.setValue('ram', saved.ram);
-        if (saved.resolution) form.setValue('resolution', saved.resolution);
+        if (saved.cpu) form.setValue('cpu', saved.cpu, { shouldValidate: true });
+        if (saved.gpu) form.setValue('gpu', saved.gpu, { shouldValidate: true });
+        if (saved.ram) form.setValue('ram', saved.ram, { shouldValidate: true });
+        if (saved.resolution) form.setValue('resolution', saved.resolution, { shouldValidate: true });
         showUserSuccess('Loaded your saved rig');
       } else {
         showUserError('No saved rig found. Use Detect or fill manually.');
@@ -216,7 +217,7 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
                 </div>
                 <HardwareCombobox
                   value={form.watch('cpu')}
-                  onChange={(val) => form.setValue('cpu', val)}
+                  onChange={(val) => form.setValue('cpu', val, { shouldValidate: true })}
                   componentType="cpu"
                   placeholder="Search Ryzen 7 7800X3D, i5-13600K..."
                 />
@@ -236,7 +237,7 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
                 </div>
                 <HardwareCombobox
                   value={form.watch('gpu')}
-                  onChange={(val) => form.setValue('gpu', val)}
+                  onChange={(val) => form.setValue('gpu', val, { shouldValidate: true })}
                   componentType="gpu"
                   placeholder="Search RTX 4070 Ti, RX 7800 XT..."
                 />
@@ -283,10 +284,10 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
                   onChange={(e) => {
                     const dev = savedDevices.find(d => d.id === e.target.value);
                     if (dev) {
-                      form.setValue('cpu', dev.cpu);
-                      form.setValue('gpu', dev.gpu);
-                      form.setValue('ram', dev.ram);
-                      if (dev.resolution) form.setValue('resolution', dev.resolution);
+                      form.setValue('cpu', dev.cpu, { shouldValidate: true });
+                      form.setValue('gpu', dev.gpu, { shouldValidate: true });
+                      form.setValue('ram', dev.ram, { shouldValidate: true });
+                      if (dev.resolution) form.setValue('resolution', dev.resolution, { shouldValidate: true });
                     }
                   }}
                   defaultValue=""
@@ -306,6 +307,9 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
             <div>
               <Label htmlFor="ram">RAM (GB)</Label>
               <Input id="ram" type="number" {...form.register('ram')} />
+              {form.formState.errors.ram && (
+                <p className="mt-1 text-xs text-destructive">{form.formState.errors.ram.message}</p>
+              )}
             </div>
             <div>
               <Label>Resolution</Label>
@@ -399,7 +403,7 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
             <Button 
               type="submit" 
               className="bg-white text-black font-medium hover:bg-white/90"
-              disabled={isSubmitting}
+              disabled={isSubmitting || !form.formState.isValid}
             >
               {isSubmitting ? 'Submitting...' : 'Submit Report'}
             </Button>
@@ -418,11 +422,11 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
           onOpenChange={setPasteModalOpen}
           onApply={(r) => {
             // Apply directly into the form (also sets driverVersion when present)
-            if (r.cpu) form.setValue('cpu', r.cpu);
-            if (r.gpu) form.setValue('gpu', r.gpu);
-            if (r.ram) form.setValue('ram', r.ram);
-            if (r.resolution) form.setValue('resolution', r.resolution);
-            if (r.driverVersion) form.setValue('driverVersion', r.driverVersion);
+            if (r.cpu) form.setValue('cpu', r.cpu, { shouldValidate: true });
+            if (r.gpu) form.setValue('gpu', r.gpu, { shouldValidate: true });
+            if (r.ram) form.setValue('ram', r.ram, { shouldValidate: true });
+            if (r.resolution) form.setValue('resolution', r.resolution, { shouldValidate: true });
+            if (r.driverVersion) form.setValue('driverVersion', r.driverVersion, { shouldValidate: true });
             setPasteModalOpen(false);
           }}
         />
