@@ -51,13 +51,18 @@ export function HardwareCombobox({
   });
 
   const filtered = React.useMemo(() => {
+    // Always prefer the loaded list (live merged when real) for both no-search and search
+    // This makes admin bulk adds / DB overrides immediately visible and searchable.
+    const list = (allEntries as any[]).filter((e: any) => !componentType || e.componentType === componentType);
+
     if (!search.trim()) {
-      return allEntries
-        .filter((e: any) => !componentType || e.componentType === componentType)
+      return [...list]
         .sort((a: any, b: any) => (b.perfIndex || 0) - (a.perfIndex || 0))
-        .slice(0, 18);
+        .slice(0, 20);
     }
-    return findHardwareByQuery(search, 18).filter(
+
+    // Pass the live list to the improved find (supports scoring + optional entries)
+    return findHardwareByQuery(search, 20, list).filter(
       (e: any) => !componentType || e.componentType === componentType
     );
   }, [search, allEntries, componentType]);

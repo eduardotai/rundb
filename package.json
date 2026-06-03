@@ -13,7 +13,9 @@
     "ingest:worker": "tsx scripts/ingest-games-worker.ts",
     "seed:games": "tsx scripts/seed-games-mock.ts",
     "setup:supabase": "tsx scripts/setup-supabase-real.ts",
-    "reingest:covers": "tsx scripts/reingest-covers-all.ts"
+    "reingest:covers": "tsx scripts/reingest-covers-all.ts",
+    "verify:hardware": "tsx scripts/verify-hardware-catalog.ts",
+    "seed:hardware": "tsx scripts/seed-hardware-catalog.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

@@ -32,6 +32,13 @@ import type {
   GamesPageResult,
 } from './types'
 
+// Hardware catalog live mapper (for Phase 6+ large 2015+ DB-backed catalog)
+import {
+  dbRowToHardwareCatalogEntry,
+  mergeDbRowsIntoStatic,
+} from './hardware-catalog-mapper'
+import type { HardwareCatalogEntry } from './types'
+
 // React Query hooks (Phase 3 migration). useQuery only — no react state primitives needed here anymore.
 import { useQuery } from '@tanstack/react-query'
 
@@ -143,6 +150,47 @@ export async function getGameMedia(gameId: string): Promise<any[]> {
   }
 }
 
+/**
+ * Batched variant of getGameMedia: fetch media rows for many games in a single
+ * query (chunked to keep the `in(...)` list reasonable). Returns a Map keyed by
+ * game_id. This replaces the previous one-query-per-game pattern in
+ * enrichGamesWithCovers, which fired N parallel Supabase requests per grid and
+ * saturated the browser connection pool (the main site-wide lag source).
+ */
+export async function getGameMediaForGames(gameIds: string[]): Promise<Map<string, any[]>> {
+  const byGame = new Map<string, any[]>()
+  if (!USE_REAL || gameIds.length === 0) return byGame
+
+  try {
+    const { createClient } = await import('@/lib/supabase/client')
+    const supabase = createClient()
+
+    const CHUNK = 200
+    for (let i = 0; i < gameIds.length; i += CHUNK) {
+      const slice = gameIds.slice(i, i + CHUNK)
+      const { data, error } = await supabase
+        .from('game_media')
+        .select('*')
+        .in('game_id', slice)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true })
+
+      if (error) {
+        console.warn('[data] getGameMediaForGames Supabase error (skipping media enrichment):', error.message)
+        continue
+      }
+      for (const row of data || []) {
+        const arr = byGame.get(row.game_id)
+        if (arr) arr.push(row)
+        else byGame.set(row.game_id, [row])
+      }
+    }
+  } catch (err: any) {
+    console.warn('[data] getGameMediaForGames unexpected error:', err?.message || err)
+  }
+  return byGame
+}
+
 /** Sync variant (warns in real mode; for legacy compat only). */
 export function getGameMediaSync(gameId: string): any[] {
   if (USE_REAL) {
@@ -163,26 +211,36 @@ export async function enrichGamesWithCovers(games: Game[]): Promise<Game[]> {
 
   if (!USE_REAL) return base
 
-  return Promise.all(
-    base.map(async (g) => {
-      // Catalog covers are authoritative; skip ingested media for known slugs
-      if (getCatalogCover(g.slug) || !g.id) return g
-
-      try {
-        const media = await getGameMedia(g.id)
-        const coverRow = media.find((m: any) => m.media_type === 'cover' && m.url)
-        if (coverRow?.url) {
-          return {
-            ...g,
-            coverImage: upgradeCoverImageSrc(coverRow.url, g.steamAppId),
-            coverAttribution: coverRow.attribution || g.coverAttribution,
-          }
-        }
-      } catch {}
-
-      return g
-    })
+  // Sync enrichment already resolves the great majority of covers (static catalog,
+  // DB cover_url, and the Steam/IGDB resolver). Only games still left with a weak
+  // placeholder need the game_media table consulted — and we do that in ONE batched
+  // query rather than one request per game (previously an N+1 that hammered Supabase
+  // and stalled the whole UI on large grids).
+  const needsMedia = base.filter(
+    (g) =>
+      g.id &&
+      !getCatalogCover(g.slug) &&
+      (!g.coverImage || g.coverImage.includes('picsum.photos'))
   )
+
+  if (needsMedia.length === 0) return base
+
+  const mediaByGame = await getGameMediaForGames(needsMedia.map((g) => g.id))
+  if (mediaByGame.size === 0) return base
+
+  return base.map((g) => {
+    const rows = mediaByGame.get(g.id)
+    if (!rows?.length) return g
+    const coverRow = rows.find((m: any) => m.media_type === 'cover' && m.url)
+    if (coverRow?.url) {
+      return {
+        ...g,
+        coverImage: upgradeCoverImageSrc(coverRow.url, g.steamAppId),
+        coverAttribution: coverRow.attribution || g.coverAttribution,
+      }
+    }
+    return g
+  })
 }
 
 /**
@@ -415,6 +473,58 @@ export async function searchGames(query: string, limit = 25): Promise<Game[]> {
   return enrichGamesWithCoversSync(filtered)
 }
 
+/** Rank distinct genres by how many games carry them (most common first, then A–Z). */
+function rankGenres(all: string[], limit: number): string[] {
+  const counts = new Map<string, number>()
+  for (const raw of all) {
+    const name = (raw || '').trim()
+    if (!name) continue
+    counts.set(name, (counts.get(name) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([name]) => name)
+}
+
+/**
+ * Distinct genres actually present in the browsable catalog — drives the /games
+ * genre filter chips.
+ *
+ * The chips must reflect the genres games are really tagged with (IGDB names like
+ * "Role-playing (RPG)" / "Shooter" in real mode), not a hardcoded wishlist. A
+ * static label such as "FPS" that no row carries silently filters to zero results.
+ * Real mode samples the genres column and aggregates distinct values client-side
+ * (cheap: only the array column is transferred, and the handful of distinct genres
+ * saturate well within the sample). Falls back to mock genres when not in real
+ * mode or on error. Ordered most-common-first so the most useful filters lead.
+ */
+export async function getAvailableGenresAsync(limit = 40): Promise<string[]> {
+  if (USE_REAL && isSupabaseConfigured()) {
+    try {
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
+
+      const { data, error } = await supabase
+        .from('games')
+        .select('genres')
+        .not('genres', 'is', null)
+        .limit(2000)
+
+      if (error) {
+        console.warn('[data] getAvailableGenresAsync error, falling back to mock genres:', error.message)
+      } else if (data) {
+        const ranked = rankGenres(data.flatMap((row: any) => row.genres || []), limit)
+        if (ranked.length) return ranked
+      }
+    } catch (err: any) {
+      console.warn('[data] getAvailableGenresAsync unexpected error, falling back to mock genres:', err?.message || err)
+    }
+  }
+
+  return rankGenres(mock.getAllGames().flatMap((g) => g.genres || []), limit)
+}
+
 // Keep synchronous version for components that haven't migrated yet (will be removed)
 export function getAllGamesSync(): Game[] {
   if (USE_REAL) {
@@ -484,6 +594,18 @@ export async function getGameBySlugAsync(slug: string): Promise<Game | undefined
 // REPORTS
 // ============================================
 
+/**
+ * Safety cap for per-game report fetches.
+ *
+ * Popular titles in the real (ProtonDB-seeded) dataset have thousands of reports
+ * (e.g. Cyberpunk ~2.6k). The compatibility tab predicts across several games at
+ * once, and the game detail page renders the list — without a cap the browser
+ * materializes tens of thousands of report objects and OOMs. The newest N reports
+ * are more than enough for similarity scoring and for the list UI; exact totals
+ * still come from the dedicated stats aggregation (computeGameStatsAsync).
+ */
+export const REPORTS_FETCH_HARD_CAP = 500
+
 export function getAllReports(): Report[] {
   if (USE_REAL) {
     console.warn('[data] getAllReports using MOCK (real mode not implemented yet — use getAllReportsAsync for Supabase + snake->camel mapping per plan)')
@@ -512,7 +634,8 @@ export function getReportsForGame(gameId: string, filters?: ReportFilters): Repo
  */
 export async function getReportsForGameAsync(
   gameId: string,
-  filters?: ReportFilters
+  filters?: ReportFilters,
+  limit: number = REPORTS_FETCH_HARD_CAP
 ): Promise<Report[]> {
   if (USE_REAL) {
     try {
@@ -524,6 +647,7 @@ export async function getReportsForGameAsync(
         .select('*')
         .eq('game_id', gameId)
         .order('created_at', { ascending: false })
+        .limit(limit)
 
       if (error) {
         console.error('[data] getReportsForGameAsync Supabase error, falling back to mock:', error)
@@ -551,6 +675,135 @@ export async function getReportsForGameAsync(
 export function filterReports(reports: Report[], filters: ReportFilters): Report[] {
   // This is a pure function — no need to switch, always use mock version
   return mock.filterReports(reports, filters)
+}
+
+/**
+ * Batched reports fetch for a set of games in a single query.
+ *
+ * Used by list surfaces (home trending, /games grid) to build per-game stats for
+ * only the games actually on screen, instead of pulling a global 200-row sample
+ * (wrong) or filtering an all-reports array per game (O(games × reports)).
+ * One `in(game_id, …)` query, capped, grouped client-side in a single pass.
+ */
+export async function getReportsForGamesAsync(
+  gameIds: string[],
+  cap: number = 2000
+): Promise<Map<string, Report[]>> {
+  const byGame = new Map<string, Report[]>()
+  const ids = gameIds.filter(Boolean)
+  if (ids.length === 0) return byGame
+
+  if (USE_REAL && isSupabaseConfigured()) {
+    try {
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
+
+      const { data, error } = await supabase
+        .from('reports')
+        .select('*')
+        .in('game_id', ids)
+        .order('created_at', { ascending: false })
+        .limit(cap)
+
+      if (error) {
+        console.error('[data] getReportsForGamesAsync Supabase error, falling back to mock:', error)
+      } else {
+        for (const row of data || []) {
+          const r = mapDbReportToReport(row)
+          const arr = byGame.get(r.gameId)
+          if (arr) arr.push(r)
+          else byGame.set(r.gameId, [r])
+        }
+        return byGame
+      }
+    } catch (err: any) {
+      console.error('[data] getReportsForGamesAsync unexpected error, falling back to mock:', err)
+    }
+  }
+
+  // Mock / fallback path: group the in-memory reports for the requested games.
+  const idSet = new Set(ids)
+  for (const r of mock.getAllReports()) {
+    if (!idSet.has(r.gameId)) continue
+    const arr = byGame.get(r.gameId)
+    if (arr) arr.push(r)
+    else byGame.set(r.gameId, [r])
+  }
+  return byGame
+}
+
+/**
+ * Bounded "trending" games for the home page.
+ *
+ * The home page only renders a handful of cards, so it must never pull the whole
+ * games table (10k+ rows in real mode). We fetch a small, recently-updated slice
+ * and let the (now batched) cover enrichment run over just those rows.
+ */
+export async function getTrendingGamesAsync(limit: number = 12): Promise<Game[]> {
+  const safeLimit = Math.min(48, Math.max(1, limit))
+
+  if (USE_REAL && isSupabaseConfigured()) {
+    try {
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
+
+      const { data, error } = await supabase
+        .from('games')
+        .select('*')
+        .order('updated_at', { ascending: false })
+        .limit(safeLimit)
+
+      if (error) {
+        console.error('[data] getTrendingGamesAsync error, falling back to mock:', error)
+        return enrichGamesWithCoversSync(mock.getTrendingGames(safeLimit))
+      }
+
+      const mapped = (data || []).map(mapDbGameToGame)
+      if (mapped.length === 0) {
+        if (process.env.NODE_ENV === 'development') {
+          return enrichGamesWithCoversSync(mock.getTrendingGames(safeLimit))
+        }
+        return []
+      }
+      return enrichGamesWithCovers(mapped)
+    } catch (err: any) {
+      console.error('[data] getTrendingGamesAsync unexpected error, falling back to mock:', err)
+      return enrichGamesWithCoversSync(mock.getTrendingGames(safeLimit))
+    }
+  }
+
+  return enrichGamesWithCoversSync(mock.getTrendingGames(safeLimit))
+}
+
+/**
+ * Lightweight global counts for hero/stat headers — uses `head: true` count
+ * queries so no row payloads are transferred (vs. fetching reports just to read
+ * `.length`).
+ */
+export async function getGlobalCountsAsync(): Promise<{ totalGames: number; totalReports: number }> {
+  if (USE_REAL && isSupabaseConfigured()) {
+    try {
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
+
+      const [gamesRes, reportsRes] = await Promise.all([
+        supabase.from('games').select('id', { count: 'exact', head: true }),
+        supabase.from('reports').select('id', { count: 'exact', head: true }),
+      ])
+
+      return {
+        totalGames: gamesRes.count ?? 0,
+        totalReports: reportsRes.count ?? 0,
+      }
+    } catch (err: any) {
+      console.error('[data] getGlobalCountsAsync error, falling back to mock counts:', err)
+    }
+  }
+
+  return {
+    totalGames: mock.getAllGames().length,
+    totalReports: mock.getAllReports().length,
+  }
 }
 
 export function getFilteredGlobalReports(filters: {
@@ -737,7 +990,11 @@ export async function computeGameStatsAsync(gameId: string): Promise<GameStats> 
  * pure similarity + tier logic via predictForUserRigFromReports.
  * Full fallback to mock. Enables future migration of CompatibilityChecker etc.
  */
-export async function predictForUserRigAsync(userPC: UserPC, gameId: string): Promise<PredictionResult> {
+export async function predictForUserRigAsync(
+  userPC: UserPC,
+  gameId: string,
+  sampleLimit: number = REPORTS_FETCH_HARD_CAP
+): Promise<PredictionResult> {
   if (USE_REAL) {
     try {
       const { createClient } = await import('@/lib/supabase/client')
@@ -748,6 +1005,7 @@ export async function predictForUserRigAsync(userPC: UserPC, gameId: string): Pr
         .select('*')
         .eq('game_id', gameId)
         .order('created_at', { ascending: false })
+        .limit(sampleLimit)
 
       if (error) {
         console.error('[data] predictForUserRigAsync Supabase error, falling back to mock:', error)
@@ -1234,6 +1492,21 @@ export function useGames() {
 }
 
 /**
+ * React Query hook for the distinct genres present in the browsable catalog.
+ * Backs the /games genre filter chips so they always match real, filterable
+ * genres (see getAvailableGenresAsync). Long staleTime — the genre set changes
+ * only as the catalog grows.
+ */
+export function useAvailableGenres() {
+  return useQuery<string[]>({
+    queryKey: ['available-genres'],
+    queryFn: () => getAvailableGenresAsync(),
+    staleTime: 1000 * 60 * 30,
+    gcTime: 1000 * 60 * 60,
+  })
+}
+
+/**
  * React Query hook for reports for a specific game (with optional filters).
  * Uses getReportsForGameAsync() — real Supabase + RLS + filterReports (when flag true).
  * 
@@ -1415,13 +1688,18 @@ export {
   getPerfIndex as getPerfIndexStatic,
   getCatalogVersionInfo,
   HARDWARE_CATALOG_VERSION,
+  getHardwareCatalogStats,
 } from './hardware-catalog'
 
 // Convenient non-Static aliases (used by hardware-combobox and other surfaces)
 export { findHardwareByQuery, getHardwareEntry } from './hardware-catalog'
 
 // Live (Supabase) catalog access — used when NEXT_PUBLIC_USE_REAL_DATA=true
-export async function getAllHardwareCatalogAsync(): Promise<any[]> {
+// Now returns properly typed HardwareCatalogEntry[] (merged static + DB overrides)
+export async function getAllHardwareCatalogAsync(): Promise<HardwareCatalogEntry[]> {
+  const { getAllHardwareCatalog } = await import('./hardware-catalog')
+  const staticEntries = getAllHardwareCatalog()
+
   if (USE_REAL) {
     try {
       const { createClient } = await import('@/lib/supabase/client')
@@ -1432,17 +1710,19 @@ export async function getAllHardwareCatalogAsync(): Promise<any[]> {
         .select('*')
         .order('perf_index', { ascending: false, nullsFirst: false })
 
-      if (!error && data?.length) return data
+      if (!error && data?.length) {
+        // mergeDbRowsIntoStatic maps + merges (DB wins for same canonical)
+        return mergeDbRowsIntoStatic(staticEntries, data)
+      }
     } catch (e) {
       console.warn('[data] hardware_catalog DB read failed, falling back to static')
     }
   }
-  // Fallback to excellent static catalog
-  const { getAllHardwareCatalog } = await import('./hardware-catalog')
-  return getAllHardwareCatalog()
+  // Fallback / non-real: excellent static catalog (typed)
+  return staticEntries
 }
 
-export async function getHardwareCatalogEntry(canonical: string) {
+export async function getHardwareCatalogEntry(canonical: string): Promise<HardwareCatalogEntry | undefined> {
   if (USE_REAL) {
     try {
       const { createClient } = await import('@/lib/supabase/client')
@@ -1454,11 +1734,19 @@ export async function getHardwareCatalogEntry(canonical: string) {
         .eq('canonical', canonical)
         .single()
 
-      if (data) return data
+      if (data) {
+        return dbRowToHardwareCatalogEntry(data)
+      }
     } catch {}
   }
   const { getHardwareEntry } = await import('./hardware-catalog')
   return getHardwareEntry(canonical)
+}
+
+// Also expose a typed static getter for convenience
+export async function getAllHardwareCatalogStaticTyped(): Promise<HardwareCatalogEntry[]> {
+  const { getAllHardwareCatalog } = await import('./hardware-catalog')
+  return getAllHardwareCatalog()
 }
 
 // Server-only hardware catalog: import from '@/lib/data-server' in Server Actions / RSC.

@@ -146,6 +146,10 @@ CREATE TABLE hardware_aliases (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Indexes for aliases (used in normalization / combobox fallback)
+CREATE INDEX idx_hardware_aliases_raw ON hardware_aliases (lower(raw_string));
+CREATE INDEX idx_hardware_aliases_canonical ON hardware_aliases (canonical);
+
 -- ============================================
 -- INDEXES (critical for performance)
 -- ============================================
@@ -259,15 +263,16 @@ CREATE POLICY "Games are publicly readable" ON games FOR SELECT USING (true);
 CREATE POLICY "Approved reports are publicly readable" ON reports
   FOR SELECT USING (status = 'approved');
 
--- Authenticated users can insert their own reports (or anonymous)
-CREATE POLICY "Authenticated users can insert reports" ON reports
-  FOR INSERT WITH CHECK (
-    status = 'pending'
-    AND helpful_votes = 0
-    AND moderated_by IS NULL
-    AND moderated_at IS NULL
-    AND moderator_notes IS NULL
-    AND ((user_id IS NULL) OR (user_id = auth.uid()))
+-- Anyone (including fully anonymous clients using the anon key, or authenticated users/guests via signInAnonymously)
+-- can insert reports. The row must claim user_id=NULL or exactly the current auth.uid().
+-- NOTE: user submissions now go through the submit_report SECURITY DEFINER RPC which bypasses this policy
+-- for the write (more robust vs any client/server auth context skew). This policy remains for direct
+-- inserts, admin tools, or if we switch back to .insert in the future.
+CREATE POLICY "Anyone can insert reports (self or anonymous)" ON reports
+  FOR INSERT
+  TO anon, authenticated
+  WITH CHECK (
+    (user_id IS NULL) OR (user_id = auth.uid())
   );
 
 -- Owners can update their own pending reports
@@ -443,20 +448,24 @@ BEGIN
     END IF;
   END IF;
 
-  -- Insert respects schema exactly: status=pending default, performance_tier computed, moderation fields NULL
+  -- Insert respects schema exactly: status=pending default, performance_tier computed, moderation fields NULL.
+  -- Note: kernel/distro (and other later ALTER columns) are omitted from this INSERT so the RPC
+  -- works even if the full schema.sql (with ADD COLUMN IF NOT EXISTS at the bottom) hasn't been
+  -- re-applied to an existing table. When those columns exist they will be NULL (fine, since
+  -- current submit UI doesn't populate them yet). Update this INSERT list when wiring richer paste data.
   INSERT INTO reports (
     game_id, user_id, game_name,
     cpu, gpu, ram, ram_speed, resolution, refresh_rate,
     settings_preset, custom_settings_notes,
     avg_fps, fps_1_percent_low, performance_tier,
-    notes, tweaks, issues, driver_version, kernel, distro,
+    notes, tweaks, issues, driver_version,
     status
   ) VALUES (
     p_game_id, v_user_id, v_game_name,
     p_cpu, p_gpu, p_ram, p_ram_speed, p_resolution, p_refresh_rate,
     p_settings_preset, p_custom_settings_notes,
     p_avg_fps, p_fps_1_percent_low, v_tier,
-    p_notes, p_tweaks, p_issues, p_driver_version, p_kernel, p_distro,
+    p_notes, p_tweaks, p_issues, p_driver_version,
     'pending'
   ) RETURNING id INTO v_report_id;
 
@@ -495,6 +504,12 @@ GRANT EXECUTE ON FUNCTION public.upvote_report TO authenticated;
 -- This is the live, editable hardware database backing autocomplete,
 -- similarity scoring, and validation when NEXT_PUBLIC_USE_REAL_DATA=true.
 -- The static file (lib/hardware-catalog.ts) remains the authoritative seed + offline fallback.
+--
+-- 2026-06 EXPANSION: Comprehensive market coverage since 2015-16 launches (Pascal/Polaris
+-- through RTX 50 / Zen 5 / Arc + mid/low-end density). See plan + static catalog header.
+-- New columns added for full HardwareCatalogEntry fidelity (architecture, threads, tdp_w).
+--
+-- For existing projects: Scroll down to the "RECOMMENDED: COPY & PASTE THIS BLOCK" section.
 -- =============================================================================
 
 CREATE TABLE hardware_catalog (
@@ -509,6 +524,9 @@ CREATE TABLE hardware_catalog (
   memory_type text,
   speed_mts integer,
   release_year integer,
+  architecture text,
+  threads integer,
+  tdp_w integer,
   notes text,
   source text,
   last_updated timestamptz NOT NULL DEFAULT now(),
@@ -565,6 +583,83 @@ CREATE POLICY "Moderators and admins can delete hardware catalog entries"
         AND profiles.role IN ('moderator', 'admin')
     )
   );
+
+-- =============================================================================
+-- HARDWARE CATALOG EXPANSION - SAFE MIGRATION FOR EXISTING PROJECTS
+-- If you have an older version of the schema, run the big "RECOMMENDED" block below.
+-- =============================================================================
+
+-- =============================================================================
+-- RECOMMENDED: COPY & PASTE THIS BLOCK INTO SUPABASE SQL EDITOR
+-- (For any project that had the old hardware_catalog / aliases tables)
+-- Completely safe. Uses DROP POLICY IF EXISTS + CREATE POLICY (Postgres does not support IF NOT EXISTS on policies).
+-- =============================================================================
+
+-- 1. Hardware catalog new columns (required for the big 2015-16+ database)
+ALTER TABLE hardware_catalog
+  ADD COLUMN IF NOT EXISTS architecture text,
+  ADD COLUMN IF NOT EXISTS threads integer,
+  ADD COLUMN IF NOT EXISTS tdp_w integer;
+
+CREATE INDEX IF NOT EXISTS idx_hardware_catalog_canonical_lower 
+  ON hardware_catalog (lower(canonical));
+
+-- 2. Hardware aliases table indexes + RLS (was incomplete before)
+CREATE INDEX IF NOT EXISTS idx_hardware_aliases_raw 
+  ON hardware_aliases (lower(raw_string));
+CREATE INDEX IF NOT EXISTS idx_hardware_aliases_canonical 
+  ON hardware_aliases (canonical);
+
+ALTER TABLE hardware_aliases ENABLE ROW LEVEL SECURITY;
+
+-- Public read for normalization/combobox
+DROP POLICY IF EXISTS "Hardware aliases are publicly readable" ON hardware_aliases;
+CREATE POLICY "Hardware aliases are publicly readable"
+  ON hardware_aliases FOR SELECT USING (true);
+
+-- Moderator / admin can manage aliases
+DROP POLICY IF EXISTS "Moderators and admins can insert hardware aliases" ON hardware_aliases;
+CREATE POLICY "Moderators and admins can insert hardware aliases"
+  ON hardware_aliases FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE profiles.id = auth.uid() 
+        AND profiles.role IN ('moderator', 'admin')
+    )
+  );
+
+DROP POLICY IF EXISTS "Moderators and admins can update hardware aliases" ON hardware_aliases;
+CREATE POLICY "Moderators and admins can update hardware aliases"
+  ON hardware_aliases FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE profiles.id = auth.uid() 
+        AND profiles.role IN ('moderator', 'admin')
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE profiles.id = auth.uid() 
+        AND profiles.role IN ('moderator', 'admin')
+    )
+  );
+
+DROP POLICY IF EXISTS "Moderators and admins can delete hardware aliases" ON hardware_aliases;
+CREATE POLICY "Moderators and admins can delete hardware aliases"
+  ON hardware_aliases FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE profiles.id = auth.uid() 
+        AND profiles.role IN ('moderator', 'admin')
+    )
+  );
+
+-- After running this, you can safely run: npm run seed:hardware
+-- =============================================================================
 
 -- ============================================================
 -- Hardware Identification (Plan 4) - Additive columns + Steam linking

@@ -24,8 +24,9 @@ import { extractGpuSeries, getCpuTier } from './mock-data';
 export function calculateHardwareAwareSimilarity(
   report: Report, 
   userRig: UserPC | null,
-  _liveCatalog?: any[]
+  liveCatalog?: any[]
 ): number {
+  // liveCatalog param supported for future full injection (currently normalize + static + merged data layer cover most cases)
   if (!userRig) return 0;
 
   let score = 45;
