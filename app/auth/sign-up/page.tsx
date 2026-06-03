@@ -189,16 +189,19 @@ function SignUpForm() {
       });
 
       if (error) {
+        console.error('[signup] Supabase auth error:', error);
         const msg = (error.message || '').toLowerCase();
         const code = (error.code || '').toLowerCase();
 
         const looksLikeEmailDup =
           msg.includes('already registered') ||
           msg.includes('user already registered') ||
-          msg.includes('email') && msg.includes('already') ||
+          msg.includes('already exists') ||
+          (msg.includes('email') && (msg.includes('already') || msg.includes('exists') || msg.includes('taken') || msg.includes('registered'))) ||
           code.includes('email_exists') ||
           code.includes('user_already_exists') ||
-          code.includes('email_address_exists');
+          code.includes('email_address_exists') ||
+          code.includes('duplicate');
 
         if (looksLikeEmailDup) {
           form.setError('email', {
@@ -271,10 +274,13 @@ function SignUpForm() {
             <p className="text-sm text-muted-foreground">
               Click the link in the email to activate your account. You can close this page.
             </p>
-            <div className="pt-2">
+            <div className="pt-2 space-y-2">
               <Button asChild variant="outline" className="w-full">
                 <Link href="/auth/sign-in">Back to sign in</Link>
               </Button>
+              <p className="text-xs text-muted-foreground">
+                Already have an account? Use the button above to sign in instead.
+              </p>
             </div>
             <p className="text-xs text-muted-foreground">
               Didn&apos;t receive it? Check spam or try signing up again in a few minutes.
