@@ -38,7 +38,7 @@ export default function RootLayout({
           <main className="flex-1">{children}</main>
 
           <footer className="border-t border-border py-8 text-center text-xs text-muted-foreground">
-            Real community-driven PC performance data. Hybrid mock + real backend (flag-controlled).
+            Real community-driven PC performance data. Hybrid demo + real backend (flag-controlled).
             <span className="mx-2">·</span>
             Inspired by ProtonDB, PCPartPicker, and HowLongToBeat.
           </footer>
