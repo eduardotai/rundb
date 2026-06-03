@@ -75,13 +75,13 @@ async function main() {
     console.log('  NEXT_PUBLIC_SUPABASE_URL=https://YOUR-REF.supabase.co');
     console.log('  SUPABASE_SERVICE_ROLE_KEY=...  (go to your project Settings > API and copy the service_role key, NOT anon)');
     console.log('\nAlso ensure the hardware_catalog table exists in YOUR project:');
-    console.log('  - Open your project'\''s SQL Editor: https://supabase.com/dashboard/project/YOUR-REF/sql/new');
+    console.log(`  - Open your project's SQL Editor: https://supabase.com/dashboard/project/YOUR-REF/sql/new`);
     console.log('  - Fresh DB: paste & run the full supabase/schema.sql');
     console.log('  - Existing DB: paste supabase/incremental-hardware-catalog.sql (or run `npm run setup:supabase` if you have access token for *your* project)');
     console.log('');
     console.log('  On Windows/PowerShell, get CLEAN SQL (no > prompts):');
     console.log('    npm run copy:sql:hardware     # easiest - copies directly to clipboard');
-    console.log('  Then paste into YOUR project'\''s SQL Editor. First line must be a -- comment.');
+    console.log(`  Then paste into YOUR project's SQL Editor. First line must be a -- comment.`);
     console.log('  If it starts with ">" you accidentally included terminal output.');
     console.log('');
     console.log('Then try again: npm run seed:hardware');
