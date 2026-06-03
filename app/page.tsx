@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { GameCard } from '@/components/game-card';
 import { CompatibilityChecker } from '@/components/compatibility-checker';
+import { ValueLoopExplainer } from '@/components/value-loop-explainer';
 import { getAllGames, getAllReportsAsync, computeGameStatsFromReports, USE_REAL } from '@/lib/data';
 import { ArrowRight, BarChart3, Users, Zap } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
@@ -256,7 +257,7 @@ export default function Home() {
             ))
           ) : games.length === 0 ? (
             <div className="col-span-full rounded-2xl border border-dashed border-border py-10 text-center">
-              <p className="text-muted-foreground">No games in the database yet.</p>
+              <p className="text-muted-foreground">No games in the database yet — the database grows through community reports and the ingest pipeline.</p>
               {USE_REAL && (
                 <p className="mt-2 text-sm text-muted-foreground">
                   Run{' '}
@@ -267,7 +268,7 @@ export default function Home() {
             </div>
           ) : (
             <div className="col-span-full rounded-2xl border border-dashed border-border py-10 text-center text-muted-foreground">
-              <p>No trending games yet — community reports will rank titles here.</p>
+              <p>Community reports will rank titles here. Save a rig, browse games, or submit a few reports to see activity.</p>
               <Link
                 href="/games"
                 className="mt-2 inline-block text-sm text-primary hover:underline"
@@ -294,12 +295,12 @@ export default function Home() {
         )}
       </div>
 
-      {/* Trust bar */}
-      <div className="mt-12 rounded-2xl border border-border bg-card p-8 text-center">
-        <p className="text-sm text-muted-foreground max-w-md mx-auto">
-          Every report is submitted by real players. Filter by your exact GPU series, resolution, and FPS targets.
-          Submit your own in under a minute.
-        </p>
+      {/* How RunDB works — educational value loop (replaces previous trust bar) */}
+      <div className="mb-12">
+        <div className="mb-4 flex items-baseline justify-between">
+          <h2 className="text-2xl font-semibold tracking-tight">How RunDB works</h2>
+        </div>
+        <ValueLoopExplainer variant="prominent" />
       </div>
     </div>
   );
