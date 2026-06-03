@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PerformanceBadge } from './performance-badge';
 import { ReportCard } from './report-card';
+import { ValueLoopExplainer } from './value-loop-explainer';
 import { Game, UserPC, MAIN_RESOLUTIONS, MainResolution } from '@/lib/types';
 import {
   loadMyRigAsync,
@@ -277,6 +278,7 @@ export function CompatibilityChecker({ embedded = false, preselectedGameSlug }: 
               <span className="ml-1 text-emerald-400">(using real database reports + live hardware catalog)</span>
             )}
           </p>
+          {!embedded && <ValueLoopExplainer variant="compact" />}
         </CardHeader>
 
         <CardContent className="space-y-6">
