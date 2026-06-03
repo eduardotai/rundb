@@ -73,6 +73,10 @@ function setEnvKey(key: string, value: string) {
   process.env[key] = value
 }
 
+function normalizeSupabaseProjectUrl(value: string): string {
+  return value.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '')
+}
+
 async function managementQuery(accessToken: string, sql: string): Promise<void> {
   const res = await fetch(`https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query`, {
     method: 'POST',
@@ -148,6 +152,15 @@ async function applyIncrementalSchema(env: Record<string, string>): Promise<bool
 async function main() {
   const env = loadEnvMap()
   console.log('RunDB Supabase real-mode setup\n')
+
+  const configuredUrl = env.NEXT_PUBLIC_SUPABASE_URL || env.SUPABASE_URL
+  if (configuredUrl) {
+    const normalizedUrl = normalizeSupabaseProjectUrl(configuredUrl)
+    if (normalizedUrl !== configuredUrl) {
+      setEnvKey('NEXT_PUBLIC_SUPABASE_URL', normalizedUrl)
+      console.log('Normalized NEXT_PUBLIC_SUPABASE_URL in .env.local')
+    }
+  }
 
   const accessToken = env.SUPABASE_ACCESS_TOKEN
   if (accessToken) {
