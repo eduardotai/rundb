@@ -133,23 +133,45 @@ function SignUpForm() {
   const handleEmailSignUp = async (values: SignUpValues) => {
     setEmailLoading(true);
     try {
-      // Pre-check username to give immediate friendly error (avoids creating auth user then failing on trigger).
-      // Falls back gracefully if the helper RPC isn't present on the DB yet.
+      // Pre-check username for duplicates (case-insensitive).
+      // 1. Prefer the is_username_taken RPC (clean, no data leak).
+      // 2. Fallback to direct query using ilike (works if the public "basic profile info" policy is applied,
+      //    which it is in incremental-security-rls.sql). This helps on localhost before the dedicated
+      //    incremental-username-uniqueness.sql has been run.
+      let usernameTaken = false;
       try {
         const { data: taken, error: rpcError } = await supabase.rpc('is_username_taken', {
           p_username: values.username,
         });
         if (!rpcError && taken === true) {
-          form.setError('username', {
-            type: 'manual',
-            message: 'This username is already taken. Please choose another.',
-          });
-          showUserError('That username is already taken. Please choose another.');
-          return;
+          usernameTaken = true;
         }
       } catch {
-        // Ignore RPC errors (e.g. function not deployed yet) — we'll let the signup attempt proceed
-        // and catch a constraint violation below if the unique index is present.
+        // RPC not present yet — try direct query fallback
+      }
+
+      if (!usernameTaken) {
+        try {
+          const { data: existing } = await supabase
+            .from('profiles')
+            .select('id')
+            .ilike('username', values.username)
+            .limit(1)
+            .maybeSingle();
+          if (existing) usernameTaken = true;
+        } catch {
+          // If even the direct query fails (policy not applied), we fall through and rely on
+          // the post-signUp constraint error (if the unique index exists).
+        }
+      }
+
+      if (usernameTaken) {
+        form.setError('username', {
+          type: 'manual',
+          message: 'This username is already taken. Please choose another.',
+        });
+        showUserError('That username is already taken. Please choose another.');
+        return;
       }
 
       const { data, error } = await supabase.auth.signUp({
@@ -168,12 +190,17 @@ function SignUpForm() {
 
       if (error) {
         const msg = (error.message || '').toLowerCase();
-        if (
+        const code = (error.code || '').toLowerCase();
+
+        const looksLikeEmailDup =
           msg.includes('already registered') ||
           msg.includes('user already registered') ||
-          error.code === 'email_exists' ||
-          error.code === 'user_already_exists'
-        ) {
+          msg.includes('email') && msg.includes('already') ||
+          code.includes('email_exists') ||
+          code.includes('user_already_exists') ||
+          code.includes('email_address_exists');
+
+        if (looksLikeEmailDup) {
           form.setError('email', {
             type: 'manual',
             message: 'An account with this email already exists.',
