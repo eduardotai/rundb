@@ -1,0 +1,5 @@
+[
+  { "name": "Cyberpunk 2077", "slug": "cyberpunk-2077", "steamAppId": "1091500", "reportCount": 5000, "priority": 1 },
+  { "name": "Elden Ring", "slug": "elden-ring", "steamAppId": "1245620", "reportCount": 4500, "priority": 2 },
+  { "name": "Baldur's Gate 3", "slug": "baldurs-gate-3", "steamAppId": "1086940", "reportCount": 4000, "priority": 3 }
+]

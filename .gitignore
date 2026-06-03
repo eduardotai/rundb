@@ -48,3 +48,8 @@ next-env.d.ts
 
 # turbo
 .turbo
+
+# AI / session context (temporary files from planning/implementation sessions)
+CONTEXT.md
+context/
+
