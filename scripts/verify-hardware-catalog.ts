@@ -66,8 +66,8 @@ function main() {
   }
   console.log('All entries have canonical/componentType/source: OK');
 
-  // Quick search test for old hardware (the whole point)
-  const tests = ['gtx 1060', 'rx 580', 'ryzen 5 3600', 'i7 6700k', '1080 ti', '3060', '9800x3d'];
+  // Quick search test for old hardware (the whole point) + new requested (RX 9000, 5700X3D)
+  const tests = ['gtx 1060', 'rx 580', 'ryzen 5 3600', 'i7 6700k', '1080 ti', '3060', '9800x3d', '9070 xt', 'rx 9070', '9060 xt', '5700x3d', '5060 ti', '7950x3d'];
   console.log('\nSearch tests for historical + new hardware:');
   for (const t of tests) {
     const res = findHardwareByQuery(t, 1);
@@ -76,7 +76,7 @@ function main() {
   }
 
   console.log('\n=== Verification PASSED ===');
-  console.log('Catalog is large, sane, and searchable for 2015-16+ hardware.');
+  console.log('Catalog is large, sane, and searchable for 2015-16+ hardware (expanded v3 with RX 9000, more 50-series, X3Ds, value SKUs).');
 }
 
 main();

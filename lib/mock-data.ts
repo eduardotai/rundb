@@ -465,11 +465,13 @@ export const GAMES: Game[] = [
 
 const SAMPLE_GPUS = [
   'RTX 4090', 'RTX 4080 Super', 'RTX 4070 Ti', 'RTX 4070', 'RTX 4060 Ti', 'RTX 3060 Ti', 'RTX 3070',
-  'RX 7900 XTX', 'RX 7800 XT', 'RX 6800 XT', 'RX 6700 XT', 'Arc A770', 'RTX 2080 Ti', 'RTX 3080'
+  'RX 7900 XTX', 'RX 7800 XT', 'RX 6800 XT', 'RX 6700 XT', 'Arc A770', 'RTX 2080 Ti', 'RTX 3080',
+  'RX 9070 XT', 'RTX 5070', 'RX 9060 XT', 'RTX 5060 Ti'
 ];
 const SAMPLE_CPUS = [
   'Ryzen 7 7800X3D', 'Ryzen 5 7600X', 'Intel Core i7-14700K', 'Intel Core i5-13600K',
-  'Ryzen 7 5800X3D', 'Intel Core i9-12900K', 'Ryzen 5 5600X'
+  'Ryzen 7 5800X3D', 'Intel Core i9-12900K', 'Ryzen 5 5600X',
+  'Ryzen 7 5700X3D', 'Ryzen 9 9950X3D', 'Intel Core Ultra 7 265K'
 ];
 const RESOLUTIONS: readonly MainResolution[] = MAIN_RESOLUTIONS;
 const PRESETS: GraphicsPreset[] = ['Low', 'Medium', 'High', 'Ultra', 'Custom'];
@@ -491,7 +493,7 @@ function generateSeedReports(): Report[] {
 
       // Rough FPS model so tiers + filters feel real
       let fps = 48 + ((gi * 5 + i * 9) % 70);
-      if (gpu.includes('4090') || gpu.includes('7900')) fps += 22;
+      if (gpu.includes('4090') || gpu.includes('7900') || gpu.includes('9070') || gpu.includes('5090')) fps += 22;
       if (gpu.includes('3060') || gpu.includes('6700')) fps -= 8;
       if (resolution === '3840x2160') fps -= 28;
       if (preset === 'Low') fps += 18;

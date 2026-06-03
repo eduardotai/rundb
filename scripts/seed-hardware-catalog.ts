@@ -18,7 +18,7 @@ loadEnvLocal()
 async function main() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
   const hasServiceKey = !!process.env.SUPABASE_SERVICE_ROLE_KEY
-  console.log('Seeding large hardware catalog (2015-16+ expanded) into Supabase...')
+  console.log('Seeding large hardware catalog (2015-16+ v3-expanded with RX 9000 / many more) into Supabase...')
   console.log(`  Supabase URL detected: ${url ? url.replace(/https?:\/\/([^.]+).*/, 'https://$1...') : 'MISSING'}`)
   console.log(`  Service role key: ${hasServiceKey ? 'present (length ' + process.env.SUPABASE_SERVICE_ROLE_KEY!.length + ')' : 'MISSING'}`)
 
