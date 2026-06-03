@@ -64,7 +64,8 @@ import {
 } from 'lucide-react';
 import { gameMediaLoader } from '@/lib/utils';
 import { sanitizeFullName } from '@/lib/sanitize';
-import { getCatalogVersionInfo, HARDWARE_CATALOG_VERSION, HARDWARE_CATALOG_LAST_UPDATED } from '@/lib/hardware-catalog';
+import { getCatalogVersionInfo, HARDWARE_CATALOG_VERSION, HARDWARE_CATALOG_LAST_UPDATED, getHardwareCatalogStats } from '@/lib/hardware-catalog';
+import { getAllHardwareCatalogAsync } from '@/lib/data';
 
 type DemoRole = 'user' | 'moderator' | 'admin';
 
@@ -1047,10 +1048,19 @@ export default function AdminPage() {
               <br />
               Run the seed button above (as admin) after setting up the <code>hardware_catalog</code> table in Supabase to go fully live.
             </div>
+            <div className="mt-3 text-sm font-medium">
+              Current static catalog (expanded 2015-16+ per plan):{' '}
+              {(() => {
+                try {
+                  const s = getHardwareCatalogStats();
+                  return `${s.gpuCount} GPUs + ${s.cpuCount} CPUs (total ${s.total}, years ${s.minReleaseYear}-${s.maxReleaseYear})`;
+                } catch { return 'loading stats...'; }
+              })()}
+            </div>
           </div>
 
           <div className="text-xs text-muted-foreground">
-            The catalog is already powering the new HardwareCombobox everywhere. Adding entries to the DB table will make them appear in production autocomplete and improve matching.
+            The catalog is already powering the new HardwareCombobox everywhere. Adding entries to the DB table will make them appear in production autocomplete and improve matching. Use bulkUpsertHardwareCatalogEntries (via future dialog or script) for CSV/JSON adds of older cards.
           </div>
         </TabsContent>
       </Tabs>
