@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Game, GraphicsPreset, MAIN_RESOLUTIONS } from '@/lib/types';
-import { addUserReport } from '@/lib/data';
+import { addUserReport, isSupabaseConfigured } from '@/lib/data';
 import { showUserError, showUserSuccess } from '@/lib/toast';
 import { sanitizeFullName } from '@/lib/sanitize';
 import { HardwareCombobox } from '@/components/hardware-combobox';
@@ -410,9 +410,9 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
           </div>
 
           <p className="text-center text-[11px] text-muted-foreground">
-            {process.env.NEXT_PUBLIC_USE_REAL_DATA === 'true'
-              ? 'Real mode: report goes to Supabase (pending moderation by default).'
-              : 'Demo mode: report saved locally (localStorage) for this browser only.'}
+            {process.env.NEXT_PUBLIC_USE_REAL_DATA === 'true' && isSupabaseConfigured()
+              ? 'Real mode: report publishes immediately; community voting handles credibility.'
+              : 'Demo/local mode: report saved locally (localStorage) for this browser only.'}
           </p>
         </form>
 

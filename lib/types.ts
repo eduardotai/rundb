@@ -105,6 +105,10 @@ export interface Report {
   driverVersion?: string;
   createdAt: string; // ISO
   helpfulVotes: number;
+  downvoteVotes?: number;
+  voteScore?: number;
+  credibilityBadge?: CredibilityBadge;
+  credibilityScore?: number;
 
   // Phase 2 real-data / moderation fields (from Master Plan approved schema)
   // Only populated for moderators via /admin/reports or internal; public RLS filters to approved only
@@ -119,7 +123,13 @@ export interface Report {
   canonicalGpu?: string;
   gpuPerfIndex?: number;
   cpuPerfIndex?: number;
+
+  // Optionally embedded game metadata (cover/slug/developer/year) joined at query time.
+  // Lets the /reports "By game" view render banners without fetching the whole catalog.
+  game?: Game;
 }
+
+export type CredibilityBadge = 'New' | 'Helpful' | 'Trusted' | 'Expert' | 'Legend';
 
 export interface UserPC {
   cpu: string;

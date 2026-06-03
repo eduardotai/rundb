@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { GameCard } from '@/components/game-card';
 import { CompatibilityChecker } from '@/components/compatibility-checker';
 import { ValueLoopExplainer } from '@/components/value-loop-explainer';
-import { getAllGames, getAllReportsAsync, computeGameStatsFromReports, USE_REAL } from '@/lib/data';
+import { getAllGames, getAllReportsAsync, computeGameStatsFromReports } from '@/lib/data';
 import { ArrowRight, BarChart3, Users, Zap } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -258,13 +258,9 @@ export default function Home() {
           ) : games.length === 0 ? (
             <div className="col-span-full rounded-2xl border border-dashed border-border py-10 text-center">
               <p className="text-muted-foreground">No games in the database yet — the database grows through community reports and the ingest pipeline.</p>
-              {USE_REAL && (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Run{' '}
-                  <code className="rounded bg-muted px-1.5 py-0.5 text-xs">npm run seed:games</code> to populate
-                  Supabase, then restart the dev server.
-                </p>
-              )}
+              <p className="mt-2 text-sm text-muted-foreground">
+                Run the ingest queue and worker to populate Supabase before public launch.
+              </p>
             </div>
           ) : (
             <div className="col-span-full rounded-2xl border border-dashed border-border py-10 text-center text-muted-foreground">
@@ -283,7 +279,7 @@ export default function Home() {
         {(showLoadingNotice || (gamesQuery.isLoading || reportsQuery.isLoading)) && trending.length === 0 && (
           <div className="mt-3 text-center text-xs text-amber-400/90">
             Still loading live data… If you use a strict ad blocker or Brave Shields, some requests (including Google telemetry during auth) get blocked.
-            The app works fine — try disabling the blocker for this site or use the mock data path.
+            The app works fine — try disabling the blocker for this site or check the Supabase connection.
           </div>
         )}
 

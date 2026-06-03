@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 export type StaffRole = 'user' | 'moderator' | 'admin'
 
 export type StaffAccess = {
-  user: { id: string; email?: string; username?: string } | null
+  user: { id: string; email?: string; username?: string; avatarUrl?: string } | null
   role: StaffRole
   isAdmin: boolean
   canModerate: boolean
@@ -16,6 +16,10 @@ function parseAdminEmails(): Set<string> {
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean)
   )
+}
+
+function isStoredProfileAvatar(url?: string | null): boolean {
+  return Boolean(url && url.includes('/storage/v1/object/public/profile-avatars/'))
 }
 
 /**
@@ -38,7 +42,7 @@ export async function getStaffAccess(): Promise<StaffAccess> {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role, username')
+    .select('role, username, avatar_url')
     .eq('id', user.id)
     .maybeSingle()
 
@@ -47,7 +51,12 @@ export async function getStaffAccess(): Promise<StaffAccess> {
   const canModerate = isAdmin || dbRole === 'moderator'
 
   return {
-    user: { id: user.id, email: user.email, username: profile?.username ?? undefined },
+    user: {
+      id: user.id,
+      email: user.email,
+      username: profile?.username ?? undefined,
+      avatarUrl: isStoredProfileAvatar(profile?.avatar_url) ? profile?.avatar_url : undefined,
+    },
     role: isAdmin ? 'admin' : dbRole,
     isAdmin,
     canModerate,

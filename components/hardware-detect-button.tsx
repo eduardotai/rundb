@@ -2,9 +2,9 @@
 
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { Cpu, Monitor, Scan, Loader2 } from 'lucide-react';
-import { sanitizeFullName } from '@/lib/sanitize';
+import { Cpu, Scan, Loader2 } from 'lucide-react';
 import { showUserError } from '@/lib/toast';
+import { detectBrowser } from '@/lib/hardware-detector';
 import type { DetectedHardware } from '@/lib/types';
 
 interface HardwareDetectButtonProps {
@@ -45,11 +45,10 @@ export function HardwareDetectButton({
       return;
     }
 
-    // Browser mode: client-only detection (no network, no storage until explicit Save)
-    // Implements primary path from Plan 4 + synthesized browser heuristics (Plan 1).
+    // Browser mode: client-only detection (no network, no storage until explicit Save).
+    // Single source of truth lives in lib/hardware-detector.ts (detectBrowser).
     try {
-      // Parent will typically set detecting state before calling, but we handle here too
-      const result = await runBrowserDetection();
+      const result = await detectBrowser();
       onDetect(result);
     } catch (err) {
       console.warn('[HardwareDetectButton] browser detection failed', err);
@@ -81,8 +80,8 @@ export function HardwareDetectButton({
 
   const title =
     mode === 'browser'
-      ? 'Instant browser scan (WebGL renderer + heuristics). Best on Chrome/Edge Windows. Good starting point — always editable.'
-      : 'Open paste helper for highest-accuracy OS command output (dxdiag, lspci, system_profiler, Steam System Info).';
+      ? 'Instant browser scan — detects your GPU and screen resolution (Chrome/Edge Windows are most accurate). Add CPU/RAM via Paste or manually. Always editable.'
+      : 'Open paste helper for highest-accuracy OS command output (dxdiag, inxi, system_profiler, Steam System Info).';
 
   return (
     <Button
@@ -99,102 +98,4 @@ export function HardwareDetectButton({
       <span className="hidden sm:inline">{getButtonLabel()}</span>
     </Button>
   );
-}
-
-/** Pure client-only browser hardware detection (no side effects beyond disposable canvas). */
-async function runBrowserDetection(): Promise<DetectedHardware> {
-  const raw: any = {};
-  let gpu: string | undefined;
-  let cpu: string | undefined;
-  let ram: number | undefined;
-  let resolution: string | undefined;
-  let confidence = 0.3;
-  const limitations: string[] = [];
-
-  // 1. WebGL UNMASKED_RENDERER — highest value signal for discrete GPUs (Plan 1/4 primary)
-  try {
-    const canvas = document.createElement('canvas');
-    const gl = (canvas.getContext('webgl') ||
-      canvas.getContext('experimental-webgl')) as WebGLRenderingContext | null;
-    const ext = gl?.getExtension('WEBGL_debug_renderer_info');
-    if (ext && gl) {
-      const renderer = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) as string;
-      const vendor = gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) as string;
-      if (renderer) {
-        // Clean common noise: PCIe/SSE2/Direct3D strings etc.
-        const cleaned = renderer
-          .replace(/\s*\(.*?PCIe.*?\)/gi, '')
-          .replace(/\s*\/.*?(Direct3D|SSE|OpenGL).*/gi, '')
-          .replace(/\s+/g, ' ')
-          .trim();
-        gpu = sanitizeFullName(cleaned);
-        raw.webglRenderer = renderer;
-        raw.webglVendor = vendor;
-        confidence = Math.max(confidence, 0.78);
-      }
-    } else {
-      limitations.push('WebGL debug renderer unavailable (privacy extension, Firefox strict, or Safari)');
-    }
-  } catch {
-    limitations.push('WebGL context creation blocked');
-  }
-
-  // 2. Navigator memory + cores (approximate, Chrome/Edge mostly)
-  const mem = (navigator as any).deviceMemory;
-  if (typeof mem === 'number' && mem >= 2) {
-    ram = Math.min(128, Math.max(4, Math.round(mem)));
-    raw.deviceMemory = mem;
-    confidence += 0.07;
-  }
-  const cores = navigator.hardwareConcurrency;
-  if (cores && cores >= 2) {
-    raw.hardwareConcurrency = cores;
-    if (!cpu) {
-      cpu = sanitizeFullName(`${cores}-core CPU (browser)`);
-    }
-    confidence += 0.05;
-  }
-
-  // 3. Resolution (always reliable)
-  if (typeof screen !== 'undefined') {
-    resolution = `${screen.width}x${screen.height}`;
-    raw.screen = { w: screen.width, h: screen.height, dpr: window.devicePixelRatio };
-    confidence += 0.08;
-  }
-
-  // 4. Basic WebGPU (very new, graceful)
-  try {
-    if ('gpu' in navigator) {
-      const adapter = await (navigator as any).gpu?.requestAdapter?.();
-      if (adapter?.info?.description) {
-        raw.webgpu = adapter.info.description;
-        if (!gpu) {
-          gpu = sanitizeFullName(String(adapter.info.description));
-          confidence = Math.max(confidence, 0.65);
-        }
-      }
-    }
-  } catch {
-    // ignore — WebGPU not widely available 2026
-  }
-
-  if (!gpu) {
-    limitations.push('GPU string generic or unavailable — paste recommended for exact model');
-    confidence = Math.min(confidence, 0.45);
-  }
-  if (limitations.length === 0) {
-    limitations.push('Browser-reported values are best-effort; spoofable and may report iGPU or power-limited laptop chips');
-  }
-
-  return {
-    cpu,
-    gpu,
-    ram,
-    resolution,
-    raw,
-    method: 'browser',
-    confidence: Math.min(0.94, Math.max(0.2, confidence)),
-    timestamp: new Date().toISOString(),
-    limitations,
-  };
 }

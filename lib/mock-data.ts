@@ -575,6 +575,10 @@ export function addUserReport(report: Omit<Report, 'id' | 'createdAt' | 'helpful
     id: `user_${Date.now()}`,
     createdAt: new Date().toISOString(),
     helpfulVotes: 0,
+    downvoteVotes: 0,
+    voteScore: 0,
+    credibilityBadge: 'New',
+    status: 'approved',
   };
   const updated = [newReport, ...userReports];
   saveUserReports(updated);

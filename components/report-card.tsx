@@ -1,42 +1,85 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Report, UserPC } from '@/lib/types';
 import { PerformanceBadge } from './performance-badge';
 import { formatRelativeTime, calculateHardwareAwareSimilarity as calculateSimilarity } from '@/lib/data';
 import { cn } from '@/lib/utils';
-import { Cpu, Monitor, Zap, Heart, ChevronDown, ChevronUp, Copy } from 'lucide-react';
+import {
+  ArrowBigDown,
+  ArrowBigUp,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Cpu,
+  Monitor,
+  ShieldCheck,
+  Zap,
+} from 'lucide-react';
 
 interface ReportCardProps {
   report: Report;
   userRig?: UserPC | null;
   onHelpful?: (id: string) => void | Promise<void>;
+  onVote?: (id: string, value: 1 | -1 | 0) => void | Promise<void>;
   onViewFull?: (report: Report) => void;
   compact?: boolean;
 }
 
-export function ReportCard({ report, userRig, onHelpful, onViewFull, compact = false }: ReportCardProps) {
+export function ReportCard({ report, userRig, onHelpful, onVote, onViewFull, compact = false }: ReportCardProps) {
   const [expanded, setExpanded] = useState(false);
-  const [voted, setVoted] = useState(false);
-  const [voting, setVoting] = useState(false); // Phase 2: supports async real upvote (rate limit / dup friendly)
+  // Which way the current user has voted (drives button highlight + undo).
+  const [userVote, setUserVote] = useState<1 | -1 | 0>(0);
+  // Optimistic score offset not yet reflected in the authoritative `report` prop.
+  const [pendingDelta, setPendingDelta] = useState(0);
+  // Direction of the most recent score change, used to animate the counter.
+  const [scoreDir, setScoreDir] = useState(1);
+  const [voting, setVoting] = useState(false);
 
   const similarity = userRig ? calculateSimilarity(report, userRig) : 0;
   const isSimilar = similarity > 65;
+  const hasDetails = !!(report.tweaks || report.issues || report.driverVersion || report.notes || (report as any).kernel || (report as any).distro);
+  const baseScore = report.voteScore ?? report.helpfulVotes ?? 0;
+  const displayedScore = baseScore + pendingDelta;
+  const reportBadge = report.credibilityBadge || (displayedScore >= 10 ? 'Trusted' : displayedScore >= 3 ? 'Helpful' : 'New');
 
-  const handleHelpful = async (e: React.MouseEvent) => {
+  // When authoritative data arrives (e.g. after refetch), it already includes the
+  // user's vote — so clear the local optimistic offset to avoid double-counting.
+  const prevBaseRef = useRef(baseScore);
+  useEffect(() => {
+    if (prevBaseRef.current !== baseScore) {
+      prevBaseRef.current = baseScore;
+      setPendingDelta(0);
+    }
+  }, [baseScore]);
+
+  const handleVote = async (value: 1 | -1, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (voted || voting) return;
+    if (voting) return;
+
+    const prevVote = userVote;
+    // Clicking the already-active direction clears the vote (undo).
+    const nextVote: 1 | -1 | 0 = prevVote === value ? 0 : value;
+    const delta = nextVote - prevVote;
+
+    // Optimistic update for snappy feedback; reverted if the request fails.
+    setScoreDir(delta >= 0 ? 1 : -1);
+    setUserVote(nextVote);
+    setPendingDelta((d) => d + delta);
     setVoting(true);
     try {
-      const maybePromise = onHelpful?.(report.id);
-      if (maybePromise instanceof Promise) {
-        await maybePromise;
-      }
-      setVoted(true);
+      const maybePromise = onVote
+        ? onVote(report.id, nextVote)
+        : nextVote === 1
+          ? onHelpful?.(report.id)
+          : undefined;
+      if (maybePromise instanceof Promise) await maybePromise;
     } catch (err: any) {
-      // Real mode errors (already voted, auth, rate etc) — keep UI clean
-      console.warn('[ReportCard] upvote failed (may be duplicate or auth):', err?.message || err);
-      // Do not set voted on error
+      // Revert optimistic state on failure.
+      setUserVote(prevVote);
+      setPendingDelta((d) => d - delta);
+      console.warn('[ReportCard] vote failed:', err?.message || err);
     } finally {
       setVoting(false);
     }
@@ -47,8 +90,6 @@ export function ReportCard({ report, userRig, onHelpful, onViewFull, compact = f
     navigator.clipboard.writeText(text);
   };
 
-  const hasDetails = !!(report.tweaks || report.issues || report.driverVersion || report.notes || (report as any).kernel || (report as any).distro);
-
   return (
     <div
       className={cn(
@@ -58,7 +99,6 @@ export function ReportCard({ report, userRig, onHelpful, onViewFull, compact = f
       )}
       onClick={() => onViewFull?.(report)}
     >
-      {/* Header row — hardware + tier */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
@@ -66,7 +106,7 @@ export function ReportCard({ report, userRig, onHelpful, onViewFull, compact = f
               <Zap className="h-3.5 w-3.5 text-cyan-400" />
               <span className="truncate">{report.gpu}</span>
             </div>
-            <span className="hidden text-muted-foreground/40 md:inline">•</span>
+            <span className="hidden text-muted-foreground/40 md:inline">/</span>
             <div className="flex items-center gap-1.5 text-muted-foreground">
               <Cpu className="h-3.5 w-3.5" />
               <span className="truncate">{report.cpu}</span>
@@ -76,14 +116,12 @@ export function ReportCard({ report, userRig, onHelpful, onViewFull, compact = f
             </span>
           </div>
 
-          {/* Resolution + preset */}
           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
             <div className="inline-flex items-center gap-1.5 rounded-md bg-muted/60 px-2 py-0.5 text-xs font-medium text-muted-foreground">
               <Monitor className="h-3 w-3" />
               {report.resolution}
               {report.refreshRate && ` @ ${report.refreshRate}Hz`}
             </div>
-
             <span className="rounded-md border border-border bg-background/60 px-2 py-0.5 text-xs font-medium">
               {report.settingsPreset}
               {report.customSettingsNotes && <span className="ml-1 text-[10px] text-muted-foreground">(custom)</span>}
@@ -94,10 +132,9 @@ export function ReportCard({ report, userRig, onHelpful, onViewFull, compact = f
         <PerformanceBadge tier={report.performanceTier} size={compact ? 'sm' : 'md'} />
       </div>
 
-      {/* Hero FPS numbers */}
       <div className="mt-3 flex items-baseline gap-3">
         <div className="flex items-baseline gap-1">
-          <span className="font-mono text-3xl font-semibold tabular-nums tracking-tighter text-foreground md:text-4xl">
+          <span className="font-mono text-3xl font-semibold tabular-nums text-foreground md:text-4xl">
             {report.avgFps}
           </span>
           <span className="text-sm font-medium text-muted-foreground">FPS</span>
@@ -110,37 +147,106 @@ export function ReportCard({ report, userRig, onHelpful, onViewFull, compact = f
         )}
       </div>
 
-      {/* Notes / tweaks snippet */}
       {(report.notes || report.tweaks) && (
         <div className="mt-2 line-clamp-2 text-sm leading-snug text-muted-foreground">
           {report.tweaks || report.notes}
         </div>
       )}
 
-      {/* Similarity indicator (when My Rig is saved) */}
       {isSimilar && (
         <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400">
           <Zap className="h-3 w-3" /> {similarity}% match to your rig
         </div>
       )}
 
-      {/* Footer */}
       <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <span>{formatRelativeTime(report.createdAt)}</span>
-
-          <button
-            onClick={handleHelpful}
-            disabled={voted || voting}
-            className={cn(
-              'flex items-center gap-1 transition hover:text-foreground disabled:opacity-60',
-              voted && 'text-rose-400'
-            )}
-            title={voting ? 'Recording upvote...' : voted ? 'Thanks for the upvote!' : 'Upvote this report (real mode uses report_votes table)'}
-          >
-            <Heart className={cn('h-3.5 w-3.5', (voted || voting) && 'fill-current')} />
-            <span>{report.helpfulVotes + (voted ? 1 : 0)}{voting ? '…' : ''}</span>
-          </button>
+          <div className="inline-flex items-center overflow-hidden rounded-full border border-border bg-background/60">
+            <motion.button
+              onClick={(e) => handleVote(1, e)}
+              disabled={voting}
+              whileTap={{ scale: 0.82 }}
+              className={cn(
+                'relative grid h-6 w-7 place-items-center transition hover:bg-muted hover:text-foreground disabled:opacity-60',
+                userVote === 1 && 'text-emerald-400'
+              )}
+              title={userVote === 1 ? 'Remove your upvote' : 'Upvote report credibility'}
+              aria-pressed={userVote === 1}
+            >
+              <AnimatePresence>
+                {userVote === 1 && (
+                  <motion.span
+                    key="up-burst"
+                    initial={{ scale: 0, opacity: 0.55 }}
+                    animate={{ scale: 2.2, opacity: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.45, ease: 'easeOut' }}
+                    className="pointer-events-none absolute inset-0 rounded-full bg-emerald-400/40"
+                  />
+                )}
+              </AnimatePresence>
+              <motion.span
+                animate={userVote === 1 ? { scale: [1, 1.45, 1], y: [0, -2, 0] } : { scale: 1, y: 0 }}
+                transition={{ duration: 0.35, ease: 'easeOut' }}
+                className="relative grid place-items-center"
+              >
+                <ArrowBigUp className={cn('h-4 w-4', userVote === 1 && 'fill-current')} />
+              </motion.span>
+            </motion.button>
+            <span className="relative grid min-w-8 place-items-center overflow-hidden border-x border-border px-1 font-mono tabular-nums text-foreground">
+              <AnimatePresence mode="popLayout" initial={false}>
+                <motion.span
+                  key={displayedScore}
+                  initial={{ y: scoreDir > 0 ? 12 : -12, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: scoreDir > 0 ? -12 : 12, opacity: 0 }}
+                  transition={{ type: 'spring', stiffness: 550, damping: 32 }}
+                  className={cn(
+                    'block',
+                    userVote === 1 && 'text-emerald-400',
+                    userVote === -1 && 'text-rose-400'
+                  )}
+                >
+                  {displayedScore}
+                </motion.span>
+              </AnimatePresence>
+            </span>
+            <motion.button
+              onClick={(e) => handleVote(-1, e)}
+              disabled={voting}
+              whileTap={{ scale: 0.82 }}
+              className={cn(
+                'relative grid h-6 w-7 place-items-center transition hover:bg-muted hover:text-foreground disabled:opacity-60',
+                userVote === -1 && 'text-rose-400'
+              )}
+              title={userVote === -1 ? 'Remove your downvote' : 'Downvote report credibility'}
+              aria-pressed={userVote === -1}
+            >
+              <AnimatePresence>
+                {userVote === -1 && (
+                  <motion.span
+                    key="down-burst"
+                    initial={{ scale: 0, opacity: 0.55 }}
+                    animate={{ scale: 2.2, opacity: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.45, ease: 'easeOut' }}
+                    className="pointer-events-none absolute inset-0 rounded-full bg-rose-400/40"
+                  />
+                )}
+              </AnimatePresence>
+              <motion.span
+                animate={userVote === -1 ? { scale: [1, 1.45, 1], y: [0, 2, 0] } : { scale: 1, y: 0 }}
+                transition={{ duration: 0.35, ease: 'easeOut' }}
+                className="relative grid place-items-center"
+              >
+                <ArrowBigDown className={cn('h-4 w-4', userVote === -1 && 'fill-current')} />
+              </motion.span>
+            </motion.button>
+          </div>
+          <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+            <ShieldCheck className="h-3 w-3" /> {reportBadge}
+          </span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -156,20 +262,18 @@ export function ReportCard({ report, userRig, onHelpful, onViewFull, compact = f
               {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
             </button>
           )}
-          <span className="text-[10px] text-muted-foreground/50 group-hover:text-muted-foreground">View full →</span>
+          <span className="text-[10px] text-muted-foreground/50 group-hover:text-muted-foreground">View full</span>
         </div>
       </div>
 
-      {/* Expanded details (lightweight) */}
       {expanded && hasDetails && (
         <div className="mt-3 space-y-1.5 rounded-lg bg-muted/40 p-3 text-sm">
           {report.tweaks && (
             <div>
-              <span className="font-medium text-muted-foreground">Tweaks:</span>{' '}
-              {report.tweaks}
-              <button 
-                onClick={(e) => handleCopy(report.tweaks!, e)} 
-                className="ml-1 rounded p-0.5 text-muted-foreground hover:bg-accent/70 hover:text-foreground transition"
+              <span className="font-medium text-muted-foreground">Tweaks:</span> {report.tweaks}
+              <button
+                onClick={(e) => handleCopy(report.tweaks!, e)}
+                className="ml-1 rounded p-0.5 text-muted-foreground transition hover:bg-accent/70 hover:text-foreground"
                 title="Copy tweaks"
               >
                 <Copy className="inline h-3 w-3" />

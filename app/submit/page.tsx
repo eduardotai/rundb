@@ -98,29 +98,28 @@ export default function SubmitPage() {
         )}
 
         {selectedGame && (
-          <div className="mt-3 flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={selectedGame.coverImage} alt="" className="h-12 w-8 rounded object-cover" />
-            <div className="flex-1 min-w-0">
-              <div className="font-medium truncate">{selectedGame.name}</div>
-              <div className="text-xs text-muted-foreground">{selectedGame.developer}</div>
+          <div className="mt-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
+            <div className="flex items-center gap-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={selectedGame.coverImage} alt="" className="h-12 w-8 rounded object-cover" />
+              <div className="flex-1 min-w-0">
+                <div className="font-medium truncate">{selectedGame.name}</div>
+                <div className="text-xs text-muted-foreground">{selectedGame.developer}</div>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => { setSelectedGame(null); setSearch(''); }}>
+                Change
+              </Button>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => { setSelectedGame(null); setSearch(''); }}>
-              Change
-            </Button>
+            <div className="mt-3 border-t border-primary/20 pt-3">
+              <Button
+                onClick={() => setShowDialog(true)}
+                className="w-full font-semibold"
+              >
+                Continue to Report Form
+              </Button>
+            </div>
           </div>
         )}
-      </div>
-
-      <div className="mt-6">
-        <Button
-          size="lg"
-          disabled={!selectedGame}
-          onClick={() => setShowDialog(true)}
-          className="w-full"
-        >
-          Continue to Report Form
-        </Button>
       </div>
 
       <p className="mt-6 text-center text-xs text-muted-foreground">

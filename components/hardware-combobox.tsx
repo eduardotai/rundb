@@ -166,7 +166,7 @@ export function HardwareCombobox({
                 onSelect={() => handleSelect(null, search || 'Custom hardware')}
                 className="cursor-pointer text-muted-foreground"
               >
-                Use custom / typed value: <span className="ml-1 font-medium text-foreground truncate">“{search || 'My exact model'}”</span>
+                Use exactly: <span className="ml-1 font-medium text-foreground truncate">“{search || 'My exact model'}”</span>
               </CommandItem>
             </CommandGroup>
           </CommandList>

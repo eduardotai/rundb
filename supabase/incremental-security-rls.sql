@@ -48,3 +48,13 @@ CREATE POLICY "Authenticated users can insert reports" ON public.reports
     AND moderator_notes IS NULL
     AND ((user_id IS NULL) OR (user_id = auth.uid()))
   );
+
+-- Owners can read their own reports (any status). Without this, insert().select()
+-- in submitReportAction is denied by RLS on the RETURNING row (error 42501
+-- "new row violates row-level security policy for table reports") because the
+-- only other SELECT policy restricts reads to status = 'approved'. This also lets
+-- the rate-limit / duplicate-detection count queries see the user's own pending rows.
+DROP POLICY IF EXISTS "Users can read their own reports" ON public.reports;
+
+CREATE POLICY "Users can read their own reports" ON public.reports
+  FOR SELECT USING (user_id = auth.uid());

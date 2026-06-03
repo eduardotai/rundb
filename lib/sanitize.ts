@@ -59,7 +59,7 @@ export function sanitizeFullName(raw: string): string {
     .replace(/[\x00-\x1F\x7F-\x9F]/g, '')           // remove control chars
     .replace(/[<>"`]/g, '')                         // strip dangerous XSS chars (keep ' for names like Baldur's Gate)
     .replace(/https?:\/\/|www\.|javascript:|data:|vbscript:/gi, '') // neutralize links / protocols
-    .replace(/[^\p{L}\p{M}\s\-'.]/gu, '')           // allow only safe name chars
+    .replace(/[^\p{L}\p{M}\p{N}\s\-'.]/gu, '')      // allow safe name chars + digits for hardware/driver strings
     .replace(/\s+/g, ' ');                          // collapse spaces
 
   if (name.length > 80) name = name.slice(0, 80);

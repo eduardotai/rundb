@@ -265,6 +265,14 @@ CREATE POLICY "Games are publicly readable" ON games FOR SELECT USING (true);
 CREATE POLICY "Approved reports are publicly readable" ON reports
   FOR SELECT USING (status = 'approved');
 
+-- Owners can always read their own reports (any status). REQUIRED so that:
+--   1. insert().select() can return the freshly inserted 'pending' row (otherwise the
+--      RETURNING clause is denied by RLS and you get error 42501 on submit), and
+--   2. the rate-limit / duplicate-detection count queries in submitReportAction can
+--      actually see the user's own pending reports.
+CREATE POLICY "Users can read their own reports" ON reports
+  FOR SELECT USING (user_id = auth.uid());
+
 -- Anyone (including fully anonymous clients using the anon key, or authenticated users/guests via signInAnonymously)
 -- can insert reports. The row must claim user_id=NULL or exactly the current auth.uid().
 -- NOTE: user submissions now go through the submit_report SECURITY DEFINER RPC which bypasses this policy

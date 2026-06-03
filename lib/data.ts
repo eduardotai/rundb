@@ -2,12 +2,8 @@
  * RunDB Data Layer Adapter
  *
  * This file is the single source of truth for all data access.
- * It allows us to switch between mock data and real Supabase data
- * using the NEXT_PUBLIC_USE_REAL_DATA feature flag.
- *
- * During development and early rollout:
- * - Keep using mocks by default (safe, fast, no DB dependency)
- * - Flip the flag to gradually migrate to real data
+ * Public data access is real-data-first. Fixture data is available only behind
+ * an explicit development-only opt-in for local UI work.
  *
  * All pages and components should eventually import from here
  * instead of directly from '@/lib/mock-data'.
@@ -46,8 +42,104 @@ import { useQuery } from '@tanstack/react-query'
 import * as coverResolver from './game-cover-resolver'
 import { getCatalogCover } from './game-cover-catalog'
 import { upgradeCoverImageSrc } from './cover-image-url'
+import { cleanPublicReportNotes } from './report-notes'
 
-export const USE_REAL = process.env.NEXT_PUBLIC_USE_REAL_DATA === 'true'
+export const ALLOW_MOCK_DATA =
+  process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_ALLOW_MOCK_DATA === 'true'
+export const USE_REAL = process.env.NEXT_PUBLIC_USE_REAL_DATA !== 'false' || !ALLOW_MOCK_DATA
+
+const EMPTY_GAME_STATS: GameStats = {
+  totalReports: 0,
+  tierDistribution: {
+    Excellent: 0,
+    Good: 0,
+    Playable: 0,
+    Struggling: 0,
+    Unplayable: 0,
+  },
+  avgFpsByResolution: {},
+  mostCommonPreset: null,
+  avgFpsOverall: 0,
+}
+
+function unavailablePrediction(): PredictionResult {
+  return {
+    predictedTier: 'Unplayable',
+    confidence: 0,
+    matchingReports: [],
+    explanation: 'Not enough public reports are available for this game yet.',
+    recommendedSettings: 'Submit a report to help build the community dataset.',
+  }
+}
+
+function publicStarterGames(): Game[] {
+  return enrichGamesWithCoversSync(mock.getAllGames())
+}
+
+function getStarterGamesPage(params: Required<Pick<GetGamesPageParams, 'page' | 'pageSize' | 'sort'>> & Pick<GetGamesPageParams, 'search' | 'genre'>): GamesPageResult {
+  let games = mock.getAllGames()
+  const search = params.search?.trim()
+  const genre = params.genre?.trim()
+
+  if (search) {
+    const q = search.toLowerCase()
+    games = games.filter(
+      (g) =>
+        g.name.toLowerCase().includes(q) ||
+        g.developer.toLowerCase().includes(q) ||
+        g.slug.includes(q)
+    )
+  }
+  if (genre) games = games.filter((g) => g.genres.includes(genre))
+  if (params.sort === 'name') games.sort((a, b) => a.name.localeCompare(b.name))
+  else if (params.sort === 'year') games.sort((a, b) => b.releaseYear - a.releaseYear)
+
+  const total = games.length
+  const start = (params.page - 1) * params.pageSize
+  const slice = games.slice(start, start + params.pageSize)
+
+  return {
+    games: enrichGamesWithCoversSync(slice),
+    total,
+    page: params.page,
+    pageSize: params.pageSize,
+    totalPages: Math.max(1, Math.ceil(total / params.pageSize)),
+  }
+}
+
+function searchStarterGames(query: string, limit: number): Game[] {
+  const q = query.trim().toLowerCase()
+  const games = q
+    ? mock.getAllGames().filter(
+        (g) =>
+          g.name.toLowerCase().includes(q) ||
+          g.slug.includes(q) ||
+          g.developer.toLowerCase().includes(q)
+      )
+    : mock.getAllGames()
+
+  return enrichGamesWithCoversSync(games.slice(0, limit))
+}
+
+async function withSupabaseReadTimeout<T>(
+  operation: PromiseLike<T>,
+  label: string,
+  timeoutMs = 3500
+): Promise<T | null> {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const timeoutPromise = new Promise<null>((resolve) => {
+    timeout = setTimeout(() => {
+      console.warn(`[data] ${label} timed out; using starter catalog/fallback data.`)
+      resolve(null)
+    }, timeoutMs)
+  })
+
+  try {
+    return await Promise.race([Promise.resolve(operation), timeoutPromise])
+  } finally {
+    if (timeout) clearTimeout(timeout)
+  }
+}
 
 /** True when public Supabase env vars are present (real network client, not the no-op stub). */
 export function isSupabaseConfigured(): boolean {
@@ -101,12 +193,20 @@ function mapDbReportToReport(row: any): Report {
     avgFps: Number(row.avg_fps),
     fps1PercentLow: row.fps_1_percent_low != null ? Number(row.fps_1_percent_low) : undefined,
     performanceTier: row.performance_tier as PerformanceTier,
-    notes: row.notes,
+    notes: cleanPublicReportNotes(row.notes),
     tweaks: row.tweaks,
     issues: row.issues,
     driverVersion: row.driver_version,
     createdAt: row.created_at,
     helpfulVotes: row.helpful_votes ?? 0,
+    downvoteVotes: row.downvote_votes ?? 0,
+    voteScore: row.vote_score ?? row.helpful_votes ?? 0,
+    credibilityScore: row.credibility_score,
+    credibilityBadge: row.credibility_badge,
+    canonicalCpu: row.canonical_cpu,
+    canonicalGpu: row.canonical_gpu,
+    gpuPerfIndex: row.gpu_perf_index != null ? Number(row.gpu_perf_index) : undefined,
+    cpuPerfIndex: row.cpu_perf_index != null ? Number(row.cpu_perf_index) : undefined,
     // Phase 2 moderation fields (populated when RLS allows, e.g. for admins)
     status: row.status as ReportStatus | undefined,
     userId: row.user_id,
@@ -310,42 +410,40 @@ export function enrichGamesWithCoversSync(games: Game[]): Game[] {
 export async function getAllGames(): Promise<Game[]> {
   if (USE_REAL) {
     if (!isSupabaseConfigured()) {
-      console.warn(
-        '[data] USE_REAL=true but Supabase is not configured — using mock games. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.'
-      )
-      return enrichGamesWithCoversSync(mock.getAllGames())
+      console.warn('[data] Supabase is not configured. Using the public starter game catalog so reports can still be submitted.')
+      return publicStarterGames()
     }
 
     const { createClient } = await import('@/lib/supabase/client')
     const supabase = createClient()
 
-    const { data, error } = await supabase
-      .from('games')
-      .select('*')
-      .order('name', { ascending: true })
+    const result = await withSupabaseReadTimeout<any>(
+      supabase
+        .from('games')
+        .select('*')
+        .order('name', { ascending: true }),
+      'getAllGames'
+    )
+
+    if (!result) return publicStarterGames()
+
+    const { data, error } = result
 
     if (error) {
       console.error('[data] Failed to fetch games from Supabase:', error)
-      const fallback = mock.getAllGames()
-      return enrichGamesWithCoversSync(fallback) // still get real banners via resolver even on DB error
+      return publicStarterGames()
     }
 
     const rows = data || []
     if (rows.length === 0) {
-      console.warn(
-        '[data] Supabase games table is empty. Run: npm run seed:games (or npm run ingest:games with IGDB credentials).'
-      )
-      if (process.env.NODE_ENV === 'development') {
-        return enrichGamesWithCoversSync(mock.getAllGames())
-      }
-      return []
+      console.warn('[data] Supabase games table is empty. Using the public starter game catalog until the ingest pipeline is populated.')
+      return publicStarterGames()
     }
 
     const mapped = rows.map(mapDbGameToGame)
-    return enrichGamesWithCovers(mapped) // DB cover_url + game_media + public resolver
+    return enrichGamesWithCovers(mapped)
   }
-  const mockGames = mock.getAllGames()
-  return enrichGamesWithCoversSync(mockGames) // !USE_REAL: resolver supplies real public banners (no picsum)
+  return publicStarterGames()
 }
 
 export interface GetGamesPageParams {
@@ -365,30 +463,7 @@ export async function getGamesPage(params: GetGamesPageParams = {}): Promise<Gam
   const sort = params.sort ?? 'name'
 
   if (!USE_REAL || !isSupabaseConfigured()) {
-    let games = mock.getAllGames()
-    if (search) {
-      const q = search.toLowerCase()
-      games = games.filter(
-        (g) =>
-          g.name.toLowerCase().includes(q) ||
-          g.developer.toLowerCase().includes(q) ||
-          g.slug.includes(q)
-      )
-    }
-    if (genre) games = games.filter((g) => g.genres.includes(genre))
-    if (sort === 'name') games.sort((a, b) => a.name.localeCompare(b.name))
-    else if (sort === 'year') games.sort((a, b) => b.releaseYear - a.releaseYear)
-
-    const total = games.length
-    const start = (page - 1) * pageSize
-    const slice = games.slice(start, start + pageSize)
-    return {
-      games: enrichGamesWithCoversSync(slice),
-      total,
-      page,
-      pageSize,
-      totalPages: Math.max(1, Math.ceil(total / pageSize)),
-    }
+    return getStarterGamesPage({ page, pageSize, search, genre, sort })
   }
 
   const { createClient } = await import('@/lib/supabase/client')
@@ -405,11 +480,17 @@ export async function getGamesPage(params: GetGamesPageParams = {}): Promise<Gam
 
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1
-  const { data, error, count } = await query.range(from, to)
+  const result = await withSupabaseReadTimeout<any>(query.range(from, to), 'getGamesPage')
+
+  if (!result) {
+    return getStarterGamesPage({ page, pageSize, search, genre, sort })
+  }
+
+  const { data, error, count } = result
 
   if (error) {
     console.error('[data] getGamesPage error:', error)
-    return { games: [], total: 0, page, pageSize, totalPages: 1 }
+    return getStarterGamesPage({ page, pageSize, search, genre, sort })
   }
 
   const total = count ?? 0
@@ -432,45 +513,45 @@ export async function searchGames(query: string, limit = 25): Promise<Game[]> {
     if (USE_REAL && isSupabaseConfigured()) {
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
-      const { data } = await supabase
-        .from('games')
-        .select('*')
-        .order('name', { ascending: true })
-        .limit(limit)
+      const result = await withSupabaseReadTimeout<any>(
+        supabase
+          .from('games')
+          .select('*')
+          .order('name', { ascending: true })
+          .limit(limit),
+        'searchGames'
+      )
+      const data = result?.data
       if (data?.length) return enrichGamesWithCovers(data.map(mapDbGameToGame))
     }
-    const all = mock.getAllGames().slice(0, limit)
-    return enrichGamesWithCoversSync(all)
+    return searchStarterGames('', limit)
   }
 
   if (USE_REAL && isSupabaseConfigured()) {
     const { createClient } = await import('@/lib/supabase/client')
     const supabase = createClient()
-    const { data, error } = await supabase
-      .from('games')
-      .select('*')
-      .ilike('name', `%${q}%`)
-      .order('name', { ascending: true })
-      .limit(limit)
+    const result = await withSupabaseReadTimeout<any>(
+      supabase
+        .from('games')
+        .select('*')
+        .ilike('name', `%${q}%`)
+        .order('name', { ascending: true })
+        .limit(limit),
+      'searchGames'
+    )
+
+    if (!result) return searchStarterGames(q, limit)
+
+    const { data, error } = result
 
     if (error) {
       console.error('[data] searchGames error:', error)
-      return []
+      return searchStarterGames(q, limit)
     }
     return enrichGamesWithCovers((data || []).map(mapDbGameToGame))
   }
 
-  const lower = q.toLowerCase()
-  const filtered = mock
-    .getAllGames()
-    .filter(
-      (g) =>
-        g.name.toLowerCase().includes(lower) ||
-        g.slug.includes(lower) ||
-        g.developer.toLowerCase().includes(lower)
-    )
-    .slice(0, limit)
-  return enrichGamesWithCoversSync(filtered)
+  return searchStarterGames(q, limit)
 }
 
 /** Rank distinct genres by how many games carry them (most common first, then A–Z). */
@@ -512,13 +593,13 @@ export async function getAvailableGenresAsync(limit = 40): Promise<string[]> {
         .limit(2000)
 
       if (error) {
-        console.warn('[data] getAvailableGenresAsync error, falling back to mock genres:', error.message)
+        console.warn('[data] getAvailableGenresAsync error:', error.message)
       } else if (data) {
         const ranked = rankGenres(data.flatMap((row: any) => row.genres || []), limit)
         if (ranked.length) return ranked
       }
     } catch (err: any) {
-      console.warn('[data] getAvailableGenresAsync unexpected error, falling back to mock genres:', err?.message || err)
+      console.warn('[data] getAvailableGenresAsync unexpected error:', err?.message || err)
     }
   }
 
@@ -527,20 +608,10 @@ export async function getAvailableGenresAsync(limit = 40): Promise<string[]> {
 
 // Keep synchronous version for components that haven't migrated yet (will be removed)
 export function getAllGamesSync(): Game[] {
-  if (USE_REAL) {
-    console.warn('[data] getAllGamesSync falling back to mock — use async getAllGames() instead')
-  }
-  const games = mock.getAllGames()
-  return enrichGamesWithCoversSync(games) // Agent 2: real public covers even in sync legacy paths
+  return publicStarterGames()
 }
 
 export function getGameBySlug(slug: string): Game | undefined {
-  // Kept for full backward compat (many call sites, admin, etc.).
-  // Agent 2: now applies resolver enrichment so even sync callers get real banners (no picsum for seeded games).
-  // Strongly prefer getGameBySlugAsync / useGame(slug) for new code (especially detail page).
-  if (USE_REAL) {
-    console.warn('[data] getGameBySlug using MOCK (real mode — prefer getGameBySlugAsync or useGame hook per plan; covers enriched via resolver)')
-  }
   const game = mock.getGameBySlug(slug)
   if (!game) return undefined
   const [enriched] = enrichGamesWithCoversSync([game])
@@ -572,8 +643,8 @@ export async function getGameBySlugAsync(slug: string): Promise<Game | undefined
         if (error.code === 'PGRST116' || error.message?.includes('no rows')) {
           return undefined
         }
-        console.error('[data] getGameBySlugAsync Supabase error, falling back to mock:', error)
-        return mock.getGameBySlug(slug)
+        console.error('[data] getGameBySlugAsync Supabase error:', error)
+        return getGameBySlug(slug)
       }
 
       if (!data) return undefined
@@ -581,13 +652,11 @@ export async function getGameBySlugAsync(slug: string): Promise<Game | undefined
       const [enriched] = await enrichGamesWithCovers([mapped]) // media + resolver
       return enriched
     } catch (err: any) {
-      console.error('[data] getGameBySlugAsync unexpected error, falling back to mock:', err)
-      const fb = mock.getGameBySlug(slug)
-      return fb ? enrichGamesWithCoversSync([fb])[0] : undefined
+      console.error('[data] getGameBySlugAsync unexpected error:', err)
+      return getGameBySlug(slug)
     }
   }
-  const mockGame = mock.getGameBySlug(slug)
-  return Promise.resolve(mockGame ? enrichGamesWithCoversSync([mockGame])[0] : undefined)
+  return Promise.resolve(getGameBySlug(slug))
 }
 
 // ============================================
@@ -607,19 +676,11 @@ export async function getGameBySlugAsync(slug: string): Promise<Game | undefined
 export const REPORTS_FETCH_HARD_CAP = 500
 
 export function getAllReports(): Report[] {
-  if (USE_REAL) {
-    console.warn('[data] getAllReports using MOCK (real mode not implemented yet — use getAllReportsAsync for Supabase + snake->camel mapping per plan)')
-    return mock.getAllReports()
-  }
-  return mock.getAllReports()
+  return ALLOW_MOCK_DATA ? mock.getAllReports() : []
 }
 
 export function getReportsForGame(gameId: string, filters?: ReportFilters): Report[] {
-  if (USE_REAL) {
-    console.warn('[data] getReportsForGame using MOCK (real mode not implemented yet — use getReportsForGameAsync for real Supabase data per Master Plan)')
-    return mock.getReportsForGame(gameId, filters)
-  }
-  return mock.getReportsForGame(gameId, filters)
+  return ALLOW_MOCK_DATA ? mock.getReportsForGame(gameId, filters) : []
 }
 
 /**
@@ -650,8 +711,8 @@ export async function getReportsForGameAsync(
         .limit(limit)
 
       if (error) {
-        console.error('[data] getReportsForGameAsync Supabase error, falling back to mock:', error)
-        return mock.getReportsForGame(gameId, filters)
+        console.error('[data] getReportsForGameAsync Supabase error:', error)
+        return getReportsForGame(gameId, filters)
       }
 
       let reports = (data || []).map(mapDbReportToReport)
@@ -665,11 +726,11 @@ export async function getReportsForGameAsync(
 
       return reports
     } catch (err: any) {
-      console.error('[data] getReportsForGameAsync unexpected error, falling back to mock:', err)
-      return mock.getReportsForGame(gameId, filters)
+      console.error('[data] getReportsForGameAsync unexpected error:', err)
+      return getReportsForGame(gameId, filters)
     }
   }
-  return Promise.resolve(mock.getReportsForGame(gameId, filters))
+  return Promise.resolve(getReportsForGame(gameId, filters))
 }
 
 export function filterReports(reports: Report[], filters: ReportFilters): Report[] {
@@ -706,7 +767,7 @@ export async function getReportsForGamesAsync(
         .limit(cap)
 
       if (error) {
-        console.error('[data] getReportsForGamesAsync Supabase error, falling back to mock:', error)
+        console.error('[data] getReportsForGamesAsync Supabase error:', error)
       } else {
         for (const row of data || []) {
           const r = mapDbReportToReport(row)
@@ -717,11 +778,12 @@ export async function getReportsForGamesAsync(
         return byGame
       }
     } catch (err: any) {
-      console.error('[data] getReportsForGamesAsync unexpected error, falling back to mock:', err)
+      console.error('[data] getReportsForGamesAsync unexpected error:', err)
     }
   }
 
-  // Mock / fallback path: group the in-memory reports for the requested games.
+  if (!ALLOW_MOCK_DATA) return byGame
+
   const idSet = new Set(ids)
   for (const r of mock.getAllReports()) {
     if (!idSet.has(r.gameId)) continue
@@ -754,25 +816,22 @@ export async function getTrendingGamesAsync(limit: number = 12): Promise<Game[]>
         .limit(safeLimit)
 
       if (error) {
-        console.error('[data] getTrendingGamesAsync error, falling back to mock:', error)
-        return enrichGamesWithCoversSync(mock.getTrendingGames(safeLimit))
+        console.error('[data] getTrendingGamesAsync error:', error)
+        return publicStarterGames().slice(0, safeLimit)
       }
 
       const mapped = (data || []).map(mapDbGameToGame)
       if (mapped.length === 0) {
-        if (process.env.NODE_ENV === 'development') {
-          return enrichGamesWithCoversSync(mock.getTrendingGames(safeLimit))
-        }
-        return []
+        return publicStarterGames().slice(0, safeLimit)
       }
       return enrichGamesWithCovers(mapped)
     } catch (err: any) {
-      console.error('[data] getTrendingGamesAsync unexpected error, falling back to mock:', err)
-      return enrichGamesWithCoversSync(mock.getTrendingGames(safeLimit))
+      console.error('[data] getTrendingGamesAsync unexpected error:', err)
+      return publicStarterGames().slice(0, safeLimit)
     }
   }
 
-  return enrichGamesWithCoversSync(mock.getTrendingGames(safeLimit))
+  return publicStarterGames().slice(0, safeLimit)
 }
 
 /**
@@ -796,8 +855,12 @@ export async function getGlobalCountsAsync(): Promise<{ totalGames: number; tota
         totalReports: reportsRes.count ?? 0,
       }
     } catch (err: any) {
-      console.error('[data] getGlobalCountsAsync error, falling back to mock counts:', err)
+      console.error('[data] getGlobalCountsAsync error:', err)
     }
+  }
+
+  if (!ALLOW_MOCK_DATA) {
+    return { totalGames: 0, totalReports: 0 }
   }
 
   return {
@@ -812,11 +875,7 @@ export function getFilteredGlobalReports(filters: {
   minFps?: number
   tier?: import('./types').PerformanceTier
 }): Report[] {
-  if (USE_REAL) {
-    console.warn('[data] getFilteredGlobalReports using MOCK (real mode not implemented yet — use getFilteredGlobalReportsAsync)')
-    return mock.getFilteredGlobalReports(filters)
-  }
-  return mock.getFilteredGlobalReports(filters)
+  return ALLOW_MOCK_DATA ? mock.getFilteredGlobalReports(filters) : []
 }
 
 /**
@@ -839,17 +898,17 @@ export async function getAllReportsAsync(): Promise<Report[]> {
         .limit(200) // safety for MVP
 
       if (error) {
-        console.error('[data] getAllReportsAsync Supabase error, falling back to mock:', error)
-        return mock.getAllReports()
+        console.error('[data] getAllReportsAsync Supabase error:', error)
+        return getAllReports()
       }
 
       return (data || []).map(mapDbReportToReport)
     } catch (err: any) {
-      console.error('[data] getAllReportsAsync unexpected error, falling back to mock:', err)
-      return mock.getAllReports()
+      console.error('[data] getAllReportsAsync unexpected error:', err)
+      return getAllReports()
     }
   }
-  return Promise.resolve(mock.getAllReports())
+  return Promise.resolve(getAllReports())
 }
 
 /**
@@ -881,9 +940,11 @@ export async function getFilteredGlobalReportsAsync(filters: {
         gameIdForFilter = (g as any)?.id || null
       }
 
+      // Embed the parent game row so the "By game" view can render banners without a
+      // separate full-catalog fetch (game:games(...) is the FK reports.game_id -> games.id).
       let q = supabase
         .from('reports')
-        .select('*')
+        .select('*, game:games(id, slug, name, cover_url, genres, release_year, developer, publisher, steam_app_id, igdb_id)')
         .order('created_at', { ascending: false })
         .limit(300)
 
@@ -894,11 +955,17 @@ export async function getFilteredGlobalReportsAsync(filters: {
       const { data, error } = await q
 
       if (error) {
-        console.error('[data] getFilteredGlobalReportsAsync Supabase error, falling back:', error)
-        return mock.getFilteredGlobalReports(filters)
+        console.error('[data] getFilteredGlobalReportsAsync Supabase error:', error)
+        return attachMockGames(getFilteredGlobalReports(filters))
       }
 
-      let reports = (data || []).map(mapDbReportToReport)
+      let reports = (data || []).map((row: any) => {
+        const report = mapDbReportToReport(row)
+        if (row.game) {
+          report.game = enrichGamesWithCoversSync([mapDbGameToGame(row.game)])[0]
+        }
+        return report
+      })
 
       // Client-side apply the rest of filters (gpuSeries, minFps, tier) using pure helper
       if (filters) {
@@ -910,11 +977,22 @@ export async function getFilteredGlobalReportsAsync(filters: {
 
       return reports
     } catch (err: any) {
-      console.error('[data] getFilteredGlobalReportsAsync unexpected error, falling back:', err)
-      return mock.getFilteredGlobalReports(filters)
+      console.error('[data] getFilteredGlobalReportsAsync unexpected error:', err)
+      return attachMockGames(getFilteredGlobalReports(filters))
     }
   }
-  return Promise.resolve(mock.getFilteredGlobalReports(filters))
+  return Promise.resolve(attachMockGames(getFilteredGlobalReports(filters)))
+}
+
+/**
+ * Attach embedded game metadata to mock reports so the /reports "By game" view renders
+ * banners identically in mock and real modes (mock catalog is in-memory — no overload).
+ */
+function attachMockGames(reports: Report[]): Report[] {
+  if (!ALLOW_MOCK_DATA || reports.length === 0) return reports
+  const byId = new Map<string, Game>()
+  for (const g of enrichGamesWithCoversSync(mock.getAllGames())) byId.set(g.id, g)
+  return reports.map((r) => (r.game ? r : { ...r, game: byId.get(r.gameId) }))
 }
 
 // ============================================
@@ -927,27 +1005,15 @@ export async function getFilteredGlobalReportsAsync(filters: {
 // (Phase 3: real paths live in the async variants below.)
 
 export function computeGameStats(gameId: string): GameStats {
-  if (USE_REAL) {
-    console.warn('[data] computeGameStats using MOCK (real mode not implemented yet — use computeGameStatsAsync or useGameStats hook)')
-    return mock.computeGameStats(gameId)
-  }
-  return mock.computeGameStats(gameId)
+  return ALLOW_MOCK_DATA ? mock.computeGameStats(gameId) : EMPTY_GAME_STATS
 }
 
 export function predictForUserRig(userPC: UserPC, gameId: string): PredictionResult {
-  if (USE_REAL) {
-    console.warn('[data] predictForUserRig using MOCK (real mode not implemented yet — use predictForUserRigAsync or usePrediction hook)')
-    return mock.predictForUserRig(userPC, gameId)
-  }
-  return mock.predictForUserRig(userPC, gameId)
+  return ALLOW_MOCK_DATA ? mock.predictForUserRig(userPC, gameId) : unavailablePrediction()
 }
 
 export function getTrendingGames(limit = 6): Game[] {
-  if (USE_REAL) {
-    console.warn('[data] getTrendingGames using MOCK (real mode not implemented yet)')
-    return mock.getTrendingGames(limit)
-  }
-  return mock.getTrendingGames(limit)
+  return publicStarterGames().slice(0, limit)
 }
 
 /**
@@ -970,18 +1036,18 @@ export async function computeGameStatsAsync(gameId: string): Promise<GameStats> 
         .order('created_at', { ascending: false })
 
       if (error) {
-        console.error('[data] computeGameStatsAsync Supabase error, falling back to mock:', error)
-        return mock.computeGameStats(gameId)
+        console.error('[data] computeGameStatsAsync Supabase error:', error)
+        return computeGameStats(gameId)
       }
 
       const reports = (data || []).map(mapDbReportToReport)
       return mock.computeGameStatsFromReports(reports)
     } catch (err: any) {
-      console.error('[data] computeGameStatsAsync unexpected error, falling back to mock:', err)
-      return mock.computeGameStats(gameId)
+      console.error('[data] computeGameStatsAsync unexpected error:', err)
+      return computeGameStats(gameId)
     }
   }
-  return Promise.resolve(mock.computeGameStats(gameId))
+  return Promise.resolve(computeGameStats(gameId))
 }
 
 /**
@@ -1008,18 +1074,18 @@ export async function predictForUserRigAsync(
         .limit(sampleLimit)
 
       if (error) {
-        console.error('[data] predictForUserRigAsync Supabase error, falling back to mock:', error)
-        return mock.predictForUserRig(userPC, gameId)
+        console.error('[data] predictForUserRigAsync Supabase error:', error)
+        return predictForUserRig(userPC, gameId)
       }
 
       const gameReports = (data || []).map(mapDbReportToReport)
       return mock.predictForUserRigFromReports(userPC, gameReports)
     } catch (err: any) {
-      console.error('[data] predictForUserRigAsync unexpected error, falling back to mock:', err)
-      return mock.predictForUserRig(userPC, gameId)
+      console.error('[data] predictForUserRigAsync unexpected error:', err)
+      return predictForUserRig(userPC, gameId)
     }
   }
-  return Promise.resolve(mock.predictForUserRig(userPC, gameId))
+  return Promise.resolve(predictForUserRig(userPC, gameId))
 }
 
 // ============================================
@@ -1033,7 +1099,7 @@ export async function predictForUserRigAsync(
 export async function addUserReport(
   report: SubmitReportInput | Parameters<typeof mock.addUserReport>[0]
 ): Promise<Report> {
-  if (USE_REAL) {
+  if (USE_REAL && isSupabaseConfigured()) {
     // Dynamic import keeps server-only code out of client bundles
     const { submitReportAction } = await import('@/app/actions/reports')
     // Normalize to SubmitReportInput shape (mock path had performanceTier; real ignores it)
@@ -1055,8 +1121,16 @@ export async function addUserReport(
       customSettingsNotes: (report as any).customSettingsNotes,
       kernel: (report as any).kernel,
       distro: (report as any).distro,
+      canonicalCpu: (report as any).canonicalCpu,
+      canonicalGpu: (report as any).canonicalGpu,
     }
     return submitReportAction(normalized)
+  }
+  if (USE_REAL) {
+    console.warn('[data] Supabase is not configured; report submit is unavailable.')
+  }
+  if (!ALLOW_MOCK_DATA) {
+    throw new Error('Report submission requires a configured Supabase backend.')
   }
   // Mock path remains synchronous in behavior for demo continuity (data adapter returns Promise for consistency)
   const result = mock.addUserReport(report as any)
@@ -1064,7 +1138,7 @@ export async function addUserReport(
 }
 
 export function loadUserReports() {
-  return mock.loadUserReports()
+  return ALLOW_MOCK_DATA ? mock.loadUserReports() : []
 }
 
 /**
@@ -1072,13 +1146,35 @@ export function loadUserReports() {
  * Real path: inserts to report_votes (unique + RLS + trigger maintains helpful_votes).
  * Mock: no-op (existing UI demo mutate in game page continues to work for seed data).
  */
-export async function upvoteReport(reportId: string): Promise<void> {
-  if (USE_REAL) {
+async function legacyUpvoteReport(reportId: string): Promise<void> {
+  if (USE_REAL && isSupabaseConfigured()) {
     const { upvoteReportAction } = await import('@/app/actions/reports')
     return upvoteReportAction(reportId)
   }
+  if (USE_REAL) {
+    console.warn('[data] USE_REAL=true but Supabase not configured — upvote is a no-op.')
+  }
   // Demo mode: caller (e.g. game detail) handles local optimistic bump
   return Promise.resolve()
+}
+
+export async function voteReport(reportId: string, value: 1 | -1 | 0): Promise<void> {
+  if (USE_REAL && isSupabaseConfigured()) {
+    const { voteReportAction } = await import('@/app/actions/reports')
+    return voteReportAction(reportId, value)
+  }
+  if (USE_REAL) {
+    console.warn('[data] USE_REAL=true but Supabase not configured; report vote is a no-op.')
+  }
+  return Promise.resolve()
+}
+
+export async function upvoteReport(reportId: string): Promise<void> {
+  return voteReport(reportId, 1)
+}
+
+export async function downvoteReport(reportId: string): Promise<void> {
+  return voteReport(reportId, -1)
 }
 
 // ============================================
@@ -1316,8 +1412,7 @@ export async function loadUserDevices(): Promise<import('./types').UserDevice[]>
       console.warn('[data] loadUserDevices error, falling back to empty list', err)
     }
   }
-  // Mock path: return a couple of example devices for demo
-  return mock.loadUserDevices?.() || []
+  return ALLOW_MOCK_DATA ? mock.loadUserDevices?.() || [] : []
 }
 
 export async function saveUserDevice(device: UserDeviceInput & { id?: string }): Promise<void> {
@@ -1356,8 +1451,7 @@ export async function saveUserDevice(device: UserDeviceInput & { id?: string }):
       console.warn('[data] saveUserDevice Supabase error', err)
     }
   }
-  // Mock fallback (if mock supports it)
-  mock.saveUserDevice?.(device as any)
+  if (ALLOW_MOCK_DATA) mock.saveUserDevice?.(device as any)
 }
 
 export async function deleteUserDevice(id: string): Promise<void> {
@@ -1372,7 +1466,7 @@ export async function deleteUserDevice(id: string): Promise<void> {
       console.warn('[data] deleteUserDevice error', err)
     }
   }
-  mock.deleteUserDevice?.(id)
+  if (ALLOW_MOCK_DATA) mock.deleteUserDevice?.(id)
 }
 
 // ============================================
@@ -1380,11 +1474,18 @@ export async function deleteUserDevice(id: string): Promise<void> {
 // ============================================
 
 export function getAdminOverviewStats() {
-  return mock.getAdminOverviewStats()
+  return ALLOW_MOCK_DATA ? mock.getAdminOverviewStats() : {
+    totalReports: 0,
+    pendingReports: 0,
+    totalGames: 0,
+    pendingImages: 0,
+    hardwareAliases: 0,
+    importedGames: 0,
+  }
 }
 
 export function getModerationQueue(filterStatus?: ReportStatus | 'all') {
-  return mock.getModerationQueue(filterStatus)
+  return ALLOW_MOCK_DATA ? mock.getModerationQueue(filterStatus) : []
 }
 
 export function updateReportStatus(
@@ -1393,45 +1494,57 @@ export function updateReportStatus(
   moderatorNotes?: string,
   moderatorName?: string
 ) {
+  if (!ALLOW_MOCK_DATA) return undefined
   return mock.updateReportStatus(reportId, status, moderatorNotes, moderatorName)
 }
 
 export function getHardwareAliases(search?: string) {
-  return mock.getHardwareAliases(search)
+  return ALLOW_MOCK_DATA ? mock.getHardwareAliases(search) : []
 }
 
 export function addHardwareAlias(rawString: string, canonical: string, vendor?: string, series?: string) {
+  if (!ALLOW_MOCK_DATA) return undefined
   return mock.addHardwareAlias(rawString, canonical, vendor, series)
 }
 
 export function updateHardwareAlias(id: string, updates: Partial<Omit<HardwareAlias, 'id' | 'createdAt'>>) {
+  if (!ALLOW_MOCK_DATA) return undefined
   return mock.updateHardwareAlias(id, updates)
 }
 
 export function deleteHardwareAlias(id: string) {
+  if (!ALLOW_MOCK_DATA) return undefined
   return mock.deleteHardwareAlias(id)
 }
 
 export function getAllGamesForAdmin() {
-  // In future could be more privileged view
-  return mock.getAllGames()
+  return publicStarterGames()
 }
 
 export function bulkImportGames(rows: any[]): BulkImportResult {
+  if (!ALLOW_MOCK_DATA) {
+    return {
+      success: 0,
+      errors: [{ row: 0, message: 'Mock bulk import is disabled for public deploy.' }],
+      imported: [],
+    }
+  }
   return mock.bulkImportGames(rows)
 }
 
 export const parseCSV = mock.parseCSV
 
 export function getReportImages(filterStatus?: 'pending' | 'approved' | 'rejected' | 'all') {
-  return mock.getReportImages(filterStatus)
+  return ALLOW_MOCK_DATA ? mock.getReportImages(filterStatus) : []
 }
 
 export function updateImageStatus(imageId: string, status: 'pending' | 'approved' | 'rejected') {
+  if (!ALLOW_MOCK_DATA) return undefined
   return mock.updateImageStatus(imageId, status)
 }
 
 export function deleteReportImage(imageId: string) {
+  if (!ALLOW_MOCK_DATA) return undefined
   return mock.deleteReportImage(imageId)
 }
 

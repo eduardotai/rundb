@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { LogOut, User } from 'lucide-react';
+import { LogOut, User, FileText, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { showUserError } from '@/lib/toast';
 
@@ -20,6 +20,7 @@ interface AuthButtonProps {
     id: string;
     email?: string;
     username?: string;
+    avatarUrl?: string;
     user_metadata?: {
       username?: string;
       full_name?: string;
@@ -48,7 +49,7 @@ export function AuthButton({ user }: AuthButtonProps) {
 
   if (user) {
     const displayName = user.username || user.user_metadata?.username || user.user_metadata?.full_name || user.email || 'Guest User';
-    const avatarUrl = user.user_metadata?.avatar_url;
+    const avatarUrl = user.avatarUrl;
 
     return (
       <DropdownMenu>
@@ -56,6 +57,7 @@ export function AuthButton({ user }: AuthButtonProps) {
           <Button variant="ghost" className="flex items-center gap-2 px-2">
             <div className="h-8 w-8 rounded-full overflow-hidden border bg-muted flex-shrink-0 flex items-center justify-center text-xs font-medium">
               {avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={avatarUrl}
                   alt={displayName}
@@ -71,28 +73,53 @@ export function AuthButton({ user }: AuthButtonProps) {
             </span>
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          <div className="px-2 py-1.5 text-sm">
-            <p className="font-medium">{displayName}</p>
-            {user.email && (
-              <p className="text-xs text-muted-foreground truncate">{user.email}</p>
-            )}
+        <DropdownMenuContent align="end" className="w-64 p-1.5">
+          <div className="flex items-center gap-3 px-2 py-2.5">
+            <div className="h-10 w-10 rounded-full overflow-hidden border border-[#334155] bg-muted flex-shrink-0 flex items-center justify-center text-sm font-semibold">
+              {avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={avatarUrl}
+                  alt={displayName}
+                  className="h-full w-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                displayName.charAt(0).toUpperCase()
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold leading-tight truncate">{displayName}</p>
+              {user.email && (
+                <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+              )}
+            </div>
           </div>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => (window.location.href = '/profile')}>
-            <User className="mr-2 h-4 w-4" />
-            Profile & My Rig
+          <DropdownMenuItem
+            onClick={() => (window.location.href = '/profile')}
+            className="group cursor-pointer py-2 focus:bg-[#334155]"
+          >
+            <User className="mr-2 h-4 w-4 text-muted-foreground group-focus:text-foreground" />
+            <span className="flex-1">Profile &amp; My Rig</span>
+            <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => (window.location.href = '/my-reports')}>
-            My Reports
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => (window.location.href = '/admin')} className="text-amber-400">
-            Admin Tools (Phase 4)
+          <DropdownMenuItem
+            onClick={() => (window.location.href = '/my-reports')}
+            className="group cursor-pointer py-2 focus:bg-[#334155]"
+          >
+            <FileText className="mr-2 h-4 w-4 text-muted-foreground group-focus:text-foreground" />
+            <span className="flex-1">My Reports</span>
+            <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={handleSignOut} disabled={loading}>
+          <DropdownMenuItem
+            onClick={handleSignOut}
+            disabled={loading}
+            className="cursor-pointer py-2 text-red-400 focus:bg-red-500/10 focus:text-red-400"
+          >
             <LogOut className="mr-2 h-4 w-4" />
-            Sign out
+            {loading ? 'Signing out…' : 'Sign out'}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

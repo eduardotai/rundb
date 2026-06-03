@@ -140,6 +140,10 @@ function SignUpForm() {
           data: {
             username: values.username,
           },
+          // After the user clicks the confirmation link, route them through the
+          // callback (which exchanges the code for a session) and land on the
+          // success page that confirms their email was verified.
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent('/auth/confirmed')}`,
         },
       });
 

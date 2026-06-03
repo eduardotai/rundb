@@ -27,7 +27,7 @@ export function ValueLoopExplainer({ variant = 'prominent' }: ValueLoopExplainer
     {
       icon: Plus,
       title: 'Contribute back',
-      desc: 'Submit your results (<1 min form). Updates stats instantly in demo or after moderation in real mode.',
+      desc: 'Submit your results (<1 min form). Reports enter moderation, then improve public stats after approval.',
     },
   ];
 
