@@ -80,8 +80,8 @@ export function HardwareDetectButton({
 
   const title =
     mode === 'browser'
-      ? 'Instant browser scan — detects your GPU and screen resolution (Chrome/Edge Windows are most accurate). Add CPU/RAM via Paste or manually. Always editable.'
-      : 'Open paste helper for highest-accuracy OS command output (dxdiag, inxi, system_profiler, Steam System Info).';
+      ? 'Quick browser scan — GPU (WebGL/WebGPU) + native resolution + refresh + coarse CPU cores / RAM lower-bound. For real CPU model + exact RAM, use the Paste button (one command, perfect data).'
+      : 'Open paste helper for highest-accuracy OS command output (JSON one-liner recommended, or dxdiag/inxi/system_profiler/Steam). This is how you get accurate CPU + RAM.';
 
   return (
     <Button

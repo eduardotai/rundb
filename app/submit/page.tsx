@@ -3,11 +3,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { searchGames } from '@/lib/data';
 import { SubmitReportDialog } from '@/components/submit-report-dialog';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Link from 'next/link';
 import type { Game } from '@/lib/types';
 import { sanitizeSearchQuery } from '@/lib/sanitize';
+import { upgradeCoverImageSrc } from '@/lib/cover-image-url';
+import { cn } from '@/lib/utils';
 import { Loader2, Search, Gamepad2, ArrowRight, Check, BarChart3, Users, Sparkles } from 'lucide-react';
 
 export default function SubmitPage() {
@@ -40,13 +41,13 @@ export default function SubmitPage() {
     };
   }, [debouncedSearch]);
 
-  const showResults = games.length > 0 && !selectedGame;
+  const showResults = games.length > 0;
 
   const hint = useMemo(() => {
     if (isSearching) return 'Searching…';
     if (games.length === 0 && debouncedSearch) return 'No games match your search.';
     if (games.length === 0) return 'Start typing to search the catalog.';
-    return `${games.length} game${games.length === 1 ? '' : 's'} found — pick one to continue`;
+    return `${games.length} game${games.length === 1 ? '' : 's'} found — click one to open the report form`;
   }, [isSearching, games.length, debouncedSearch]);
 
   return (
@@ -113,32 +114,47 @@ export default function SubmitPage() {
         </div>
         <p className="mt-2 text-xs text-muted-foreground">{hint}</p>
 
-        {/* Results */}
+        {/* Results — always visible when matches. Clicking any card directly opens the report form for that game. */}
         {showResults && (
           <ul className="mt-3 grid max-h-80 grid-cols-1 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-2">
-            {games.map((g) => (
-              <li key={g.id}>
-                <button
-                  type="button"
-                  className="group flex w-full items-center gap-3 rounded-xl border border-border bg-background/40 px-3 py-2.5 text-left transition hover:border-primary/50 hover:bg-muted/50"
-                  onClick={() => {
-                    setSelectedGame(g);
-                    setSearch(g.name);
-                  }}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={g.coverImage} alt="" className="h-12 w-9 shrink-0 rounded object-cover" />
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">{g.name}</span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {g.developer}
-                      {g.releaseYear ? ` • ${g.releaseYear}` : ''}
+            {games.map((g) => {
+              const isSelected = selectedGame?.id === g.id;
+              return (
+                <li key={g.id}>
+                  <button
+                    type="button"
+                    className={cn(
+                      "group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition",
+                      isSelected
+                        ? "border-primary bg-primary/10 ring-1 ring-primary/30"
+                        : "border-border bg-background/40 hover:border-primary/50 hover:bg-muted/50"
+                    )}
+                    onClick={() => {
+                      setSelectedGame(g);
+                      setSearch(g.name);
+                      setShowDialog(true);
+                    }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={upgradeCoverImageSrc(g.coverImage, g.steamAppId)} alt="" className="h-12 w-9 shrink-0 rounded object-cover" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">{g.name}</span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {g.developer}
+                        {g.releaseYear ? ` • ${g.releaseYear}` : ''}
+                      </span>
                     </span>
-                  </span>
-                  <ArrowRight className="ml-auto h-4 w-4 shrink-0 text-muted-foreground/0 transition group-hover:text-primary" />
-                </button>
-              </li>
-            ))}
+                    {isSelected ? (
+                      <span className="ml-auto flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-primary">
+                        <Check className="h-3.5 w-3.5" /> SELECTED
+                      </span>
+                    ) : (
+                      <ArrowRight className="ml-auto h-4 w-4 shrink-0 text-muted-foreground/0 transition group-hover:text-primary" />
+                    )}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
 
@@ -156,37 +172,8 @@ export default function SubmitPage() {
           </div>
         )}
 
-        {/* Selected game */}
-        {selectedGame && (
-          <div className="mt-4 rounded-xl border border-primary/30 bg-primary/5 p-4">
-            <div className="flex items-center gap-3">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={selectedGame.coverImage} alt="" className="h-14 w-10 rounded object-cover" />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <Check className="h-3.5 w-3.5 text-primary" />
-                  <span className="text-[11px] font-medium uppercase tracking-wide text-primary">Selected</span>
-                </div>
-                <div className="mt-0.5 truncate font-semibold">{selectedGame.name}</div>
-                <div className="truncate text-xs text-muted-foreground">{selectedGame.developer}</div>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setSelectedGame(null);
-                  setSearch('');
-                }}
-              >
-                Change
-              </Button>
-            </div>
-            <Button onClick={() => setShowDialog(true)} className="mt-4 w-full font-semibold">
-              Continue to report form
-              <ArrowRight className="ml-1.5 h-4 w-4" />
-            </Button>
-          </div>
-        )}
+        {/* No separate continue button — clicking a result in the list above directly opens the report form.
+            The selected item stays highlighted (with ✓ SELECTED) after closing the form (cancel or submit) so you can easily re-open or switch. */}
       </div>
 
       {/* What makes a great report — light reassurance + browse fallback */}
@@ -216,7 +203,17 @@ export default function SubmitPage() {
       </p>
 
       {selectedGame && (
-        <SubmitReportDialog open={showDialog} onOpenChange={setShowDialog} game={selectedGame} />
+        <SubmitReportDialog
+          open={showDialog}
+          onOpenChange={setShowDialog}
+          game={selectedGame}
+          onSuccess={() => {
+            // Reset picker after successful submit so the page is ready for another report
+            // (toast is handled inside the dialog).
+            setSelectedGame(null);
+            setSearch('');
+          }}
+        />
       )}
     </div>
   );

@@ -212,6 +212,54 @@ export function normalizeDetectedGpu(rawRenderer: string): {
 }
 
 /**
+ * Strip CPU marketing/marketing-spec noise that hurts catalog matching.
+ * Real-world CPU strings arrive as e.g.
+ *   "AMD Ryzen 7 7800X3D 8-Core Processor (16 CPUs), ~4.0GHz"
+ *   "12th Gen Intel(R) Core(TM) i7-12700K CPU @ 3.60GHz"
+ * The catalog keys on the model ("Ryzen 7 7800X3D", "i7-12700K"), so the core
+ * count, "Processor"/"CPU" words, "(N CPUs)" and clock tails must come off
+ * BEFORE sanitizeFullName (which strips parens but keeps the leftover words).
+ */
+export function cleanCpuString(name: string): string {
+  return (name || '')
+    .replace(/\((?:R|TM)\)/gi, '')                        // (R) (TM)
+    .replace(/\bwith\s+Radeon\s+Graphics\b/gi, '')        // APU iGPU tail (kept as a GPU elsewhere)
+    .replace(/\(\s*\d+\s*CPUs?\s*\)/gi, '')               // "(16 CPUs)"
+    .replace(/\b\d+[\s-]*Core(?:\s+Processor)?\b/gi, '')  // "8-Core Processor" / "16 Core"
+    .replace(/@?\s*~?\s*\d+(?:\.\d+)?\s*[GM]Hz\b/gi, '')  // "@ 3.60GHz" / "~4.0GHz"
+    .replace(/\bProcessor\b/gi, '')                       // bare "Processor"
+    .replace(/\bCPU\b/gi, '')                             // bare "CPU"
+    .replace(/,\s*$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+/**
+ * Pure CPU normalization pipeline (mirror of normalizeDetectedGpu): clean →
+ * sanitize → catalog normalize. Returns the canonical catalog name when matched.
+ */
+export function normalizeDetectedCpu(rawCpu: string): {
+  cleaned: string;
+  display: string;
+  canonical?: string;
+  entry?: HardwareCatalogEntry;
+  matchConfidence: number;
+  method: HardwareNormalizationResult['method'];
+} {
+  const cleaned = sanitizeFullName(cleanCpuString(rawCpu));
+  const norm = normalizeHardwareSync(cleaned);
+  const matched = norm.method !== 'none' && !!norm.canonical;
+  return {
+    cleaned,
+    display: matched ? norm.canonical! : cleaned,
+    canonical: norm.canonical,
+    entry: norm.entry,
+    matchConfidence: norm.confidence,
+    method: norm.method,
+  };
+}
+
+/**
  * navigator.deviceMemory is privacy-capped at 8 (GB) by spec, and bucketed.
  * It must never be treated as a precise RAM value — only as a lower-bound hint.
  */
@@ -246,6 +294,116 @@ function extractGpuSeriesAndVendor(gpuRaw: string): { vendor?: string; series?: 
     return { vendor: 'Apple', series: 'M-series' };
   }
   return {};
+}
+
+/**
+ * Map UA Client Hints platform + platformVersion to a precise OS string.
+ * Windows is the only platform whose marketing version (10 vs 11) is NOT in the
+ * UA string and can ONLY be recovered from UA-CH platformVersion: per Microsoft,
+ * Windows 11 reports a platformVersion major >= 13, Windows 10 reports 1–12.
+ * Pure + exported for unit testing.
+ */
+export function uaChToOs(platform?: string, platformVersion?: string): { os?: string; version?: string } {
+  if (!platform) return {};
+  const major = platformVersion ? parseInt(platformVersion.split('.')[0], 10) : NaN;
+  if (/windows/i.test(platform)) {
+    if (Number.isFinite(major)) {
+      if (major >= 13) return { os: 'Windows', version: 'Windows 11' };
+      if (major >= 1) return { os: 'Windows', version: 'Windows 10' };
+      return { os: 'Windows', version: 'Windows 8.1 or earlier' };
+    }
+    return { os: 'Windows' };
+  }
+  if (/mac/i.test(platform)) {
+    const v = platformVersion ? platformVersion.split('.').slice(0, 2).join('.') : '';
+    return { os: 'macOS', version: v ? `macOS ${v}` : 'macOS' };
+  }
+  if (/android/i.test(platform)) return { os: 'Android', version: Number.isFinite(major) ? `Android ${major}` : 'Android' };
+  if (/chrome\s*os/i.test(platform)) return { os: 'ChromeOS' };
+  if (/linux/i.test(platform)) return { os: 'Linux' };
+  return { os: platform };
+}
+
+/**
+ * Normalize a UA-CH `architecture` (+ optional `bitness`) into a human family.
+ * This is a CPU-architecture HINT only (x86-64 / ARM64) — never a model string.
+ * Pure + exported for unit testing.
+ */
+export function normalizeArch(architecture?: string, bitness?: string): string | undefined {
+  if (!architecture) return undefined;
+  const a = architecture.toLowerCase();
+  if (a.includes('arm')) return bitness === '64' ? 'ARM64' : 'ARM';
+  if (a === 'x86') return bitness === '64' ? 'x86-64' : 'x86';
+  return architecture;
+}
+
+/**
+ * UA Client Hints high-entropy read (Chromium, secure contexts only).
+ * Adds precise OS version (Win 10 vs 11), a CPU-architecture hint, and a device
+ * model on mobile — coverage the WebGL/WebGPU paths cannot provide. Feature-detected
+ * and try/catch guarded; called only behind the explicit user opt-in (detectBrowser).
+ */
+async function detectViaUaCh(): Promise<Partial<BrowserDetectionInternals>> {
+  const out: Partial<BrowserDetectionInternals> = { raw: {}, limitations: [] };
+  const nav: any = typeof navigator !== 'undefined' ? navigator : undefined;
+  const uaData = nav?.userAgentData;
+  if (!uaData || typeof uaData.getHighEntropyValues !== 'function') {
+    out.limitations!.push('UA Client Hints unavailable (non-Chromium / older browser) — exact OS + CPU-arch hints skipped.');
+    return out;
+  }
+  try {
+    const hints = await uaData.getHighEntropyValues([
+      'architecture', 'bitness', 'model', 'platform', 'platformVersion', 'fullVersionList',
+    ]);
+    const { os, version } = uaChToOs(hints.platform, hints.platformVersion);
+    if (os) out.osHint = os;
+    if (version) out.raw!.osVersion = version;
+    const arch = normalizeArch(hints.architecture, hints.bitness);
+    if (arch) out.raw!.cpuArch = arch;
+    if (hints.bitness) out.raw!.bitness = hints.bitness;
+    if (hints.model) out.raw!.deviceModel = hints.model; // populated on phones/tablets only
+    out.raw!.uaCh = {
+      platform: hints.platform,
+      platformVersion: hints.platformVersion,
+      architecture: hints.architecture,
+      bitness: hints.bitness,
+      model: hints.model,
+    };
+  } catch (e) {
+    out.limitations!.push(`UA-CH high-entropy read blocked: ${e instanceof Error ? e.message : 'unknown'}`);
+  }
+  return out;
+}
+
+/**
+ * Estimate display refresh rate by sampling requestAnimationFrame deltas and
+ * snapping to the nearest common gaming refresh rate. Resolves to undefined when
+ * rAF is unavailable or the signal is too noisy (e.g. background tab throttling).
+ * Browser-only; never called on the server.
+ */
+export function detectRefreshRate(samples = 12): Promise<number | undefined> {
+  if (typeof requestAnimationFrame === 'undefined') return Promise.resolve(undefined);
+  return new Promise((resolve) => {
+    const times: number[] = [];
+    const tick = (t: number) => {
+      times.push(t);
+      if (times.length <= samples) {
+        requestAnimationFrame(tick);
+        return;
+      }
+      const deltas: number[] = [];
+      for (let i = 1; i < times.length; i++) deltas.push(times[i] - times[i - 1]);
+      deltas.sort((a, b) => a - b);
+      const median = deltas[Math.floor(deltas.length / 2)];
+      if (!median || median <= 0) return resolve(undefined);
+      const hz = 1000 / median;
+      const common = [30, 50, 60, 75, 90, 100, 120, 144, 165, 175, 240, 360];
+      const snapped = common.reduce((best, c) => (Math.abs(c - hz) < Math.abs(best - hz) ? c : best), common[0]);
+      // Only trust the snap when it is within 12% of a real common rate; otherwise round raw.
+      resolve(Math.abs(snapped - hz) / snapped <= 0.12 ? snapped : Math.round(hz));
+    };
+    requestAnimationFrame(tick);
+  });
 }
 
 async function detectViaWebGL(): Promise<Partial<BrowserDetectionInternals>> {
@@ -338,35 +496,45 @@ function detectViaNavigatorHeuristics(): Partial<BrowserDetectionInternals> {
   const out: Partial<BrowserDetectionInternals> = { raw: {}, limitations: [] };
   const nav = typeof navigator !== 'undefined' ? navigator : ({} as any);
 
-  // RAM hint only — navigator.deviceMemory is spec-capped at 8 GB and bucketed,
-  // so it is NEVER a precise value. Record it as a lower-bound hint and never
-  // emit out.ram (which would wrongly prefill the form for 16/32 GB rigs).
+  // RAM hint (best browser can do). We now surface it as ram with "(browser hint)" suffix
+  // so the detection feature actually populates RAM. It is a lower bound only; paste for real value.
   const mem = (nav as any).deviceMemory;
   if (typeof mem === 'number' && mem >= 1) {
     const hint = deviceMemoryToHint(mem);
     out.raw!.deviceMemoryGB = mem;
     out.raw!.ramLowerBoundGB = hint.lowerBoundGB;
+    out.ram = hint.lowerBoundGB; // surfaced so "Detect" gives you a RAM value too
     out.limitations!.push(
       hint.isCapped
-        ? 'Browser reports RAM as "≥8 GB" (privacy-capped) — paste system info for exact GB.'
-        : `Browser RAM hint ~${hint.lowerBoundGB} GB (approximate) — paste system info for exact GB.`
+        ? 'Browser RAM is privacy-capped (≥8 GB reported). Paste for your actual GB.'
+        : `Browser RAM hint ≈${hint.lowerBoundGB} GB (lower bound only). Paste for exact.`
     );
   } else {
     out.limitations!.push('deviceMemory unavailable (non-Chromium or privacy setting)');
   }
 
-  // CPU logical-core count is metadata only — never fabricate a CPU model string.
+  // CPU hint: we surface a coarse "N-core CPU (browser hint)" so that the main "Detect"
+  // action actually populates a CPU value. This is *not* a real model. The paste path
+  // (structured JSON one-liner) is the way to get the actual CPU name for catalog matching.
   const meta = hardwareConcurrencyToMeta(nav.hardwareConcurrency);
   if (meta) {
     out.raw!.hardwareConcurrency = meta.logicalCores;
+    out.cpu = `${meta.logicalCores}-core CPU (browser hint)`;
+    out.limitations!.push('Browser only sees logical core count, not the real CPU model. Paste system info for exact CPU.');
   }
 
-  // Resolution (always available)
+  // Resolution (always available). screen.width/height are CSS pixels, so on any
+  // scaled / HiDPI display they UNDER-report the real panel resolution (e.g. a
+  // 2560x1440 monitor at 150% scaling reports 1707x960). Multiply by devicePixelRatio
+  // to recover the native resolution that actually matters for a performance report.
   if (typeof screen !== 'undefined') {
-    const res = `${screen.width}x${screen.height}`;
-    out.resolution = res;
-    out.raw!.resolution = res;
-    out.raw!.screenDPR = typeof window !== 'undefined' ? window.devicePixelRatio : 1;
+    const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
+    const cssRes = `${screen.width}x${screen.height}`;
+    const nativeRes = `${Math.round(screen.width * dpr)}x${Math.round(screen.height * dpr)}`;
+    out.resolution = nativeRes;
+    out.raw!.resolution = nativeRes;
+    out.raw!.cssResolution = cssRes;
+    out.raw!.screenDPR = dpr;
   }
 
   // Light UA parsing for OS hint (never primary for hardware)
@@ -414,13 +582,28 @@ export async function detectBrowser(): Promise<DetectedHardware> {
   if (webgpu.limitations) limitations.push(...webgpu.limitations);
 
   // 3. Navigator + screen heuristics (always attempted).
-  // Browser path intentionally yields NO cpu and NO ram value (only hints in raw) —
-  // those are unreliable in-browser and are left for paste / manual entry.
+  // We now surface coarse CPU (core count) + RAM (lower bound) hints from browser
+  // so the "Detect" button actually populates CPU and RAM fields (as estimates).
+  // These are intentionally weak — merge with paste or manual edit for real values.
   const nav = detectViaNavigatorHeuristics();
   if (nav.resolution) resolution = nav.resolution;
+  const browserCpuHint = nav.cpu;
+  const browserRamHint = nav.ram;
   Object.assign(raw, nav.raw);
   if (nav.osHint) osHint = nav.osHint;
   if (nav.limitations) limitations.push(...nav.limitations);
+
+  // 3b. UA Client Hints (Chromium, secure context) — precise OS version (Win 10 vs 11),
+  // a CPU-architecture hint, and a device model on mobile. UA-CH osHint supersedes the
+  // coarse UA-string osHint when present.
+  const uaCh = await detectViaUaCh();
+  Object.assign(raw, uaCh.raw);
+  if (uaCh.osHint) osHint = uaCh.osHint;
+  if (uaCh.limitations) limitations.push(...uaCh.limitations);
+
+  // 3c. Display refresh rate (rAF sampling) — valuable for gaming reports.
+  const refreshRate = await detectRefreshRate();
+  if (refreshRate) raw.refreshRate = refreshRate;
 
   // 4. Route the detected GPU through the canonical catalog pipeline and set
   //    confidence honestly based on what we actually matched.
@@ -429,6 +612,7 @@ export async function detectBrowser(): Promise<DetectedHardware> {
     gpu = norm.display;
     if (norm.canonical) raw.gpuCanonical = norm.canonical;
     if (norm.entry?.perfIndex != null) raw.gpuPerfIndex = norm.entry.perfIndex;
+    if (norm.entry?.vramGB != null) raw.gpuVramGB = norm.entry.vramGB;
     raw.gpuMatchMethod = norm.method;
 
     const g = gpu.toLowerCase();
@@ -456,10 +640,18 @@ export async function detectBrowser(): Promise<DetectedHardware> {
   confidence = Math.max(0.15, Math.min(0.94, confidence)); // cap realistic browser max
 
   const result: DetectedHardware = {
-    cpu: undefined, // browser path never reports a CPU model (see heuristics)
+    // Browser now provides coarse hints for CPU (cores) and RAM (lower bound) so
+    // the detection feature actually fills all main fields. These are labeled as
+    // "(browser hint)" and have low confidence + strong limitations. Paste for real.
+    cpu: browserCpuHint,
     gpu: gpu ? sanitizeFullName(gpu) : undefined,
-    ram: undefined, // browser path never reports a precise RAM value (only a hint in raw)
+    ram: browserRamHint,
     resolution,
+    // New coverage fields (all optional, only set when actually known):
+    vram: typeof raw.gpuVramGB === 'number' ? raw.gpuVramGB : undefined,
+    refreshRate,
+    cpuArch: typeof raw.cpuArch === 'string' ? raw.cpuArch : undefined,
+    osVersion: typeof raw.osVersion === 'string' ? raw.osVersion : undefined,
     raw,
     method: 'browser',
     confidence: Number(confidence.toFixed(2)),
@@ -746,10 +938,178 @@ function parseInxi(text: string): Partial<DetectedHardware> {
   };
 }
 
+// ============================================
+// STRUCTURED JSON SUBMODULE (JSON-first, highest-accuracy paste path)
+// The "Scan command v2" one-liners emit machine-readable JSON instead of prose,
+// so we get EXACT cpu / ram / gpu / vram / os / resolution / refresh deterministically
+// instead of regex-scraping human text. parseStructuredJson runs BEFORE the prose
+// parsers in parsePaste; returning null falls through so raw dxdiag/inxi still work.
+// ============================================
+
+function pickString(v: unknown): string | undefined {
+  if (typeof v === 'string' && v.trim()) return v.trim();
+  return undefined;
+}
+
+function toIntOrUndef(v: unknown): number | undefined {
+  if (typeof v === 'number' && Number.isFinite(v)) return Math.round(v);
+  if (typeof v === 'string') {
+    const n = parseInt(v.replace(/[^\d.]/g, ''), 10);
+    return Number.isFinite(n) ? n : undefined;
+  }
+  return undefined;
+}
+
+function toGbNumber(v: unknown): number | undefined {
+  const n = toIntOrUndef(v);
+  return n && n > 0 ? n : undefined;
+}
+
+function normalizeResolution(v?: string): string | undefined {
+  if (!v) return undefined;
+  const m = v.match(/(\d{3,5})\s*[x×]\s*(\d{3,5})/);
+  return m ? `${m[1]}x${m[2]}` : undefined;
+}
+
+/** Map a free OS string (e.g. "Windows 11 Pro", "Ubuntu 24.04") to a hint + version. */
+export function osStringToHint(os: string): { hint?: string; version?: string } {
+  const s = os.toLowerCase();
+  const version = os.trim();
+  if (s.includes('windows')) {
+    const v = /\b11\b/.test(s) ? 'Windows 11' : /\b10\b/.test(s) ? 'Windows 10' : 'Windows';
+    return { hint: 'Windows', version: version || v };
+  }
+  if (s.includes('mac') || s.includes('darwin')) return { hint: 'macOS', version };
+  if (s.includes('android')) return { hint: 'Android', version };
+  if (/linux|ubuntu|fedora|arch|debian|mint|manjaro|pop!?_?os|steamos/i.test(s)) return { hint: 'Linux', version };
+  return { version };
+}
+
+/** Extract the first balanced-ish JSON block ({...} or [...]) from arbitrary text. */
+function extractJsonBlock(text: string): string | null {
+  const t = text.trim();
+  if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) return t;
+  const first = t.indexOf('{');
+  const last = t.lastIndexOf('}');
+  if (first >= 0 && last > first) return t.slice(first, last + 1);
+  return null;
+}
+
+/** Parse the RunDB structured schema emitted by the Scan command v2 one-liners. */
+function parseRundbJson(o: any, pasteLen: number): DetectedHardware {
+  const root = Array.isArray(o) ? o[0] || {} : o;
+  const cpuNorm = pickString(root.cpu) ? normalizeDetectedCpu(String(root.cpu)) : undefined;
+  const gpuNorm = pickString(root.gpu) ? normalizeDetectedGpu(String(root.gpu)) : undefined;
+  const ram = toGbNumber(root.ram);
+  const vram = toGbNumber(root.vram) ?? (gpuNorm?.entry?.vramGB ?? undefined);
+  const resolution = normalizeResolution(pickString(root.resolution));
+  const refreshRate = toIntOrUndef(root.refresh ?? root.refreshRate);
+  const osInfo = pickString(root.os) ? osStringToHint(String(root.os)) : {};
+
+  const raw: Record<string, unknown> = { source: 'structured-json', originalPasteLength: pasteLen };
+  if (gpuNorm?.canonical) raw.gpuCanonical = gpuNorm.canonical;
+  if (gpuNorm) raw.gpuMatchMethod = gpuNorm.method;
+  if (gpuNorm?.entry?.perfIndex != null) raw.gpuPerfIndex = gpuNorm.entry.perfIndex;
+  if (cpuNorm?.canonical) raw.cpuCanonical = cpuNorm.canonical;
+  if (cpuNorm) raw.cpuMatchMethod = cpuNorm.method;
+  if (cpuNorm?.entry?.perfIndex != null) raw.cpuPerfIndex = cpuNorm.entry.perfIndex;
+  if (osInfo.version) raw.osVersion = osInfo.version;
+
+  let confidence = 0.9; // deterministic structured source
+  if (gpuNorm && gpuNorm.method !== 'none') confidence += 0.04;
+  if (cpuNorm && cpuNorm.method !== 'none') confidence += 0.03;
+  if (!cpuNorm && !gpuNorm) confidence = 0.5;
+  confidence = Math.min(0.98, Number(confidence.toFixed(2)));
+
+  return {
+    cpu: cpuNorm?.display,
+    gpu: gpuNorm?.display,
+    ram,
+    vram,
+    resolution,
+    refreshRate,
+    raw,
+    method: 'paste',
+    confidence,
+    timestamp: new Date().toISOString(),
+    osHint: osInfo.hint,
+    osVersion: osInfo.version,
+  };
+}
+
+/** Parse Apple `system_profiler -json SPHardwareDataType SPDisplaysDataType`. */
+function parseAppleJson(o: any): DetectedHardware {
+  const hw = Array.isArray(o.SPHardwareDataType) ? o.SPHardwareDataType[0] || {} : {};
+  const disp = Array.isArray(o.SPDisplaysDataType) ? o.SPDisplaysDataType[0] || {} : {};
+  const cpuRaw = pickString(hw.chip_type) || pickString(hw.cpu_type);
+  // On Apple Silicon the GPU is the chip itself; fall back to the chip name.
+  const gpuRaw = pickString(disp.sppci_model) || pickString(disp._name) || cpuRaw;
+  const cpuNorm = cpuRaw ? normalizeDetectedCpu(cpuRaw) : undefined;
+  const gpuNorm = gpuRaw ? normalizeDetectedGpu(gpuRaw) : undefined;
+  const ram = toGbNumber(pickString(hw.physical_memory)); // "32 GB"
+
+  let resolution: string | undefined;
+  const ndr = disp.spdisplays_ndrvs;
+  if (Array.isArray(ndr) && ndr[0]) {
+    resolution = normalizeResolution(
+      pickString(ndr[0]._spdisplays_resolution) || pickString(ndr[0].spdisplays_resolution)
+    );
+  }
+
+  const raw: Record<string, unknown> = { source: 'apple-json' };
+  if (gpuNorm?.canonical) raw.gpuCanonical = gpuNorm.canonical;
+  if (gpuNorm) raw.gpuMatchMethod = gpuNorm.method;
+  if (cpuNorm?.canonical) raw.cpuCanonical = cpuNorm.canonical;
+
+  let confidence = 0.88;
+  if (cpuNorm && cpuNorm.method !== 'none') confidence += 0.04;
+  confidence = Math.min(0.97, Number(confidence.toFixed(2)));
+
+  return {
+    cpu: cpuNorm?.display,
+    gpu: gpuNorm?.display,
+    ram,
+    resolution,
+    raw,
+    method: 'paste',
+    confidence,
+    timestamp: new Date().toISOString(),
+    osHint: 'macOS',
+  };
+}
+
+/**
+ * JSON-first paste parser. Returns a DetectedHardware when the paste is (or contains)
+ * recognized structured JSON, else null so parsePaste falls back to the prose parsers.
+ */
+export function parseStructuredJson(text: string): DetectedHardware | null {
+  const jsonStr = extractJsonBlock(text);
+  if (!jsonStr) return null;
+  let obj: any;
+  try {
+    obj = JSON.parse(jsonStr);
+  } catch {
+    return null;
+  }
+  if (!obj || typeof obj !== 'object') return null;
+
+  // Apple system_profiler -json
+  if (obj.SPHardwareDataType || obj.SPDisplaysDataType) return parseAppleJson(obj);
+
+  // RunDB structured schema (our one-liner), or an array of it
+  const root = Array.isArray(obj) ? obj[0] : obj;
+  const hasOurKeys =
+    root && (root.rundb != null || root.cpu || root.gpu || root.ram || root.resolution);
+  if (hasOurKeys) return parseRundbJson(obj, text.length);
+
+  return null;
+}
+
 /**
  * Main paste parser — auto-detects format and runs best-effort multi-pass extraction.
  * Robust to noise, partial pastes, mixed line endings, and localized headers.
- * Now includes strong ProtonDB-style inxi support (the highest-signal Linux path).
+ * Tries structured JSON first (Scan command v2), then strong ProtonDB-style inxi,
+ * then the rest of the prose parsers.
  */
 export function parsePaste(pasteText: string): DetectedHardware {
   const timestamp = new Date().toISOString();
@@ -763,6 +1123,10 @@ export function parsePaste(pasteText: string): DetectedHardware {
       limitations: ['Input too short or empty — please paste full command output'],
     };
   }
+
+  // JSON-first: the highest-accuracy path. Falls through to prose parsers on null.
+  const structured = parseStructuredJson(text);
+  if (structured) return structured;
 
   let parsed: Partial<DetectedHardware> = { raw: {}, limitations: [] };
 
@@ -851,6 +1215,71 @@ export function parsePaste(pasteText: string): DetectedHardware {
   return result;
 }
 
+/**
+ * Merge browser detection (strong on native resolution, refresh via rAF, UA-CH hints, gpu from WebGL)
+ * with paste (authoritative for cpu/gpu/ram/vram/driver/kernel/distro from system tools).
+ * Paste values take precedence for precision; browser fills gaps (e.g. when paste omits res/refresh).
+ * Resulting method is 'paste' (the explicit high-fidelity source the user chose to provide).
+ * Raw is unioned with a 'merged' marker for debugging/alias learning.
+ */
+export function mergeDetected(
+  browser: DetectedHardware | null | undefined,
+  paste: DetectedHardware | null | undefined
+): DetectedHardware {
+  if (!browser && !paste) {
+    return {
+      raw: {},
+      method: 'manual',
+      confidence: 0.1,
+      timestamp: new Date().toISOString(),
+      limitations: ['No detection input provided'],
+    };
+  }
+  if (!browser) return paste!;
+  if (!paste) return browser;
+
+  const limitations = Array.from(
+    new Set([
+      ...(browser.limitations || []),
+      ...(paste.limitations || []),
+    ])
+  );
+
+  const raw = {
+    ...(browser.raw || {}),
+    ...(paste.raw || {}),
+    merged: true,
+    browserConfidence: browser.confidence,
+    pasteConfidence: paste.confidence,
+    sources: [browser.method, paste.method].filter(Boolean),
+  };
+
+  const confidence = Math.max(
+    paste.confidence,
+    Math.min(browser.confidence + 0.05, 0.96)
+  );
+
+  return {
+    cpu: paste.cpu || browser.cpu,
+    gpu: paste.gpu || browser.gpu,
+    ram: paste.ram ?? browser.ram,
+    resolution: paste.resolution || browser.resolution,
+    vram: paste.vram ?? browser.vram,
+    refreshRate: paste.refreshRate ?? browser.refreshRate,
+    cpuArch: paste.cpuArch ?? browser.cpuArch,
+    osVersion: paste.osVersion ?? browser.osVersion,
+    driverVersion: paste.driverVersion || browser.driverVersion,
+    kernel: paste.kernel || browser.kernel,
+    distro: paste.distro || browser.distro,
+    osHint: paste.osHint || browser.osHint,
+    raw,
+    method: 'paste',
+    confidence: Number(confidence.toFixed(2)),
+    timestamp: paste.timestamp || browser.timestamp,
+    limitations: limitations.length ? limitations : undefined,
+  };
+}
+
 // ============================================
 // STEAM + COMPANION STUBS (per Plan 2 + Plan 4 honesty)
 // Steam: NO hardware. Companion: future only.
@@ -893,8 +1322,9 @@ export async function detectHardware(
   }
   if (mode === 'browser' || mode === 'all') {
     const browserResult = await detectBrowser();
-    if (mode === 'all') {
-      // Future: could merge with other signals; for now browser is primary
+    if (mode === 'all' && options.pasteText) {
+      const pasteResult = parsePaste(options.pasteText);
+      return mergeDetected(browserResult, pasteResult);
     }
     return browserResult;
   }

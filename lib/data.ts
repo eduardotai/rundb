@@ -1470,6 +1470,141 @@ export async function deleteUserDevice(id: string): Promise<void> {
 }
 
 // ============================================
+// STEAM LINKING (Plan 2) — "Verified Gamer" + persistent device association
+// Does NOT auto-detect hardware (Steam API provides zero CPU/GPU/RAM).
+// Primary benefit: easy persistent rigs/devices, badges, future library signals.
+// Callers must still provide actual hardware via paste / detect / JSON one-liner
+// (see loadUserDevices + saveUserDevice + the Steam System Information parser).
+// ============================================
+
+export interface SteamLinkStatus {
+  linked: boolean;
+  steamId?: string;
+  persona?: string;
+  avatarUrl?: string;
+  linkedAt?: string;
+}
+
+export async function getLinkedSteamProfile(): Promise<SteamLinkStatus | null> {
+  if (USE_REAL) {
+    try {
+      const { createClient } = await import('@/lib/supabase/client');
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) return { linked: false };
+
+      const { data: link } = await supabase
+        .from('linked_accounts')
+        .select('provider_user_id, provider_data, created_at')
+        .eq('user_id', user.id)
+        .eq('provider', 'steam')
+        .maybeSingle();
+
+      if (link) {
+        const pdata = (link.provider_data as any) || {};
+        return {
+          linked: true,
+          steamId: link.provider_user_id,
+          persona: pdata.personaname || pdata.persona_name,
+          avatarUrl: pdata.avatar_url || pdata.avatarfull,
+          linkedAt: link.created_at,
+        };
+      }
+    } catch (e) {
+      console.warn('[data] getLinkedSteamProfile error', e);
+    }
+  }
+  // Mock support
+  if (ALLOW_MOCK_DATA) {
+    const mockLink = (await import('./mock-data')).loadSteamLink?.();
+    return mockLink || { linked: false };
+  }
+  return { linked: false };
+}
+
+export async function linkSteamAccount(steamId: string, profileData: any = {}): Promise<boolean> {
+  if (USE_REAL) {
+    try {
+      const { createClient } = await import('@/lib/supabase/client');
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) return false;
+
+      const { error } = await supabase.from('linked_accounts').upsert({
+        user_id: user.id,
+        provider: 'steam',
+        provider_user_id: steamId,
+        provider_data: profileData,
+      }, { onConflict: 'user_id,provider' });
+
+      if (error) {
+        console.warn('[data] linkSteamAccount upsert error', error.message);
+        return false;
+      }
+
+      // Denorm for fast UI (persona, avatar)
+      await supabase.from('profiles').upsert({
+        id: user.id,
+        steam_id: steamId,
+        steam_persona: profileData.personaname || profileData.persona_name || null,
+        steam_avatar_url: profileData.avatar_url || profileData.avatarfull || null,
+        steam_linked_at: new Date().toISOString(),
+      });
+
+      return true;
+    } catch (e) {
+      console.warn('[data] linkSteamAccount error', e);
+      return false;
+    }
+  }
+  if (ALLOW_MOCK_DATA) {
+    (await import('./mock-data')).saveSteamLink?.({ steamId, ...profileData });
+    return true;
+  }
+  return false;
+}
+
+export async function unlinkSteamAccount(): Promise<boolean> {
+  if (USE_REAL) {
+    try {
+      const { createClient } = await import('@/lib/supabase/client');
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) return false;
+
+      const { error } = await supabase
+        .from('linked_accounts')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('provider', 'steam');
+
+      if (error) {
+        console.warn('[data] unlinkSteamAccount error', error.message);
+        return false;
+      }
+
+      // Clear denorms
+      await supabase.from('profiles').update({
+        steam_id: null,
+        steam_persona: null,
+        steam_avatar_url: null,
+        steam_linked_at: null,
+      }).eq('id', user.id);
+
+      return true;
+    } catch (e) {
+      console.warn('[data] unlinkSteamAccount error', e);
+      return false;
+    }
+  }
+  if (ALLOW_MOCK_DATA) {
+    (await import('./mock-data')).clearSteamLink?.();
+    return true;
+  }
+  return false;
+}
+
+// ============================================
 // PHASE 4: ADMIN TOOLS (adapter for migration)
 // ============================================
 

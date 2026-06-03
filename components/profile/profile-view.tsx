@@ -48,6 +48,7 @@ export interface ProfileViewUser {
 interface ProfileViewProps {
   user: ProfileViewUser;
   data: ProfileData;
+  steamLinked?: boolean;
 }
 
 function formatJoinDate(iso?: string | null): string {
@@ -79,7 +80,7 @@ function RoleBadge({ role }: { role: 'user' | 'moderator' | 'admin' }) {
   return null;
 }
 
-export function ProfileView({ user, data }: ProfileViewProps) {
+export function ProfileView({ user, data, steamLinked }: ProfileViewProps) {
   const { profile, stats, reports } = data;
 
   // Identity state (lifted so the hero updates live after an edit).
@@ -438,6 +439,12 @@ export function ProfileView({ user, data }: ProfileViewProps) {
         {/* --- My Rig --- */}
         <TabsContent value="rig" className="mt-5">
           <ProfileRigEditor user={user} />
+
+          {steamLinked && (
+            <div className="mt-3 rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-400">
+              Steam account linked successfully! You can now manage persistent devices/rigs and get verified badges on reports.
+            </div>
+          )}
         </TabsContent>
 
         {/* --- Reports --- */}

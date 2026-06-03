@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   description: 'Your RunDB creator profile — rig, reports, credibility, and account.',
 };
 
-export default async function ProfilePage() {
+export default async function ProfilePage({ searchParams }: { searchParams?: Promise<{ steam_linked?: string }> }) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -46,6 +46,8 @@ export default async function ProfilePage() {
     );
   }
 
+  const sp = (await searchParams) || {};
+  const steamLinked = sp.steam_linked === '1';
   const data = await getProfileData(user.id);
 
   const meta = (user.user_metadata ?? {}) as {
@@ -70,5 +72,5 @@ export default async function ProfilePage() {
     createdAt: user.created_at,
   };
 
-  return <ProfileView user={viewUser} data={data} />;
+  return <ProfileView user={viewUser} data={data} steamLinked={steamLinked} />;
 }

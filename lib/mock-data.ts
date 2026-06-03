@@ -632,6 +632,27 @@ export function deleteUserDevice(id: string) {
   localStorage.setItem('rundb_user_devices', JSON.stringify(devices));
 }
 
+// Steam link mock (for !USE_REAL parity)
+const LS_STEAM_LINK = 'rundb_steam_link';
+
+export function loadSteamLink(): any {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(LS_STEAM_LINK);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+export function saveSteamLink(link: any) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(LS_STEAM_LINK, JSON.stringify({ ...link, linkedAt: new Date().toISOString() }));
+}
+
+export function clearSteamLink() {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(LS_STEAM_LINK);
+}
+
 // ============================================
 // ADMIN STATE (localStorage for Phase 4 demo)
 // ============================================

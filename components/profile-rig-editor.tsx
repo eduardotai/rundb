@@ -12,7 +12,11 @@ import { sanitizeFullName } from '@/lib/sanitize';
 import { HardwareDetectButton } from '@/components/hardware-detect-button';
 import { PasteHardwareModal } from '@/components/paste-hardware-modal';
 import { HardwareCombobox } from '@/components/hardware-combobox';
+import { SteamLinkButton } from '@/components/steam-link-button';
 import { MAIN_RESOLUTIONS } from '@/lib/types';
+import type { SteamLinkStatus } from '@/lib/data';
+import type { DetectedHardware } from '@/lib/types';
+import { mergeDetected } from '@/lib/hardware-detector';
 
 interface ProfileRigEditorProps {
   /** Only the id is required — identity (name/avatar) is managed in the profile hero. */
@@ -36,6 +40,8 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [pasteModalOpen, setPasteModalOpen] = useState(false);
+  const [lastBrowserDetect, setLastBrowserDetect] = useState<DetectedHardware | null>(null);
+  const [steamStatus, setSteamStatus] = useState<SteamLinkStatus | null>(null);
 
   const supabase = createClient();
 
@@ -76,6 +82,17 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
 
     loadProfile();
   }, [user.id, supabase]);
+
+  // Load Steam link status (additive, for verified + easier device management)
+  useEffect(() => {
+    (async () => {
+      try {
+        const { getLinkedSteamProfile } = await import('@/lib/data');
+        const s = await getLinkedSteamProfile();
+        setSteamStatus(s);
+      } catch {}
+    })();
+  }, []);
 
   const handleSave = async () => {
     const safeCpu = sanitizeFullName(rig.cpu);
@@ -147,9 +164,15 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
               <HardwareDetectButton
                 mode="browser"
                 onDetect={(r) => {
-                  if (r.cpu) updateField('cpu', r.cpu);
+                  setLastBrowserDetect(r);
+                  const isHint = (s?: string) => !!s && /browser hint/i.test(s);
+                  // Browser hints for CPU/RAM are shown conceptually via the detect result,
+                  // but we don't auto-fill the editable fields with "8-core (browser hint)".
+                  // Paste (or type real model) for actual CPU + RAM.
+                  if (r.cpu && !isHint(r.cpu)) updateField('cpu', r.cpu);
                   if (r.gpu) updateField('gpu', r.gpu);
-                  if (r.ram) updateField('ram', r.ram);
+                  if (r.ram != null && !isHint(r.cpu)) updateField('ram', r.ram);
+                  if (r.resolution) updateField('resolution', r.resolution);
                 }}
                 onRequestPaste={() => setPasteModalOpen(true)}
               />
@@ -225,14 +248,72 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
           <p className="text-xs text-muted-foreground">Saved to your Supabase profile.</p>
         </div>
 
+        {/* Steam linking makes managing hardware (My Devices / rigs) easier and persistent.
+            Link once → easily select/import accurate rigs via paste of Steam System Information.
+            Note: Steam itself provides no CPU/GPU/RAM — you still paste once per device using our excellent parsers. */}
+        <div className="pt-4 border-t border-border/60">
+          <div className="mb-2 flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium">Steam connection</div>
+              <div className="text-[11px] text-muted-foreground">For verified badges + quick device selection across the app (profile, submit, checker).</div>
+            </div>
+            <SteamLinkButton
+              status={steamStatus}
+              onLinked={() => {
+                // Reload status after redirect success
+                import('@/lib/data').then(({ getLinkedSteamProfile }) => getLinkedSteamProfile().then(setSteamStatus));
+              }}
+              onUnlinked={() => setSteamStatus({ linked: false })}
+              size="sm"
+            />
+          </div>
+          {steamStatus?.linked && (
+            <div className="space-y-1">
+              <p className="text-[11px] text-emerald-400/80">
+                Linked{steamStatus.persona ? ` as ${steamStatus.persona}` : ''}.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setPasteModalOpen(true)}
+              >
+                Import hardware from Steam client (paste System Information once)
+              </Button>
+              <p className="text-[10px] text-muted-foreground">After pasting accurate data it will be available as a saved device in Submit / Checker.</p>
+            </div>
+          )}
+        </div>
+
         <PasteHardwareModal
           open={pasteModalOpen}
           onOpenChange={setPasteModalOpen}
-          onApply={(r) => {
-            if (r.cpu) updateField('cpu', r.cpu);
-            if (r.gpu) updateField('gpu', r.gpu);
-            if (r.ram) updateField('ram', r.ram);
+          onApply={async (pasteDetected) => {
+            // Merge prior browser result (if any) with this paste for richer rig (res + exact cpu/gpu/ram etc).
+            const merged = mergeDetected(lastBrowserDetect, pasteDetected);
+            if (merged.cpu) updateField('cpu', merged.cpu);
+            if (merged.gpu) updateField('gpu', merged.gpu);
+            if (merged.ram) updateField('ram', merged.ram);
+            if (merged.resolution) updateField('resolution', merged.resolution);
+            setLastBrowserDetect(null);
             setPasteModalOpen(false);
+
+            // Also persist as a named user device so it appears in Submit "Choose saved device" and other surfaces.
+            // This is the key UX win when Steam-linked: paste accurate hardware *once*.
+            try {
+              const { saveUserDevice } = await import('@/lib/data');
+              await saveUserDevice({
+                label: steamStatus?.persona ? `Steam: ${steamStatus.persona}` : 'Imported from Steam',
+                cpu: merged.cpu || '',
+                gpu: merged.gpu || '',
+                ram: typeof merged.ram === 'number' ? merged.ram : (merged.ram ? parseInt(String(merged.ram), 10) : 16),
+                resolution: merged.resolution,
+                driverVersion: (merged as any).driverVersion,
+                kernel: (merged as any).kernel,
+                distro: (merged as any).distro,
+                isPrimary: false,
+              });
+            } catch {}
           }}
         />
       </CardContent>

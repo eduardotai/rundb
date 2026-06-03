@@ -21,8 +21,10 @@ import { DetectedHardwareBanner } from '@/components/detected-hardware-banner';
 import { PasteHardwareModal } from '@/components/paste-hardware-modal';
 import { PerformanceBadge } from '@/components/performance-badge';
 import type { DetectedHardware } from '@/lib/types';
+import { mergeDetected } from '@/lib/hardware-detector';
 import { loadMyRigAsync, loadUserDevices } from '@/lib/data';
 import { Cpu, Zap, Monitor } from 'lucide-react';
+import { upgradeCoverImageSrc } from '@/lib/cover-image-url';
 
 const formSchema = z.object({
   gameId: z.string().min(1),
@@ -175,11 +177,19 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
   const openPasteModal = () => setPasteModalOpen(true);
 
   const applyDetectedToForm = (detected: DetectedHardware) => {
-    if (detected.cpu) form.setValue('cpu', detected.cpu, { shouldValidate: true });
+    const isHint = (s?: string) => !!s && /browser hint/i.test(s);
+
+    // Only prefill cpu/ram from detection if they are real values (not browser estimates).
+    // Browser "Detect" still shows the hints in the banner + tells you to Paste for actual CPU/RAM.
+    if (detected.cpu && !isHint(detected.cpu)) form.setValue('cpu', detected.cpu, { shouldValidate: true });
     if (detected.gpu) form.setValue('gpu', detected.gpu, { shouldValidate: true });
-    if (detected.ram) form.setValue('ram', detected.ram, { shouldValidate: true });
+    if (detected.ram != null && !isHint(detected.cpu)) {
+      // Only auto-apply real RAM numbers (from paste). Browser hints are shown in banner but not forced into the form.
+      form.setValue('ram', detected.ram, { shouldValidate: true });
+    }
     if (detected.resolution) form.setValue('resolution', detected.resolution, { shouldValidate: true });
     if (detected.driverVersion) form.setValue('driverVersion', detected.driverVersion, { shouldValidate: true });
+    if (detected.refreshRate != null) form.setValue('refreshRate', detected.refreshRate, { shouldValidate: true });
 
     setDetectionState('applied');
     setDetectedRig(null);
@@ -259,15 +269,16 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
           {/* LEFT — game + live preview                                   */}
           {/* ============================================================ */}
           <aside className="relative flex flex-col gap-4 border-b border-border bg-gradient-to-b from-muted/40 to-card p-5 md:border-b-0 md:border-r">
-            {/* Cover */}
+            {/* Cover — square banner to match promotional square art style */}
             <div className="flex items-center gap-3 md:flex-col md:items-start">
-              <div className="relative h-20 w-14 shrink-0 overflow-hidden rounded-lg border border-border bg-muted md:h-44 md:w-full">
+              <div className="relative w-16 aspect-square shrink-0 overflow-hidden rounded-lg border border-border bg-muted md:w-full md:max-w-[220px]">
                 {!coverError ? (
+                  /* Square frame to match the reference promo style. The banner is shown fully (no cropping) thanks to object-contain (letterbox bars appear on sides for standard portrait covers). */
                   /* eslint-disable-next-line @next/next/no-img-element */
                   <img
-                    src={game.coverImage}
+                    src={upgradeCoverImageSrc(game.coverImage, game.steamAppId)}
                     alt={game.name}
-                    className="h-full w-full object-cover"
+                    className="h-full w-full object-contain"
                     onError={() => setCoverError(true)}
                   />
                 ) : (
@@ -582,10 +593,14 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
               </Section>
 
               <div className="flex items-center justify-end gap-2 border-t border-border pt-4">
-                <Button type="button" variant="ghost" className="hover:bg-accent/70" onClick={() => onOpenChange(false)}>
+                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={isSubmitting || !form.formState.isValid} className="font-semibold">
+                <Button
+                  type="submit"
+                  disabled={isSubmitting || !form.formState.isValid}
+                  className="bg-white text-black font-medium hover:bg-white/90"
+                >
                   {isSubmitting ? 'Submitting…' : 'Submit report'}
                 </Button>
               </div>
@@ -603,13 +618,10 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
         <PasteHardwareModal
           open={pasteModalOpen}
           onOpenChange={setPasteModalOpen}
-          onApply={(r) => {
-            // Apply directly into the form (also sets driverVersion when present)
-            if (r.cpu) form.setValue('cpu', r.cpu, { shouldValidate: true });
-            if (r.gpu) form.setValue('gpu', r.gpu, { shouldValidate: true });
-            if (r.ram) form.setValue('ram', r.ram, { shouldValidate: true });
-            if (r.resolution) form.setValue('resolution', r.resolution, { shouldValidate: true });
-            if (r.driverVersion) form.setValue('driverVersion', r.driverVersion, { shouldValidate: true });
+          onApply={(pasteDetected) => {
+            // Merge any prior browser detection (res/refresh/UA-CH) with paste (exact cpu/gpu/ram) for richest signal.
+            const merged = mergeDetected(detectedRig, pasteDetected);
+            applyDetectedToForm(merged);
             setPasteModalOpen(false);
           }}
         />
