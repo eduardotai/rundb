@@ -342,6 +342,7 @@ CREATE POLICY "Game media are publicly readable" ON game_media FOR SELECT USING 
 -- After running, enable Anonymous + Google + Discord providers in Authentication > Providers.
 -- Add your anon + service_role keys to .env.local as SUPABASE_URL and keys.
 -- For Phase 1 ingestion: re-apply this schema or run the added block if table missing.
+-- For hardware catalog (live autocomplete/similarity): use supabase/incremental-hardware-catalog.sql for existing DBs (or full schema for fresh).
 
 -- ============================================
 -- PHASE 2 ADDITIONS (Master Implementation Plan aligned)
@@ -509,7 +510,7 @@ GRANT EXECUTE ON FUNCTION public.upvote_report TO authenticated;
 -- through RTX 50 / Zen 5 / Arc + mid/low-end density). See plan + static catalog header.
 -- New columns added for full HardwareCatalogEntry fidelity (architecture, threads, tdp_w).
 --
--- For existing projects: Scroll down to the "RECOMMENDED: COPY & PASTE THIS BLOCK" section.
+-- For existing projects: Use supabase/incremental-hardware-catalog.sql (idempotent, recommended) OR scroll down to the "RECOMMENDED: COPY & PASTE THIS BLOCK" section (kept for backwards compat).
 -- =============================================================================
 
 CREATE TABLE hardware_catalog (
@@ -586,11 +587,12 @@ CREATE POLICY "Moderators and admins can delete hardware catalog entries"
 
 -- =============================================================================
 -- HARDWARE CATALOG EXPANSION - SAFE MIGRATION FOR EXISTING PROJECTS
--- If you have an older version of the schema, run the big "RECOMMENDED" block below.
+-- Preferred: run supabase/incremental-hardware-catalog.sql (fully idempotent CREATE TABLE IF + DO policy blocks).
+-- The block below is kept for manual compatibility.
 -- =============================================================================
 
 -- =============================================================================
--- RECOMMENDED: COPY & PASTE THIS BLOCK INTO SUPABASE SQL EDITOR
+-- RECOMMENDED (legacy path): COPY & PASTE THIS BLOCK INTO SUPABASE SQL EDITOR
 -- (For any project that had the old hardware_catalog / aliases tables)
 -- Completely safe. Uses DROP POLICY IF EXISTS + CREATE POLICY (Postgres does not support IF NOT EXISTS on policies).
 -- =============================================================================

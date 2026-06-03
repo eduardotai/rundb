@@ -15,7 +15,8 @@
     "setup:supabase": "tsx scripts/setup-supabase-real.ts",
     "reingest:covers": "tsx scripts/reingest-covers-all.ts",
     "verify:hardware": "tsx scripts/verify-hardware-catalog.ts",
-    "seed:hardware": "tsx scripts/seed-hardware-catalog.ts"
+    "seed:hardware": "tsx scripts/seed-hardware-catalog.ts",
+    "copy:sql:hardware": "powershell -NoProfile -Command \"Get-Content 'supabase/incremental-hardware-catalog.sql' | Set-Clipboard; Write-Host '✅ Clean hardware catalog SQL copied to clipboard.'; Write-Host 'Paste into Supabase SQL Editor (https://supabase.com/dashboard/project/gyldcsduuzoqqamyudni/sql/new).'; Write-Host 'First line must start with -- comment. If you see > or npm output, re-run this command.'\""
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

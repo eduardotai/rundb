@@ -1,10 +1,11 @@
 #!/usr/bin/env tsx
 /**
  * One-shot Supabase setup for real-data mode:
- * 1. Apply missing schema (game_media) via Management API or DATABASE_URL
+ * 1. Apply missing schema (game_media, hardware_catalog+aliases, security) via Management API or DATABASE_URL
  * 2. Refresh API keys into .env.local (optional, requires SUPABASE_ACCESS_TOKEN)
  * 3. Seed games from mock catalog (requires valid service role)
- * 4. Run IGDB ingest if credentials present
+ * 4. Seed hardware catalog (101+ entries)
+ * 5. Run IGDB ingest if credentials present
  *
  * Prerequisites (pick one path for SQL):
  *   A) SUPABASE_ACCESS_TOKEN in .env.local — from https://supabase.com/dashboard/account/tokens
@@ -25,6 +26,10 @@ const INCREMENTAL_SQL_FILES = [
   {
     path: resolve(process.cwd(), 'supabase/incremental-game-media.sql'),
     label: 'game_media',
+  },
+  {
+    path: resolve(process.cwd(), 'supabase/incremental-hardware-catalog.sql'),
+    label: 'hardware_catalog + hardware_aliases (for live catalog + normalization)',
   },
   {
     path: resolve(process.cwd(), 'supabase/incremental-security-rls.sql'),
@@ -168,6 +173,8 @@ async function main() {
       console.log(`  ${file.path}`)
     }
     console.log(`  https://supabase.com/dashboard/project/${PROJECT_REF}/sql/new`)
+    console.log('\nTIP for Windows: Use this to copy cleanly without terminal ">" lines:')
+    console.log('  npm run copy:sql:hardware     # easiest')
   }
 
   loadEnvLocal()
@@ -181,6 +188,17 @@ async function main() {
     console.error(`  https://supabase.com/dashboard/project/${PROJECT_REF}/settings/api`)
     console.error('  Copy service_role into SUPABASE_SERVICE_ROLE_KEY in .env.local')
     process.exit(1)
+  }
+
+  // Hardware catalog (safe now that incremental was applied, or user instructed to paste)
+  console.log('\nSeeding hardware catalog (large 2015-16+ set, idempotent)...')
+  try {
+    execSync('npm run seed:hardware', { stdio: 'inherit', cwd: process.cwd() })
+  } catch {
+    console.warn('\nHardware seed did not complete (likely table was not auto-applied).')
+    console.warn('In PowerShell, run this for clean copy-paste SQL (avoids ">" prompt errors):')
+    console.warn('  npm run copy:sql:hardware     # easiest')
+    console.warn('Paste into Supabase SQL Editor (must start with -- comment), then re-run `npm run seed:hardware`.')
   }
 
   if (env.IGDB_CLIENT_ID && env.IGDB_CLIENT_SECRET) {

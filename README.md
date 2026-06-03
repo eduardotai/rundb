@@ -25,7 +25,7 @@ Built as a beautiful, self-contained frontend demo with rich mock data that feel
 - Pure mock data in `lib/mock-data.ts` (18 games, 55+ realistic reports)
 - **Hardware Catalog** (Phase 6+ — now live): Structured database of real CPUs/GPUs with `perfIndex`. Powers beautiful autocomplete in Submit/Profile/Compatibility, much smarter similarity, and future validation. 
   - **Static mode** (default): Zero-config, works everywhere.
-  - **Live production mode**: Set `NEXT_PUBLIC_USE_REAL_DATA=true` + run the `hardware_catalog` table (see `supabase/schema.sql`). Admin can seed + manage entries live. The combobox and predictions automatically prefer live data.
+  - **Live production mode**: Set `NEXT_PUBLIC_USE_REAL_DATA=true` + ensure `hardware_catalog` table exists (run `supabase/schema.sql` for fresh projects, or `supabase/incremental-hardware-catalog.sql` / `npm run setup:supabase` for existing). Then `npm run seed:hardware` (or admin UI seed as admin). Combobox + predictions prefer live DB when present.
 - **Identify My Hardware** (Phase 1 complete): Browser scan + high-precision paste (dxdiag on Windows, **inxi -Fxxxz** on Linux — the same method ProtonDB uses for accurate driver/kernel/distro). Detection is fully client-side, opt-in, and feeds directly into reports and "My Rig". Rich fields (driver, kernel, distro) are captured and surfaced.
 
 ## Quick Start

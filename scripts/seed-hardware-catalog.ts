@@ -5,6 +5,10 @@
  *
  * Requires SUPABASE_SERVICE_ROLE_KEY in .env.local (the service_role key from Supabase Dashboard).
  * This script now properly loads .env.local like all other scripts in the project.
+ *
+ * Prerequisites: hardware_catalog (and hardware_aliases) table must exist.
+ *   - Use supabase/incremental-hardware-catalog.sql for existing projects, or full schema.sql for fresh.
+ *   - Or: npm run setup:supabase (auto-applies when ACCESS_TOKEN/DATABASE_URL present).
  */
 
 import { loadEnvLocal } from './load-env-local'
@@ -70,10 +74,24 @@ async function main() {
     console.log('\nTip: Make sure .env.local contains:');
     console.log('  NEXT_PUBLIC_SUPABASE_URL=...');
     console.log('  SUPABASE_SERVICE_ROLE_KEY=...  (the service_role key, NOT the anon key)');
-    console.log('\nAlso ensure you have run the updated supabase/schema.sql (with hardware_catalog columns + aliases RLS) in your Supabase SQL editor.');
+    console.log('\nAlso ensure the hardware_catalog table exists:');
+    console.log('  - Fresh DB: paste & run the full supabase/schema.sql in Supabase SQL Editor.');
+    console.log('  - Existing DB: paste supabase/incremental-hardware-catalog.sql (or run `npm run setup:supabase` if SUPABASE_ACCESS_TOKEN / DATABASE_URL is set).');
+    console.log('');
+    console.log('  On Windows/PowerShell, get CLEAN SQL (no > prompts):');
+    console.log('    npm run copy:sql:hardware     # easiest - copies directly to clipboard');
+    console.log('  Then paste into Supabase SQL Editor. First line must be a -- comment.');
+    console.log('  If it starts with ">" you accidentally included terminal output.');
+    console.log('');
     console.log('Then try again: npm run seed:hardware');
-    process.exit(1);
+    // Rethrow so the top-level handler can exit after promise settles (avoids libuv/Windows UV_HANDLE_CLOSING assertion on process.exit from inside async)
+    throw e;
   }
 }
 
-main();
+main().catch(() => {
+  // Perform exit only after the promise has settled. This prevents the
+  // "Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)" crash on Windows
+  // that occurs when forcing exit while async handles (http sockets etc.) are still open.
+  process.exit(1);
+});
