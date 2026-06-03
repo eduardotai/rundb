@@ -91,11 +91,6 @@ export default function SubmitPage() {
                     className="h-10 w-7 rounded object-cover shrink-0"
                   />
                   <span className="font-medium">{g.name}</span>
-                  {g.ingestStatus === 'skeleton' && (
-                    <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">
-                      loading metadata
-                    </span>
-                  )}
                 </button>
               </li>
             ))}

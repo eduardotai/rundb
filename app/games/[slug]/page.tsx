@@ -359,6 +359,9 @@ function GameDetailInner({ game }: { game: Game }) {
         <div className="lg:col-span-7">
           {/* Report Filters */}
           <div className="mb-4 space-y-2">
+            <div className="text-xs text-muted-foreground mb-2">
+              These reports from real players power the community stats, tier distributions, and similarity highlights on the left.
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <div className="text-sm font-medium text-muted-foreground mr-1">Filter reports:</div>
 
