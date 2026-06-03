@@ -5,7 +5,7 @@
  *
  * 1. Forms using Zod + react-hook-form:
  *    - Add .max() limits
- *    - Use .transform(v => sanitizeFullName(v)) for names/hardware strings
+ *    - Use .transform(v => sanitizeFullName(v)) for usernames/nicks + hardware strings
  *    - Use sanitizeEmail / sanitizePassword where appropriate
  *
  * 2. Manual forms / onClick saves (no Zod):
@@ -47,9 +47,9 @@ export function sanitizePassword(raw: string): string {
 }
 
 /**
- * Sanitize full name (most important to control because it can be displayed later):
+ * Sanitize display names / usernames / nicks / hardware model strings (most important to control because they can be displayed later):
  * - Trim + collapse whitespace
- * - Allow apostrophes and common punctuation needed for real names (Baldur's Gate, etc.)
+ * - Allow apostrophes, common punctuation, letters, marks, digits, spaces, -_. (friendly for gamer nicks + hardware like "Ryzen 7 7800X3D")
  * - Hard cap at 80 chars
  * - Strip dangerous characters + neutralize links to prevent malicious injection
  */

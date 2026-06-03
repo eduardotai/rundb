@@ -40,11 +40,11 @@ function DiscordIcon({ className = "h-5 w-5" }: { className?: string }) {
 
 const signUpSchema = z
   .object({
-    fullName: z.string()
+    username: z.string()
       .trim()
-      .min(2, 'Please enter your full name')
-      .max(80, 'Name is too long')
-      .regex(/^[\p{L}\p{M}\s\-'.]+$/u, 'Name contains invalid characters')
+      .min(2, 'Username must be at least 2 characters')
+      .max(32, 'Username is too long')
+      .regex(/^[\p{L}\p{M}\p{N}\s\-_.]+$/u, 'Username contains invalid characters')
       .transform((val) => sanitizeFullName(val)),
     email: z.string()
       .trim()
@@ -70,10 +70,10 @@ const signUpSchema = z
     message: "Passwords don't match",
     path: ['confirmPassword'],
   })
-  // Extra: after transforms, make sure name is still valid
-  .refine((data) => data.fullName.length >= 2, {
-    message: 'Please enter a valid name',
-    path: ['fullName'],
+  // Extra: after transforms, make sure username is still valid
+  .refine((data) => data.username.length >= 2, {
+    message: 'Please enter a valid username',
+    path: ['username'],
   });
 
 type SignUpValues = z.infer<typeof signUpSchema>;
@@ -95,7 +95,7 @@ function SignUpForm() {
   const form = useForm<SignUpValues>({
     resolver: zodResolver(signUpSchema) as any,
     defaultValues: {
-      fullName: '',
+      username: '',
       email: '',
       password: '',
       confirmPassword: '',
@@ -138,7 +138,7 @@ function SignUpForm() {
         password: values.password,
         options: {
           data: {
-            full_name: values.fullName,
+            username: values.username,
           },
         },
       });
@@ -273,16 +273,16 @@ function SignUpForm() {
           {/* Email signup form */}
           <form onSubmit={form.handleSubmit(handleEmailSignUp)} className="space-y-4" noValidate>
             <div className="space-y-2">
-              <Label htmlFor="fullName">Full name</Label>
+              <Label htmlFor="username">Username / Nickname</Label>
               <Input
-                id="fullName"
-                placeholder="Alex Rivera"
-                autoComplete="name"
-                {...form.register('fullName')}
+                id="username"
+                placeholder="ShadowGamer42"
+                autoComplete="username"
+                {...form.register('username')}
                 disabled={isLoading}
               />
-              {form.formState.errors.fullName && (
-                <p className="text-xs text-destructive">{form.formState.errors.fullName.message}</p>
+              {form.formState.errors.username && (
+                <p className="text-xs text-destructive">{form.formState.errors.username.message}</p>
               )}
             </div>
 

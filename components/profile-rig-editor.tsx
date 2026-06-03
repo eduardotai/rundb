@@ -21,6 +21,7 @@ interface ProfileRigEditorProps {
     id: string;
     email?: string;
     user_metadata?: {
+      username?: string;
       full_name?: string;
       avatar_url?: string;
     };
@@ -45,6 +46,7 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
     ram: '',
     resolution: MAIN_RESOLUTIONS[1],
   });
+  const [username, setUsername] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -59,7 +61,10 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
     user.app_metadata?.provider === 'anonymous' ||
     !user.email;
 
+  // displayName prefers the editable username state (after load), then metadata fallbacks (legacy full_name support)
   const displayName =
+    username ||
+    user.user_metadata?.username ||
     user.user_metadata?.full_name ||
     user.email ||
     (isAnonymous ? 'Anonymous Guest' : 'User');
@@ -71,7 +76,7 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
       try {
         const { data, error } = await supabase
           .from('profiles')
-          .select('main_cpu, main_gpu, main_ram, preferred_resolution')
+          .select('main_cpu, main_gpu, main_ram, preferred_resolution, username')
           .eq('id', user.id)
           .single();
 
@@ -89,6 +94,7 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
             ram: data.main_ram ?? '',
             resolution: safeRes,
           });
+          setUsername(data.username || '');
         }
       } catch (err) {
         console.error('[profile] Unexpected error loading rig:', err);
@@ -104,6 +110,7 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
     const safeCpu = sanitizeFullName(rig.cpu);
     const safeGpu = sanitizeFullName(rig.gpu);
     const safeResolution = sanitizeFullName(rig.resolution);
+    const safeUsername = sanitizeFullName(username).slice(0, 32);
 
     if (!safeCpu || !safeGpu) {
       showUserError('CPU and GPU are required');
@@ -123,6 +130,7 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
     try {
       const { error } = await supabase.from('profiles').upsert({
         id: user.id,
+        username: safeUsername || null,
         main_cpu: safeCpu,
         main_gpu: safeGpu,
         main_ram: ramNum,
@@ -130,6 +138,19 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
       });
 
       if (error) throw error;
+
+      // Sync username to auth user_metadata so header / other client reads see it without reload
+      if (safeUsername) {
+        try {
+          await supabase.auth.updateUser({ data: { username: safeUsername } });
+        } catch (metaErr) {
+          // Non-fatal: profile row is the source of truth
+          console.warn('[profile] username metadata sync skipped:', metaErr);
+        }
+      }
+
+      // Update local state so displayName and UI reflect immediately
+      setUsername(safeUsername || '');
 
       showUserSuccess('Rig saved!');
     } catch (error) {
@@ -165,11 +186,20 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
               : 'Signed in with persistent account.'}
           </CardDescription>
         </CardHeader>
-        <CardContent className="text-sm space-y-1">
-          <p>
-            <span className="text-muted-foreground">Name:</span>{' '}
-            <span className="font-medium">{displayName}</span>
-          </p>
+        <CardContent className="text-sm space-y-3">
+          <div>
+            <Label htmlFor="profile-username" className="text-xs text-muted-foreground">Username / Nickname</Label>
+            <Input
+              id="profile-username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="Your display name (no real name)"
+              disabled={isSaving}
+              className="mt-1"
+              maxLength={32}
+            />
+            <p className="mt-1 text-[10px] text-muted-foreground">Shown in header, profile, etc. Change anytime. No personal data required.</p>
+          </div>
           {user.email && (
             <p>
               <span className="text-muted-foreground">Email:</span> {user.email}
@@ -268,10 +298,10 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
               size="lg"
               className="bg-white text-black font-medium hover:bg-white/90"
             >
-              {isSaving ? 'Saving...' : 'Save My Rig'}
+              {isSaving ? 'Saving...' : 'Save Username & My Rig'}
             </Button>
             <p className="text-xs text-muted-foreground">
-              Saved directly to your Supabase profile row.
+              Username + rig saved to Supabase profiles / user_rigs.
             </p>
           </div>
 

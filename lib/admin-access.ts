@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 export type StaffRole = 'user' | 'moderator' | 'admin'
 
 export type StaffAccess = {
-  user: { id: string; email?: string } | null
+  user: { id: string; email?: string; username?: string } | null
   role: StaffRole
   isAdmin: boolean
   canModerate: boolean
@@ -38,7 +38,7 @@ export async function getStaffAccess(): Promise<StaffAccess> {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role')
+    .select('role, username')
     .eq('id', user.id)
     .maybeSingle()
 
@@ -47,7 +47,7 @@ export async function getStaffAccess(): Promise<StaffAccess> {
   const canModerate = isAdmin || dbRole === 'moderator'
 
   return {
-    user: { id: user.id, email: user.email },
+    user: { id: user.id, email: user.email, username: profile?.username ?? undefined },
     role: isAdmin ? 'admin' : dbRole,
     isAdmin,
     canModerate,

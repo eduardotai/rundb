@@ -19,7 +19,9 @@ interface AuthButtonProps {
   user?: {
     id: string;
     email?: string;
+    username?: string;
     user_metadata?: {
+      username?: string;
       full_name?: string;
       avatar_url?: string;
     };
@@ -45,7 +47,7 @@ export function AuthButton({ user }: AuthButtonProps) {
   };
 
   if (user) {
-    const displayName = user.user_metadata?.full_name || user.email || 'Guest User';
+    const displayName = user.username || user.user_metadata?.username || user.user_metadata?.full_name || user.email || 'Guest User';
     const avatarUrl = user.user_metadata?.avatar_url;
 
     return (

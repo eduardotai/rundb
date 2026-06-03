@@ -225,6 +225,8 @@ AFTER INSERT OR DELETE ON report_votes
 FOR EACH ROW EXECUTE FUNCTION public.update_helpful_votes();
 
 -- Auto-create profile on new user
+-- username is the public display nick (no real names). Prefer explicit 'username' from our signup or provider (Discord provides 'username' handle),
+-- never copy real full_name from Google etc to avoid personal data exposure. Existing rows with old names can be edited by users in /profile.
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
@@ -233,7 +235,7 @@ BEGIN
   INSERT INTO public.profiles (id, username, avatar_url)
   VALUES (
     NEW.id,
-    NEW.raw_user_meta_data ->> 'full_name',
+    NEW.raw_user_meta_data ->> 'username',
     NEW.raw_user_meta_data ->> 'avatar_url'
   );
   RETURN NEW;
