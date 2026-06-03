@@ -162,6 +162,12 @@ export function ReportCard({ report, userRig, onHelpful, onVote, onViewFull, com
       <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
         <div className="flex flex-wrap items-center gap-2">
           <span>{formatRelativeTime(report.createdAt)}</span>
+          {report.reporter?.username && (
+            <span className="text-muted-foreground/70">
+              · by {report.reporter.username}
+              {report.reporter.credibilityBadge && report.reporter.credibilityBadge !== 'New' ? ` · ${report.reporter.credibilityBadge}` : ''}
+            </span>
+          )}
           <div className="inline-flex items-center overflow-hidden rounded-full border border-border bg-background/60">
             <motion.button
               onClick={(e) => handleVote(1, e)}

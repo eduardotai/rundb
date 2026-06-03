@@ -127,6 +127,16 @@ export interface Report {
   // Optionally embedded game metadata (cover/slug/developer/year) joined at query time.
   // Lets the /reports "By game" view render banners without fetching the whole catalog.
   game?: Game;
+
+  // Reporter attribution + badges (enriched post-fetch in real mode via profiles join/policy).
+  // Populated for public display on game report pages and ReportCard (username + their overall badge).
+  // userId remains the raw FK for ownership/voting logic.
+  reporter?: {
+    id?: string;
+    username?: string | null;
+    avatarUrl?: string | null;
+    credibilityBadge?: CredibilityBadge | null;
+  };
 }
 
 export type CredibilityBadge = 'New' | 'Helpful' | 'Trusted' | 'Expert' | 'Legend';

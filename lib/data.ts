@@ -26,6 +26,7 @@ import type {
   ReportImage,
   BulkImportResult,
   GamesPageResult,
+  CredibilityBadge,
 } from './types'
 
 // Hardware catalog live mapper (for Phase 6+ large 2015+ DB-backed catalog)
@@ -724,6 +725,7 @@ export async function getReportsForGameAsync(
       // Ensure consistent newest-first order after client filtering
       reports.sort((a: Report, b: Report) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
+      reports = await enrichReportsWithReporters(reports)
       return reports
     } catch (err: any) {
       console.error('[data] getReportsForGameAsync unexpected error:', err)
@@ -736,6 +738,48 @@ export async function getReportsForGameAsync(
 export function filterReports(reports: Report[], filters: ReportFilters): Report[] {
   // This is a pure function — no need to switch, always use mock version
   return mock.filterReports(reports, filters)
+}
+
+/**
+ * Enrich reports with public reporter profile info (username, avatar, their credibility badge).
+ * Used so game-specific report pages and ReportCard can show "reported by X" + badges.
+ * Requires the public profiles SELECT policy (added for this). Falls back silently.
+ * Only runs in real mode; distinct userIds are batched to avoid N+1.
+ */
+async function enrichReportsWithReporters(reports: Report[]): Promise<Report[]> {
+  if (!USE_REAL || !isSupabaseConfigured() || reports.length === 0) return reports
+  const userIds = Array.from(new Set(reports.map((r) => r.userId).filter((id): id is string => Boolean(id))))
+  if (userIds.length === 0) return reports
+  try {
+    const { createClient } = await import('@/lib/supabase/client')
+    const supabase = createClient()
+    const { data: profs, error } = await supabase
+      .from('profiles')
+      .select('id, username, avatar_url, credibility_badge')
+      .in('id', userIds)
+    if (error || !profs) {
+      console.warn('[data] enrichReportsWithReporters: profiles fetch failed (policy or incremental?):', error?.message)
+      return reports
+    }
+    const byId = new Map<string, any>((profs || []).map((p: any) => [p.id, p]))
+    return reports.map((r) => {
+      if (!r.userId) return r
+      const p = byId.get(r.userId)
+      if (!p) return r
+      return {
+        ...r,
+        reporter: {
+          id: p.id,
+          username: p.username ?? null,
+          avatarUrl: p.avatar_url ?? null,
+          credibilityBadge: (p.credibility_badge as CredibilityBadge | undefined) ?? null,
+        },
+      }
+    })
+  } catch (err: any) {
+    console.warn('[data] enrichReportsWithReporters unexpected error:', err?.message || err)
+    return reports
+  }
 }
 
 /**
@@ -902,7 +946,8 @@ export async function getAllReportsAsync(): Promise<Report[]> {
         return getAllReports()
       }
 
-      return (data || []).map(mapDbReportToReport)
+      const base = (data || []).map(mapDbReportToReport)
+      return await enrichReportsWithReporters(base)
     } catch (err: any) {
       console.error('[data] getAllReportsAsync unexpected error:', err)
       return getAllReports()
@@ -975,6 +1020,7 @@ export async function getFilteredGlobalReportsAsync(filters: {
         })
       }
 
+      reports = await enrichReportsWithReporters(reports)
       return reports
     } catch (err: any) {
       console.error('[data] getFilteredGlobalReportsAsync unexpected error:', err)

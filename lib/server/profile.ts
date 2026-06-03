@@ -240,7 +240,27 @@ export async function getProfileData(userId: string): Promise<ProfileData> {
         }
       : null;
 
-    const rRows = (reportsRes as { data: Record<string, unknown>[] | null }).data ?? [];
+    let rRows: Record<string, unknown>[] = (reportsRes as { data: Record<string, unknown>[] | null }).data ?? [];
+    if ((reportsRes as any)?.error) {
+      const errMsg = String((reportsRes as any).error?.message || '');
+      console.warn('[profile] reports select error (missing incremental cols?), retrying with base columns:', errMsg);
+      // Fallback: select only columns guaranteed by base schema.sql so user's reports still appear in /profile
+      // (downvote/vote/cred are maintained by incremental-reputation-voting.sql; without them stats are approx but list works)
+      try {
+        const fallbackRes = await supabase
+          .from('reports')
+          .select(
+            'id, game_id, game_name, cpu, gpu, ram, resolution, settings_preset, avg_fps, performance_tier, status, helpful_votes, created_at'
+          )
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(REPORTS_CAP);
+        rRows = (fallbackRes as { data: Record<string, unknown>[] | null }).data ?? [];
+      } catch (fbErr) {
+        console.warn('[profile] fallback reports query also failed:', fbErr);
+        rRows = [];
+      }
+    }
     const reports = rRows.map(mapReportRow);
 
     const stats = deriveStats(reports);

@@ -133,6 +133,25 @@ function SignUpForm() {
   const handleEmailSignUp = async (values: SignUpValues) => {
     setEmailLoading(true);
     try {
+      // Pre-check username to give immediate friendly error (avoids creating auth user then failing on trigger).
+      // Falls back gracefully if the helper RPC isn't present on the DB yet.
+      try {
+        const { data: taken, error: rpcError } = await supabase.rpc('is_username_taken', {
+          p_username: values.username,
+        });
+        if (!rpcError && taken === true) {
+          form.setError('username', {
+            type: 'manual',
+            message: 'This username is already taken. Please choose another.',
+          });
+          showUserError('That username is already taken. Please choose another.');
+          return;
+        }
+      } catch {
+        // Ignore RPC errors (e.g. function not deployed yet) — we'll let the signup attempt proceed
+        // and catch a constraint violation below if the unique index is present.
+      }
+
       const { data, error } = await supabase.auth.signUp({
         email: values.email,
         password: values.password,
@@ -148,8 +167,29 @@ function SignUpForm() {
       });
 
       if (error) {
-        if (error.message.includes('already registered')) {
+        const msg = (error.message || '').toLowerCase();
+        if (
+          msg.includes('already registered') ||
+          msg.includes('user already registered') ||
+          error.code === 'email_exists' ||
+          error.code === 'user_already_exists'
+        ) {
+          form.setError('email', {
+            type: 'manual',
+            message: 'An account with this email already exists.',
+          });
           showUserError('An account with this email already exists. Try signing in instead.');
+        } else if (
+          msg.includes('duplicate key') ||
+          msg.includes('unique constraint') ||
+          msg.includes('already taken') ||
+          msg.includes('username')
+        ) {
+          form.setError('username', {
+            type: 'manual',
+            message: 'This username is already taken.',
+          });
+          showUserError('That username is already taken. Please choose another.');
         } else {
           throw error;
         }

@@ -65,6 +65,21 @@ CREATE TABLE profiles (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Usernames must be unique across accounts (case-insensitive; nulls for guests are fine).
+-- This prevents two users from registering the same display name at signup time.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint 
+    WHERE conrelid = 'public.profiles'::regclass 
+      AND conname = 'profiles_username_unique'
+  ) THEN
+    ALTER TABLE public.profiles
+      ADD CONSTRAINT profiles_username_unique UNIQUE (lower(username));
+  END IF;
+END
+$$;
+
 -- User Rigs (current saved hardware for compatibility checker)
 CREATE TABLE user_rigs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -246,6 +261,26 @@ CREATE TRIGGER on_auth_user_created
 AFTER INSERT ON auth.users
 FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
+-- Public helper to check username availability before/during registration.
+-- Uses SECURITY DEFINER so anon clients can call it without RLS allowing full profile reads.
+CREATE OR REPLACE FUNCTION public.is_username_taken(p_username text)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+BEGIN
+  IF p_username IS NULL OR length(btrim(p_username)) = 0 THEN
+    RETURN false;
+  END IF;
+  RETURN EXISTS (
+    SELECT 1 FROM public.profiles 
+    WHERE lower(username) = lower(p_username)
+  );
+END;
+$$;
+
+-- Allow unauthenticated users (at signup) and authenticated to call the check.
+GRANT EXECUTE ON FUNCTION public.is_username_taken(text) TO anon, authenticated;
+
 -- ============================================
 -- ROW LEVEL SECURITY (RLS)
 -- ============================================
@@ -275,14 +310,14 @@ CREATE POLICY "Users can read their own reports" ON reports
 
 -- Anyone (including fully anonymous clients using the anon key, or authenticated users/guests via signInAnonymously)
 -- can insert reports. The row must claim user_id=NULL or exactly the current auth.uid().
--- NOTE: user submissions now go through the submit_report SECURITY DEFINER RPC which bypasses this policy
--- for the write (more robust vs any client/server auth context skew). This policy remains for direct
--- inserts, admin tools, or if we switch back to .insert in the future.
+-- Submissions use submitReportAction (direct insert, status=approved for immediate publish) or submit_report RPC (pending).
+-- Policy allows both; counters/moderator_notes default or set by action (catalog prefix only).
 CREATE POLICY "Anyone can insert reports (self or anonymous)" ON reports
   FOR INSERT
   TO anon, authenticated
   WITH CHECK (
-    (user_id IS NULL) OR (user_id = auth.uid())
+    status IN ('pending', 'approved')
+    AND ((user_id IS NULL) OR (user_id = auth.uid()))
   );
 
 -- Owners can update their own pending reports
@@ -307,6 +342,12 @@ CREATE POLICY "Users can insert own profile" ON profiles
 CREATE POLICY "Users can update own profile" ON profiles
   FOR UPDATE USING (auth.uid() = id)
   WITH CHECK (auth.uid() = id);
+
+-- Public read of basic profile fields (username, avatar, credibility/role) so approved reports can
+-- publicly attribute the reporting user and display their badges (e.g. "Trusted", Steam-verified intent).
+-- No sensitive data in profiles; this enables the "who reported this" + badge features on /games/[slug] etc.
+CREATE POLICY "Public can view basic profile info for report authors" ON profiles
+  FOR SELECT USING (true);
 
 -- User rigs: owners only
 CREATE POLICY "Users can manage their own rig" ON user_rigs

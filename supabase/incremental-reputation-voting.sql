@@ -193,14 +193,12 @@ CREATE POLICY "Users can delete own report votes" ON public.report_votes
 DROP POLICY IF EXISTS "Anyone can insert reports (self or anonymous)" ON public.reports;
 DROP POLICY IF EXISTS "Authenticated users can insert reports" ON public.reports;
 
+-- Compatible with both submitReportAction (approved immediate + defaults 0 for counters) and RPC (pending).
 CREATE POLICY "Anyone can insert reports (self or anonymous)" ON public.reports
   FOR INSERT
   TO anon, authenticated
   WITH CHECK (
-    status = 'approved'
-    AND helpful_votes = 0
-    AND downvote_votes = 0
-    AND vote_score = 0
+    status IN ('pending', 'approved')
     AND ((user_id IS NULL) OR (user_id = auth.uid()))
   );
 

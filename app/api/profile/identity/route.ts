@@ -50,6 +50,31 @@ export async function POST(request: Request) {
       profileUpdate.avatar_url = avatarUrl;
     }
 
+    // Pre-check for username conflict (other than self, case-insensitive) so we can return a clean error.
+    if (username) {
+      try {
+        const { data: taken } = await service.rpc('is_username_taken', { p_username: username });
+        if (taken === true) {
+          // Double-check it's not the current user's own current username (rpc is global).
+          // If it is their own, allow (no-op or minor case change).
+          const { data: selfProfile } = await service
+            .from('profiles')
+            .select('username')
+            .eq('id', user.id)
+            .maybeSingle();
+          const current = (selfProfile?.username as string | null) || '';
+          if (current.toLowerCase() !== username.toLowerCase()) {
+            return NextResponse.json(
+              { error: 'That username is already taken by another account.' },
+              { status: 409 }
+            );
+          }
+        }
+      } catch {
+        // RPC missing or other transient; fall through. Constraint violation (if any) will be caught below.
+      }
+    }
+
     const { data: profile, error: profileError } = await service
       .from('profiles')
       .upsert(profileUpdate)
@@ -57,6 +82,14 @@ export async function POST(request: Request) {
       .single();
 
     if (profileError) {
+      // In case of race or constraint violation, surface a friendly message.
+      const pe = (profileError.message || '').toLowerCase();
+      if (pe.includes('duplicate') || pe.includes('unique') || pe.includes('username')) {
+        return NextResponse.json(
+          { error: 'That username is already taken by another account.' },
+          { status: 409 }
+        );
+      }
       throw new Error(profileError.message);
     }
 

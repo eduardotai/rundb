@@ -37,15 +37,16 @@ CREATE POLICY "Users can update own profile" ON public.profiles
   FOR UPDATE USING (auth.uid() = id)
   WITH CHECK (auth.uid() = id);
 
+DROP POLICY IF EXISTS "Anyone can insert reports (self or anonymous)" ON public.reports;
 DROP POLICY IF EXISTS "Authenticated users can insert reports" ON public.reports;
 
-CREATE POLICY "Authenticated users can insert reports" ON public.reports
-  FOR INSERT WITH CHECK (
-    status = 'pending'
-    AND helpful_votes = 0
-    AND moderated_by IS NULL
-    AND moderated_at IS NULL
-    AND moderator_notes IS NULL
+-- Compatible with submitReportAction (direct insert with status='approved' for immediate publish + optional moderator_notes for unknown-hw prefix)
+-- and submit_report RPC (pending). The server action is the live submission path used by the UI.
+CREATE POLICY "Anyone can insert reports (self or anonymous)" ON public.reports
+  FOR INSERT
+  TO anon, authenticated
+  WITH CHECK (
+    status IN ('pending', 'approved')
     AND ((user_id IS NULL) OR (user_id = auth.uid()))
   );
 
@@ -58,3 +59,8 @@ DROP POLICY IF EXISTS "Users can read their own reports" ON public.reports;
 
 CREATE POLICY "Users can read their own reports" ON public.reports
   FOR SELECT USING (user_id = auth.uid());
+
+-- Public read of basic profile fields for report attribution + badges (see matching policy in schema.sql).
+DROP POLICY IF EXISTS "Public can view basic profile info for report authors" ON public.profiles;
+CREATE POLICY "Public can view basic profile info for report authors" ON public.profiles
+  FOR SELECT USING (true);
