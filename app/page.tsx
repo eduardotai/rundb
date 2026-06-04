@@ -11,12 +11,11 @@ import { useQuery } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { GameStats } from '@/lib/types';
 
-// Phase 3: Home now uses real-data adapters (getAllGames + getAllReportsAsync) + React Query.
-// When NEXT_PUBLIC_USE_REAL_DATA=true: trending + aggregates driven by Supabase data.
-// Client-side derivation for trending (by report count) kept minimal (pure, after real fetch).
-// No direct mock-data calls or computeGameStats in this page. Full backward compat (flag=false uses mocks instantly).
-// Enhanced with graceful Skeleton loading states, error notices, and real stats passed to GameCards (via computeGameStatsFromReports).
-// Uses root QueryClientProvider from app/providers.tsx (no per-page client creation).
+// Home page. The "Trending right now" section ranks games by recent report
+// activity via getTrendingGamesAsync (last 7 days, with all-time top-up). Per-card
+// stats come from a batched getReportsForGamesAsync over just the visible games,
+// and hero counts from the lightweight getGlobalCountsAsync. All data access goes
+// through the lib/data adapters (React Query), which handle their own fallbacks.
 export default function Home() {
   // Trending = games with the most new reports in the last 7 days (adapter handles
   // ranking + all-time top-up + fallbacks). Replaces the old all-games/all-reports derive.
@@ -26,7 +25,7 @@ export default function Home() {
   });
 
   const trending = trendingQuery.data?.games ?? [];
-  const trendingIds = trending.map((g) => g.id);
+  const trendingIds = useMemo(() => trending.map((g) => g.id), [trending]);
 
   // Per-card stats for ONLY the visible trending games (batched single query).
   const statsQuery = useQuery({
@@ -203,7 +202,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Trending Games — now sourced from real adapters + RQ when flag true */}
+      {/* Trending Games — ranked by recent report activity (getTrendingGamesAsync) */}
       <div className="mb-16">
         <div className="mb-4 flex items-baseline justify-between">
           <h2 className="text-2xl font-semibold tracking-tight">Trending right now</h2>
