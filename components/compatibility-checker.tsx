@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PerformanceBadge } from './performance-badge';
 import { ReportCard } from './report-card';
+import { ValueLoopExplainer } from './value-loop-explainer';
 import { Game, UserPC, MAIN_RESOLUTIONS, MainResolution } from '@/lib/types';
 import {
   loadMyRigAsync,
@@ -25,6 +26,7 @@ import { HardwareDetectButton } from '@/components/hardware-detect-button';
 import { DetectedHardwareBanner } from '@/components/detected-hardware-banner';
 import { PasteHardwareModal } from '@/components/paste-hardware-modal';
 import type { DetectedHardware } from '@/lib/types';
+import { mergeDetected } from '@/lib/hardware-detector';
 import { cn } from '@/lib/utils';
 import { sanitizeFullName } from '@/lib/sanitize';
 import { HardwareCombobox } from '@/components/hardware-combobox';
@@ -221,9 +223,10 @@ export function CompatibilityChecker({ embedded = false, preselectedGameSlug }: 
 
   const openPasteModal = () => setPasteModalOpen(true);
   const applyDetectedToForm = (result: DetectedHardware) => {
-    if (result.cpu) setCpu(result.cpu);
+    const isHint = (s?: string) => !!s && /browser hint/i.test(s);
+    if (result.cpu && !isHint(result.cpu)) setCpu(result.cpu);
     if (result.gpu) setGpu(result.gpu);
-    if (result.ram) setRam(result.ram);
+    if (result.ram != null && !isHint(result.cpu)) setRam(result.ram);
     if (result.resolution) setResolution(result.resolution);
     setDetectionState('applied');
     setDetectedRig(null);
@@ -277,6 +280,7 @@ export function CompatibilityChecker({ embedded = false, preselectedGameSlug }: 
               <span className="ml-1 text-emerald-400">(using real database reports + live hardware catalog)</span>
             )}
           </p>
+          {!embedded && <ValueLoopExplainer variant="compact" />}
         </CardHeader>
 
         <CardContent className="space-y-6">
@@ -458,6 +462,17 @@ export function CompatibilityChecker({ embedded = false, preselectedGameSlug }: 
           )}
         </CardContent>
       </Card>
+
+      {/* Paste modal — was declared but not rendered; now wired with merge support */}
+      <PasteHardwareModal
+        open={pasteModalOpen}
+        onOpenChange={setPasteModalOpen}
+        onApply={(pasteDetected) => {
+          const merged = mergeDetected(detectedRig, pasteDetected);
+          applyDetectedToForm(merged);
+          setPasteModalOpen(false);
+        }}
+      />
     </div>
   );
 }

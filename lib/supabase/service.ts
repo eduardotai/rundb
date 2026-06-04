@@ -11,7 +11,9 @@ export function createServiceClient(): SupabaseClient {
 
   if (!url || !key) {
     throw new Error(
-      'Missing NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (server-only, never expose to client)'
+      'Missing NEXT_PUBLIC_SUPABASE_URL (or SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY.\n' +
+      'These must be in .env.local (or set in the current shell env).\n' +
+      'The service_role key is required for seeding (it bypasses RLS). Never commit it.'
     )
   }
 

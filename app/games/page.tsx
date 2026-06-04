@@ -152,7 +152,8 @@ export default function GamesPage() {
     });
   };
 
-  const isLoading = gamesQuery.isLoading || reportsQuery.isLoading;
+  const isLoading = gamesQuery.isLoading;
+  const isStatsLoading = reportsQuery.isLoading;
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
@@ -247,7 +248,7 @@ export default function GamesPage() {
               <button
                 key={tier}
                 onClick={() => setSelectedTier(selectedTier === tier ? '' : tier)}
-                disabled={isLoading || allReports.length === 0}
+                disabled={isLoading || isStatsLoading || allReports.length === 0}
                 className={cn(
                   'rounded-full border px-3 py-1 text-sm transition',
                   selectedTier === tier ? 'border-primary bg-white text-black shadow-sm' : 'border-border hover:bg-muted',

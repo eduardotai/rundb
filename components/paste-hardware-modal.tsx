@@ -32,17 +32,19 @@ export function PasteHardwareModal({ open, onOpenChange, onApply }: PasteHardwar
 
   const EXAMPLES: Record<string, { cmd: string; hint: string }> = {
     windows: {
-      cmd: `dxdiag /t %TEMP%\\rundb_dxdiag.txt && type %TEMP%\\rundb_dxdiag.txt`,
-      hint: 'Best Windows accuracy. Run in Command Prompt or PowerShell, then paste the full file content.',
+      // Structured JSON v2 (recommended) — gives exact CPU model, GPU, RAM, OS, resolution.
+      // Run in PowerShell, copy the one-line JSON output, paste here. This + browser refresh = full accurate rig.
+      cmd: `powershell -NoProfile -Command "$cpu=(Get-CimInstance Win32_Processor|Select -First 1).Name; $gpu=(Get-CimInstance Win32_VideoController|? {$_.AdapterRAM -gt 0}|Select -First 1).Name; $ram=[math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB); $os=(Get-CimInstance Win32_OperatingSystem).Caption; $vid=Get-CimInstance Win32_VideoController|Select -First 1; $w=$vid.CurrentHorizontalResolution; $h=$vid.CurrentVerticalResolution; @{rundb=1;cpu=$cpu;gpu=$gpu;ram=$ram;os=$os;resolution=\"\${w}x\${h}\"} | ConvertTo-Json -Compress"`,
+      hint: 'Run in PowerShell. Copy the JSON it prints and paste it. Delivers real CPU + RAM + GPU. Browser can still add refresh rate.',
     },
     linux: {
-      // ProtonDB gold standard: inxi gives driver, kernel, distro + clean CPU/GPU strings.
+      // ProtonDB gold standard inxi (prose parser supports driver/kernel/distro). For structured JSON use a one-liner emitting {rundb, cpu, gpu, ram, ...}
       cmd: `inxi -Fxxxz`,
-      hint: 'Highest-signal Linux path (like ProtonDB). Install inxi if missing (apt/dnf/pacman install inxi). For even more: inxi -Fxxxz && vulkaninfo --summary',
+      hint: 'Highest-signal Linux path (like ProtonDB). Install inxi if missing. Paste full output. (JSON one-liner alternative also supported.)',
     },
     macos: {
-      cmd: `system_profiler SPHardwareDataType SPDisplaysDataType`,
-      hint: 'Run in Terminal. Look for Chip, Model, Resolution.',
+      cmd: `system_profiler -json SPHardwareDataType SPDisplaysDataType`,
+      hint: 'Run in Terminal with -json flag for structured parse (vram/resolution via Apple JSON schema).',
     },
     steam: {
       cmd: `Steam → Help → System Information (right-click → Copy all text)`,
@@ -103,7 +105,7 @@ export function PasteHardwareModal({ open, onOpenChange, onApply }: PasteHardwar
         <DialogHeader>
           <DialogTitle>Paste Hardware Output (Most Accurate)</DialogTitle>
           <DialogDescription>
-            Run a native command (inxi recommended on Linux — the same approach ProtonDB uses for high-precision reports). Parsed 100% locally in your browser.
+            This is the real way to detect your actual CPU model + exact RAM (browser "Detect" can only give rough hints). Run the one-liner for your OS, paste the output. 100% local, same technique ProtonDB uses.
           </DialogDescription>
         </DialogHeader>
 
@@ -135,7 +137,7 @@ export function PasteHardwareModal({ open, onOpenChange, onApply }: PasteHardwar
             <Textarea
               value={pasteText}
               onChange={(e) => setPasteText(e.target.value)}
-              placeholder="Paste inxi -Fxxxz (Linux), dxdiag /t (Windows), Steam System Information, or system_profiler (macOS)..."
+              placeholder="Paste JSON from the one-liner, or inxi/dxdiag/Steam/system_profiler output..."
               className="h-40 font-mono text-sm"
             />
           </div>
@@ -151,12 +153,18 @@ export function PasteHardwareModal({ open, onOpenChange, onApply }: PasteHardwar
 
           {parsed && (
             <div className="rounded border bg-background/50 p-3 text-sm">
-              <div className="font-medium mb-1">Preview</div>
+              <div className="font-medium mb-1">Preview (parsed locally)</div>
               <div>CPU: {parsed.cpu || '—'}</div>
               <div>GPU: {parsed.gpu || '—'}</div>
               <div>RAM: {parsed.ram ? `${parsed.ram} GB` : '—'}</div>
+              {parsed.vram != null && <div>VRAM: {parsed.vram} GB</div>}
               <div>Resolution: {parsed.resolution || '—'}</div>
-              <div className="text-xs text-muted-foreground mt-1">Confidence: {Math.round(parsed.confidence * 100)}%</div>
+              {parsed.refreshRate != null && <div>Refresh: {parsed.refreshRate} Hz</div>}
+              {parsed.osVersion && <div>OS: {parsed.osVersion}</div>}
+              <div className="text-xs text-muted-foreground mt-1">Confidence: {Math.round(parsed.confidence * 100)}% • method: {parsed.method}</div>
+              {parsed.limitations && parsed.limitations.length > 0 && (
+                <div className="text-[10px] text-muted-foreground mt-1">Limitations: {parsed.limitations.slice(0,2).join('; ')}{parsed.limitations.length > 2 ? '…' : ''}</div>
+              )}
             </div>
           )}
         </div>

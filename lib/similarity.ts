@@ -15,7 +15,7 @@
 
 import type { Report, UserPC } from './types';
 import { getPerfIndexForRaw, normalizeHardwareSync } from './normalize-hardware';
-import { extractGpuSeries, getCpuTier } from './mock-data';
+import { extractGpuSeries, getCpuTier } from './hardware-similarity-heuristics';
 
 /**
  * Main exported function used everywhere (ReportCard, predictions, etc.).
@@ -24,8 +24,9 @@ import { extractGpuSeries, getCpuTier } from './mock-data';
 export function calculateHardwareAwareSimilarity(
   report: Report, 
   userRig: UserPC | null,
-  _liveCatalog?: any[]
+  liveCatalog?: any[]
 ): number {
+  // liveCatalog param supported for future full injection (currently normalize + static + merged data layer cover most cases)
   if (!userRig) return 0;
 
   let score = 45;
@@ -78,8 +79,8 @@ export function calculateHardwareAwareSimilarity(
   return Math.min(100, Math.max(0, Math.round(score)));
 }
 
-// Original (kept for full backward compatibility with existing call sites)
-export { calculateSimilarity, extractGpuSeries, getCpuTier } from './mock-data';
+// Original heuristic exports (kept for full backward compatibility with existing call sites)
+export { calculateSimilarity, extractGpuSeries, getCpuTier } from './hardware-similarity-heuristics';
 
 
 

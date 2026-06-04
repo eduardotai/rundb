@@ -25,7 +25,11 @@ if (!url || !serviceKey) {
   process.exit(1)
 }
 
-const supabase = createClient(url, serviceKey)
+function normalizeSupabaseProjectUrl(value: string): string {
+  return value.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '')
+}
+
+const supabase = createClient(normalizeSupabaseProjectUrl(url), serviceKey)
 
 async function main() {
   console.log(`Seeding ${GAMES.length} games from mock catalog into Supabase...`)

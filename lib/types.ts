@@ -105,6 +105,10 @@ export interface Report {
   driverVersion?: string;
   createdAt: string; // ISO
   helpfulVotes: number;
+  downvoteVotes?: number;
+  voteScore?: number;
+  credibilityBadge?: CredibilityBadge;
+  credibilityScore?: number;
 
   // Phase 2 real-data / moderation fields (from Master Plan approved schema)
   // Only populated for moderators via /admin/reports or internal; public RLS filters to approved only
@@ -119,7 +123,23 @@ export interface Report {
   canonicalGpu?: string;
   gpuPerfIndex?: number;
   cpuPerfIndex?: number;
+
+  // Optionally embedded game metadata (cover/slug/developer/year) joined at query time.
+  // Lets the /reports "By game" view render banners without fetching the whole catalog.
+  game?: Game;
+
+  // Reporter attribution + badges (enriched post-fetch in real mode via profiles join/policy).
+  // Populated for public display on game report pages and ReportCard (username + their overall badge).
+  // userId remains the raw FK for ownership/voting logic.
+  reporter?: {
+    id?: string;
+    username?: string | null;
+    avatarUrl?: string | null;
+    credibilityBadge?: CredibilityBadge | null;
+  };
 }
+
+export type CredibilityBadge = 'New' | 'Helpful' | 'Trusted' | 'Expert' | 'Legend';
 
 export interface UserPC {
   cpu: string;
@@ -250,6 +270,16 @@ export interface DetectedHardware {
   driverVersion?: string;
   kernel?: string;
   distro?: string;
+
+  // Additional coverage fields (additive, all optional):
+  // - vram: dedicated GPU memory in GB (from catalog match or structured paste).
+  // - refreshRate: display refresh in Hz (browser rAF sampling or structured paste).
+  // - cpuArch: CPU architecture family from UA Client Hints ('x86', 'arm', ...) — a hint, not a model.
+  // - osVersion: precise OS string (e.g. 'Windows 11', 'Windows 10') from UA-CH platformVersion or paste.
+  vram?: number;
+  refreshRate?: number;
+  cpuArch?: string;
+  osVersion?: string;
 
   raw: Record<string, unknown>; // raw unprocessed values (for debugging + alias learning)
   method: DetectionMethod;

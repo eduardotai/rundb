@@ -1,5 +1,5 @@
 {
-  "name": "grokbuild",
+  "name": "rundb",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -7,13 +7,17 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "tsx --test",
     "ingest:games": "tsx scripts/ingest-games.ts",
     "build:seed": "tsx scripts/build-protondb-seed.ts",
     "seed:queue": "tsx scripts/seed-queue.ts",
     "ingest:worker": "tsx scripts/ingest-games-worker.ts",
     "seed:games": "tsx scripts/seed-games-mock.ts",
     "setup:supabase": "tsx scripts/setup-supabase-real.ts",
-    "reingest:covers": "tsx scripts/reingest-covers-all.ts"
+    "reingest:covers": "tsx scripts/reingest-covers-all.ts",
+    "verify:hardware": "tsx scripts/verify-hardware-catalog.ts",
+    "seed:hardware": "tsx scripts/seed-hardware-catalog.ts",
+    "copy:sql:hardware": "powershell -NoProfile -Command \"Get-Content 'supabase/incremental-hardware-catalog.sql' | Set-Clipboard; Write-Host '✅ Clean hardware catalog SQL copied to clipboard.'; Write-Host 'Paste into YOUR Supabase project''s SQL Editor (go to your project dashboard > SQL Editor, or https://supabase.com/dashboard/project/YOUR_REF/sql/new).'; Write-Host 'First line must start with -- comment. If you see > or npm output, re-run this command.'\""
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
@@ -34,6 +38,7 @@
     "date-fns": "^4.3.0",
     "framer-motion": "^12.40.0",
     "lucide-react": "^1.16.0",
+    "marked": "^18.0.4",
     "next": "16.2.6",
     "next-themes": "^0.4.6",
     "react": "19.2.4",

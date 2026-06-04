@@ -22,9 +22,9 @@ import {
   getHardwareEntry,
   resolveAbbreviation,
   findHardwareByQuery,
-  GPU_CATALOG,
-  CPU_CATALOG,
 } from './hardware-catalog';
+
+const USE_REAL = process.env.NEXT_PUBLIC_USE_REAL_DATA === 'true';
 
 // Lazy import to avoid pulling localStorage code into server bundles unnecessarily
 async function safeLoadAliases(): Promise<Array<{ rawString: string; canonical: string }>> {
@@ -32,6 +32,27 @@ async function safeLoadAliases(): Promise<Array<{ rawString: string; canonical: 
     // Server / server action path — use only built-in catalog abbreviations
     return [];
   }
+
+  // When real data, try live hardware_aliases table first (community curated)
+  if (USE_REAL) {
+    try {
+      const { createClient } = await import('@/lib/supabase/client');
+      const supabase = createClient();
+      const { data } = await supabase
+        .from('hardware_aliases')
+        .select('raw_string, canonical')
+        .limit(500);
+      if (data && data.length) {
+        return data.map((r: any) => ({
+          rawString: String(r.raw_string || '').toLowerCase(),
+          canonical: String(r.canonical),
+        }));
+      }
+    } catch {
+      // fall through to mock LS
+    }
+  }
+
   try {
     const { loadHardwareAliases } = await import('./mock-data');
     return loadHardwareAliases().map((a) => ({
@@ -105,7 +126,16 @@ export async function normalizeHardware(rawInput: string): Promise<HardwareNorma
   }
 
   // 4. Fuzzy search against full catalog (good for partial model names)
-  const fuzzyMatches = findHardwareByQuery(cleaned, 5);
+  // When real, try to use live-merged catalog for better coverage of admin-added entries
+  let fuzzySource: any[] | undefined;
+  if (USE_REAL) {
+    try {
+      const { getAllHardwareCatalogAsync } = await import('./data');
+      const live = await getAllHardwareCatalogAsync();
+      if (live && live.length > 20) fuzzySource = live; // use live if substantial
+    } catch {}
+  }
+  const fuzzyMatches = findHardwareByQuery(cleaned, 5, fuzzySource as any);
   if (fuzzyMatches.length > 0) {
     // Prefer exact series + vendor match when possible
     const best = fuzzyMatches[0];
@@ -162,10 +192,25 @@ export function normalizeHardwareSync(rawInput: string): HardwareNormalizationRe
 
 /**
  * Convenience: get perfIndex for a raw string (used heavily by similarity engine).
+ *
+ * Memoized: the similarity engine calls this several times per report, and on a
+ * cache miss normalizeHardwareSync runs a fuzzy catalog scan that allocates a
+ * haystack string per catalog entry. Over thousands of reports (popular games on
+ * the compatibility tab) that allocation churn was a major source of memory
+ * pressure / OOM. The static catalog makes raw→perfIndex a pure function, so a
+ * module-level cache is safe and stays bounded by the number of distinct hardware
+ * strings seen (realistically hundreds).
  */
+const perfIndexCache = new Map<string, number | undefined>();
+
 export function getPerfIndexForRaw(raw: string): number | undefined {
+  if (!raw) return undefined;
+  const cached = perfIndexCache.get(raw);
+  if (cached !== undefined || perfIndexCache.has(raw)) return cached;
   const result = normalizeHardwareSync(raw);
-  return result.entry?.perfIndex;
+  const perfIndex = result.entry?.perfIndex;
+  perfIndexCache.set(raw, perfIndex);
+  return perfIndex;
 }
 
 /**

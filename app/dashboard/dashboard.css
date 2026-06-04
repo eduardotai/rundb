@@ -1,0 +1,252 @@
+/* ===========================================================================
+   Build Dashboard — "Flight Recorder / Telemetry Console" aesthetic.
+   Scoped under .dash so it never leaks into the product UI.
+   Builds on the existing ProtonDB navy + cyan phosphor tokens (globals.css).
+   =========================================================================== */
+
+.dash {
+  --phosphor: #67e8f9;
+  --phosphor-dim: #22d3ee;
+  --grid-line: rgba(103, 232, 249, 0.06);
+  --hair: rgba(148, 163, 184, 0.16);
+  --hair-strong: rgba(148, 163, 184, 0.28);
+  --panel: #0d1424;
+  --panel-2: #0a101e;
+  --ink: #e2e8f0;
+  --ink-dim: #94a3b8;
+  --ink-faint: #5b6b82;
+
+  position: relative;
+  min-height: 100vh;
+  color: var(--ink);
+  font-family: var(--font-geist-sans);
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(34, 211, 238, 0.07), transparent 60%),
+    radial-gradient(900px 500px at -10% 10%, rgba(103, 232, 249, 0.05), transparent 55%),
+    linear-gradient(to bottom, #070b14, #0a0f1c 40%);
+}
+
+/* Faint blueprint grid + scanline atmosphere */
+.dash::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse 100% 80% at 50% 0%, black 40%, transparent 100%);
+}
+.dash::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.012) 0px,
+    rgba(255, 255, 255, 0.012) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  opacity: 0.5;
+}
+.dash > * {
+  position: relative;
+  z-index: 1;
+}
+
+.dash-mono {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Header / telemetry strip ---- */
+.dash-eyebrow {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--phosphor-dim);
+}
+.dash-title {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  background: linear-gradient(180deg, #f8fafc, #cbd5e1);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.dash-rec {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--phosphor);
+  box-shadow: 0 0 0 0 rgba(103, 232, 249, 0.7);
+  animation: dash-pulse 2s infinite;
+}
+@keyframes dash-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(103, 232, 249, 0.55); }
+  70% { box-shadow: 0 0 0 7px rgba(103, 232, 249, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(103, 232, 249, 0); }
+}
+
+/* ---- Panels ---- */
+.dash-panel {
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+}
+.dash-panel-pad { padding: 1rem 1.15rem; }
+
+.dash-stat-value {
+  font-family: var(--font-geist-mono), monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: #f1f5f9;
+}
+.dash-glow { text-shadow: 0 0 18px rgba(103, 232, 249, 0.45); color: var(--phosphor); }
+
+/* ---- Tab triggers (console buttons) ---- */
+.dash-tab {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0.5rem 0.9rem;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+.dash-tab:hover { color: var(--ink); background: rgba(148, 163, 184, 0.06); }
+.dash-tab[data-state='active'] {
+  color: var(--phosphor);
+  background: rgba(103, 232, 249, 0.08);
+  border-color: rgba(103, 232, 249, 0.35);
+  box-shadow: inset 0 0 12px rgba(103, 232, 249, 0.08);
+}
+
+/* ---- Chips ---- */
+.dash-chip {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  padding: 0.28rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--hair-strong);
+  color: var(--ink-dim);
+  transition: all 0.14s ease;
+  white-space: nowrap;
+}
+.dash-chip:hover { color: var(--ink); border-color: var(--phosphor-dim); }
+.dash-chip[data-active='true'] {
+  color: #051018;
+  background: var(--phosphor);
+  border-color: var(--phosphor);
+  font-weight: 600;
+}
+
+/* ---- Commit type badges ---- */
+.dash-type { font-family: var(--font-geist-mono), monospace; font-size: 0.66rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 0.15rem 0.45rem; border-radius: 5px; border: 1px solid transparent; }
+.dt-feat  { color: #34d399; background: rgba(16,185,129,0.10); border-color: rgba(16,185,129,0.32); }
+.dt-fix   { color: #fbbf24; background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.32); }
+.dt-docs  { color: #67e8f9; background: rgba(103,232,249,0.10); border-color: rgba(103,232,249,0.32); }
+.dt-chore { color: #94a3b8; background: rgba(148,163,184,0.10); border-color: rgba(148,163,184,0.28); }
+.dt-refactor { color: #c084fc; background: rgba(168,85,247,0.10); border-color: rgba(168,85,247,0.30); }
+.dt-merge { color: #f472b6; background: rgba(236,72,153,0.10); border-color: rgba(236,72,153,0.30); }
+.dt-other { color: #94a3b8; background: rgba(148,163,184,0.08); border-color: rgba(148,163,184,0.22); }
+
+/* ---- Timeline rail ---- */
+.dash-rail { position: relative; }
+.dash-rail::before {
+  content: '';
+  position: absolute;
+  left: 7px; top: 4px; bottom: 4px;
+  width: 1px;
+  background: linear-gradient(to bottom, transparent, var(--hair-strong) 8%, var(--hair-strong) 92%, transparent);
+}
+.dash-node {
+  position: absolute;
+  left: 3px;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1.5px solid var(--phosphor-dim);
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.4);
+}
+
+/* ---- Diff viewer ---- */
+.dash-diff {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.74rem;
+  line-height: 1.55;
+  background: #060a12;
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.dash-diff .diff-line { display: block; white-space: pre; padding: 0 0.85rem; border-left: 2px solid transparent; }
+.dash-diff .diff-add  { background: rgba(16,185,129,0.10); border-left-color: #10b981; color: #a7f3d0; }
+.dash-diff .diff-del  { background: rgba(239,68,68,0.10); border-left-color: #ef4444; color: #fecaca; }
+.dash-diff .diff-hunk { color: var(--phosphor); background: rgba(103,232,249,0.05); }
+.dash-diff .diff-meta { color: var(--ink-faint); }
+
+/* ---- Entrance animation ---- */
+@keyframes dash-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.dash-in { animation: dash-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-rec, .dash-in { animation: none; }
+}
+
+/* ===========================================================================
+   Markdown prose (.md-prose) — no typography plugin; matches console theme.
+   =========================================================================== */
+.md-prose { color: #cbd5e1; font-size: 0.94rem; line-height: 1.7; max-width: 72ch; }
+.md-prose > *:first-child { margin-top: 0; }
+.md-prose h1, .md-prose h2, .md-prose h3, .md-prose h4 {
+  color: #f1f5f9; font-weight: 700; letter-spacing: -0.01em; line-height: 1.25;
+  margin: 1.8em 0 0.6em;
+}
+.md-prose h1 { font-size: 1.6rem; padding-bottom: 0.35em; border-bottom: 1px solid var(--hair); }
+.md-prose h2 { font-size: 1.3rem; color: var(--phosphor); }
+.md-prose h3 { font-size: 1.08rem; }
+.md-prose h4 { font-size: 0.96rem; color: #cbd5e1; text-transform: uppercase; letter-spacing: 0.05em; }
+.md-prose p { margin: 0.85em 0; }
+.md-prose a { color: var(--phosphor); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: rgba(103,232,249,0.4); }
+.md-prose a:hover { text-decoration-color: var(--phosphor); }
+.md-prose strong { color: #f8fafc; font-weight: 650; }
+.md-prose em { color: #e2e8f0; }
+.md-prose ul, .md-prose ol { margin: 0.8em 0; padding-left: 1.4em; }
+.md-prose li { margin: 0.35em 0; }
+.md-prose ul li::marker { color: var(--phosphor-dim); }
+.md-prose ol li::marker { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+.md-prose code {
+  font-family: var(--font-geist-mono), monospace; font-size: 0.84em;
+  background: rgba(103,232,249,0.08); color: #a5f3fc;
+  padding: 0.12em 0.4em; border-radius: 4px; border: 1px solid rgba(103,232,249,0.14);
+}
+.md-prose pre {
+  background: #060a12; border: 1px solid var(--hair); border-radius: 8px;
+  padding: 1em 1.1em; overflow-x: auto; margin: 1.1em 0;
+}
+.md-prose pre code { background: none; border: none; padding: 0; color: #cbd5e1; font-size: 0.82rem; line-height: 1.6; }
+.md-prose blockquote {
+  margin: 1.1em 0; padding: 0.2em 1em; color: var(--ink-dim);
+  border-left: 3px solid var(--phosphor-dim); background: rgba(103,232,249,0.04); border-radius: 0 6px 6px 0;
+}
+.md-prose hr { border: none; border-top: 1px solid var(--hair); margin: 2em 0; }
+.md-prose table { width: 100%; border-collapse: collapse; margin: 1.2em 0; font-size: 0.86rem; display: block; overflow-x: auto; }
+.md-prose th, .md-prose td { border: 1px solid var(--hair); padding: 0.5em 0.75em; text-align: left; }
+.md-prose th { background: rgba(148,163,184,0.07); color: #e2e8f0; font-weight: 600; }
+.md-prose tr:nth-child(even) td { background: rgba(148,163,184,0.025); }
+.md-prose img { max-width: 100%; border-radius: 8px; border: 1px solid var(--hair); }
