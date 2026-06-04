@@ -46,6 +46,7 @@ import { upgradeCoverImageSrc } from './cover-image-url'
 import { cleanPublicReportNotes } from './report-notes'
 import type { MatchFilters, RigMatch } from './similarity'
 import { rankAndFilterMatches } from './similarity'
+import { rankTrendingGameIds, type TrendingRankRow } from './trending'
 
 export const ALLOW_MOCK_DATA =
   process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_ALLOW_MOCK_DATA === 'true'
@@ -846,44 +847,108 @@ export async function getReportsForGamesAsync(
   return byGame
 }
 
+export interface TrendingResult {
+  /** Ordered, length <= limit, covers enriched. */
+  games: Game[]
+  /** gameId -> number of reports within the window. Fill games are absent (treat as 0). */
+  recentCounts: Record<string, number>
+}
+
 /**
- * Bounded "trending" games for the home page.
+ * "Trending right now" for the home page.
  *
- * The home page only renders a handful of cards, so it must never pull the whole
- * games table (10k+ rows in real mode). We fetch a small, recently-updated slice
- * and let the (now batched) cover enrichment run over just those rows.
+ * Ranks games by how many NEW reports they received in the last `windowDays`
+ * days. When fewer than `limit` games have recent reports, the remaining slots
+ * are filled with the all-time leaders from the newest-200 report sample (the
+ * same sample the home page used before), so the row always renders `limit`
+ * cards. Returns the ordered games plus a per-game recent count (the count is
+ * currently unused by the UI but returned for a future "+N this week" badge).
+ *
+ * Uses lightweight two-column queries (game_id + created_at) for ranking, then a
+ * single `in(id, ...)` fetch to hydrate the chosen rows — never pulls the whole
+ * games table.
  */
-export async function getTrendingGamesAsync(limit: number = 12): Promise<Game[]> {
+export async function getTrendingGamesAsync(limit: number = 6, windowDays: number = 7): Promise<TrendingResult> {
   const safeLimit = Math.min(48, Math.max(1, limit))
+  const starterFallback = (): TrendingResult => ({
+    games: publicStarterGames().slice(0, safeLimit),
+    recentCounts: {},
+  })
 
-  if (USE_REAL && isSupabaseConfigured()) {
-    try {
-      const { createClient } = await import('@/lib/supabase/client')
-      const supabase = createClient()
-
-      const { data, error } = await supabase
-        .from('games')
-        .select('*')
-        .order('updated_at', { ascending: false })
-        .limit(safeLimit)
-
-      if (error) {
-        console.error('[data] getTrendingGamesAsync error:', error)
-        return publicStarterGames().slice(0, safeLimit)
-      }
-
-      const mapped = (data || []).map(mapDbGameToGame)
-      if (mapped.length === 0) {
-        return publicStarterGames().slice(0, safeLimit)
-      }
-      return enrichGamesWithCovers(mapped)
-    } catch (err: any) {
-      console.error('[data] getTrendingGamesAsync unexpected error:', err)
-      return publicStarterGames().slice(0, safeLimit)
-    }
+  if (!USE_REAL || !isSupabaseConfigured()) {
+    return starterFallback()
   }
 
-  return publicStarterGames().slice(0, safeLimit)
+  try {
+    const { createClient } = await import('@/lib/supabase/client')
+    const supabase = createClient()
+
+    const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString()
+
+    // 1. Recent ranking rows (cheap: two columns).
+    const recentResult = await withSupabaseReadTimeout<any>(
+      supabase
+        .from('reports')
+        .select('game_id, created_at')
+        .gte('created_at', cutoff)
+        .order('created_at', { ascending: false })
+        .limit(5000),
+      'getTrendingGamesAsync.recent',
+    )
+    if (!recentResult) return starterFallback()
+    if (recentResult.error) {
+      console.error('[data] getTrendingGamesAsync recent query error:', recentResult.error)
+      return starterFallback()
+    }
+    const recentRows: TrendingRankRow[] = (recentResult.data || []).map((r: any) => ({
+      gameId: r.game_id,
+      createdAt: r.created_at,
+    }))
+
+    // 2. All-time top-up sample, only when recent activity is too thin to fill the row.
+    const distinctRecent = new Set(recentRows.map((r) => r.gameId)).size
+    let fallbackRows: TrendingRankRow[] = []
+    if (distinctRecent < safeLimit) {
+      const fallbackResult = await withSupabaseReadTimeout<any>(
+        supabase
+          .from('reports')
+          .select('game_id, created_at')
+          .order('created_at', { ascending: false })
+          .limit(200),
+        'getTrendingGamesAsync.fallback',
+      )
+      if (fallbackResult && !fallbackResult.error) {
+        fallbackRows = (fallbackResult.data || []).map((r: any) => ({
+          gameId: r.game_id,
+          createdAt: r.created_at,
+        }))
+      }
+    }
+
+    const { ids, recentCounts } = rankTrendingGameIds(recentRows, fallbackRows, safeLimit)
+    if (ids.length === 0) return starterFallback()
+
+    // 3. Hydrate the chosen game rows in one query, then restore ranked order.
+    const gamesResult = await withSupabaseReadTimeout<any>(
+      supabase.from('games').select('*').in('id', ids),
+      'getTrendingGamesAsync.games',
+    )
+    if (!gamesResult || gamesResult.error) {
+      if (gamesResult?.error) console.error('[data] getTrendingGamesAsync games query error:', gamesResult.error)
+      return starterFallback()
+    }
+    const mapped = (gamesResult.data || []).map(mapDbGameToGame)
+    if (mapped.length === 0) return starterFallback()
+
+    const enriched = await enrichGamesWithCovers(mapped)
+    const byId = new Map<string, Game>(enriched.map((g) => [g.id, g]))
+    const ordered = ids.map((id) => byId.get(id)).filter((g): g is Game => Boolean(g))
+
+    return { games: ordered, recentCounts }
+  } catch (err: any) {
+    console.error('[data] getTrendingGamesAsync unexpected error:', err)
+    return starterFallback()
+  }
 }
 
 /**
@@ -943,9 +1008,13 @@ export async function getAllReportsAsync(): Promise<Report[]> {
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
 
+      // Embed the parent game row (FK reports.game_id -> games.id) so consumers like the
+      // "Will It Run?" match feed can render game banners/covers without depending on a
+      // separately-loaded catalog snapshot (which misses un-ingested or just-added games).
+      // Mirrors getFilteredGlobalReportsAsync.
       const { data, error } = await supabase
         .from('reports')
-        .select('*')
+        .select('*, game:games(id, slug, name, cover_url, genres, release_year, developer, publisher, steam_app_id, igdb_id)')
         .order('created_at', { ascending: false })
         .limit(200) // safety for MVP
 
@@ -954,7 +1023,13 @@ export async function getAllReportsAsync(): Promise<Report[]> {
         return getAllReports()
       }
 
-      const base = (data || []).map(mapDbReportToReport)
+      const base = (data || []).map((row: any) => {
+        const report = mapDbReportToReport(row)
+        if (row.game) {
+          report.game = enrichGamesWithCoversSync([mapDbGameToGame(row.game)])[0]
+        }
+        return report
+      })
       return await enrichReportsWithReporters(base)
     } catch (err: any) {
       console.error('[data] getAllReportsAsync unexpected error:', err)
