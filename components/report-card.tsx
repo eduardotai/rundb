@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Report, UserPC } from '@/lib/types';
 import { PerformanceBadge } from './performance-badge';
 import { formatRelativeTime, calculateHardwareAwareSimilarity as calculateSimilarity } from '@/lib/data';
+import { normalizeHardwareSync } from '@/lib/normalize-hardware';
 import { cn } from '@/lib/utils';
 import {
   ArrowBigDown,
@@ -17,6 +18,20 @@ import {
   ShieldCheck,
   Zap,
 } from 'lucide-react';
+
+// Reports store the short model the user reported (e.g. "RTX 4070", "Ryzen 7 5700X3D").
+// For display we resolve it to the full catalog name (e.g. "NVIDIA GeForce RTX 4070").
+// Guarded: we only upgrade when the canonical name actually *contains* the reported
+// string, so we add the vendor/brand prefix but never silently swap to a different model.
+function fullHardwareName(raw: string, canonical?: string): string {
+  const r = (raw || '').trim();
+  if (!r) return raw;
+  const candidates = [canonical, normalizeHardwareSync(r).entry?.canonical];
+  for (const c of candidates) {
+    if (c && c.toLowerCase().includes(r.toLowerCase())) return c;
+  }
+  return raw;
+}
 
 interface ReportCardProps {
   report: Report;
@@ -36,6 +51,10 @@ export function ReportCard({ report, userRig, onHelpful, onVote, onViewFull, com
   // Direction of the most recent score change, used to animate the counter.
   const [scoreDir, setScoreDir] = useState(1);
   const [voting, setVoting] = useState(false);
+
+  // Full GPU/CPU names (vendor-prefixed) for display, resolved from the catalog.
+  const gpuName = useMemo(() => fullHardwareName(report.gpu, report.canonicalGpu), [report.gpu, report.canonicalGpu]);
+  const cpuName = useMemo(() => fullHardwareName(report.cpu, report.canonicalCpu), [report.cpu, report.canonicalCpu]);
 
   const similarity = userRig ? calculateSimilarity(report, userRig) : 0;
   const isSimilar = similarity > 65;
@@ -101,19 +120,22 @@ export function ReportCard({ report, userRig, onHelpful, onVote, onViewFull, com
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-            <div className="flex items-center gap-1.5 font-medium text-foreground">
-              <Zap className="h-3.5 w-3.5 text-cyan-400" />
-              <span className="truncate">{report.gpu}</span>
+          <div className="flex flex-col gap-1 text-sm">
+            {/* Full hardware names (e.g. "NVIDIA GeForce RTX 4070", "AMD Ryzen 7 5700X3D") —
+                stacked on their own lines so the entire name is shown, not just the model. */}
+            <div className="flex items-start gap-1.5 font-medium text-foreground">
+              <Zap className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-400" />
+              <span className="break-words">{gpuName}</span>
             </div>
-            <span className="hidden text-muted-foreground/40 md:inline">/</span>
-            <div className="flex items-center gap-1.5 text-muted-foreground">
-              <Cpu className="h-3.5 w-3.5" />
-              <span className="truncate">{report.cpu}</span>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
+              <div className="flex items-start gap-1.5">
+                <Cpu className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span className="break-words">{cpuName}</span>
+              </div>
+              <span className="inline-flex items-center rounded bg-muted px-1.5 py-px text-[10px] font-medium text-muted-foreground">
+                {report.ram} GB
+              </span>
             </div>
-            <span className="inline-flex items-center rounded bg-muted px-1.5 py-px text-[10px] font-medium text-muted-foreground">
-              {report.ram} GB
-            </span>
           </div>
 
           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">

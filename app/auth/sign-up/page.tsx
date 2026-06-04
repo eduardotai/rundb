@@ -228,7 +228,10 @@ function SignUpForm() {
 
       if (data.session) {
         showUserSuccess('Account created!');
+        // refresh() re-renders server components (e.g. SiteHeader) with the new auth
+        // cookie so the logged-in state shows immediately, without a manual reload.
         router.push(next);
+        router.refresh();
       } else {
         setSignupSuccess(true);
         showUserSuccess('Check your email', 'If an account exists for this email, we sent a confirmation link.');
@@ -247,6 +250,7 @@ function SignUpForm() {
       if (error) throw error;
       showUserSuccess('Signed in as guest');
       router.push(next);
+      router.refresh();
     } catch (error) {
       showUserError('Guest sign in failed. Please try again.');
     } finally {

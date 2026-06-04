@@ -7,11 +7,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { ensureGameMediaBucket, optimizeAndUploadToGameMedia } from '@/lib/server/game-media'
 import { normalizeSlug } from '@/lib/utils'
 import { getCatalogCover } from '@/lib/game-cover-catalog'
-import { igdbGameMatchesSeed } from '@/lib/igdb-game-match'
+import { igdbGameMatchesSeed, igdbHasSteamAppId } from '@/lib/igdb-game-match'
 import { steamLibraryCoverUrl } from '@/lib/cover-image-url'
+import { buildCoverCandidates } from './cover-candidates'
 
 const RATE_LIMIT_MS = 300
-const MAX_IGDB_429_RETRIES = 5
 
 export interface IngestGameSeed {
   name: string
@@ -69,7 +69,9 @@ async function igdbRequest(
   endpoint: string,
   body: string
 ): Promise<any[]> {
-  for (let attempt = 0; attempt <= MAX_IGDB_429_RETRIES; attempt++) {
+  const maxRetries = 5
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     await sleep(RATE_LIMIT_MS)
     const token = await getIgdbToken(clientId, clientSecret)
     const res = await fetch(`https://api.igdb.com/v4/${endpoint}`, {
@@ -83,22 +85,21 @@ async function igdbRequest(
     })
 
     if (res.status === 429) {
-      if (attempt === MAX_IGDB_429_RETRIES) {
-        throw new Error(`IGDB ${endpoint} rate limited after ${MAX_IGDB_429_RETRIES + 1} attempts`)
+      if (attempt === maxRetries) {
+        throw new Error(`IGDB ${endpoint} rate limited after ${maxRetries + 1} attempts`)
       }
-      const retryAfterSeconds = Number(res.headers.get('retry-after'))
-      const retryDelayMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
-        ? retryAfterSeconds * 1000
-        : 2000 * (attempt + 1)
-      await sleep(retryDelayMs)
+      await sleep(2000 * (attempt + 1))
       continue
     }
+
     if (!res.ok) {
       throw new Error(`IGDB ${endpoint} error ${res.status}: ${await res.text()}`)
     }
+
     return res.json()
   }
-  throw new Error(`IGDB ${endpoint} request exhausted retries`)
+
+  throw new Error(`IGDB ${endpoint} request failed`)
 }
 
 async function uploadImageToStorage(
@@ -161,8 +162,8 @@ export async function ingestGame(
       'games',
       `
         search "${seed.name.replace(/"/g, '\\"')}";
-        fields id,name,slug,genres.name,release_dates.y,first_release_date,involved_companies.developer,involved_companies.publisher,involved_companies.company.name,cover.image_id,cover.url,screenshots.image_id,screenshots.url,external_games.uid,external_games.category;
-        limit 1;
+        fields id,name,slug,genres.name,release_dates.y,first_release_date,involved_companies.developer,involved_companies.publisher,involved_companies.company.name,cover.image_id,cover.url,screenshots.image_id,screenshots.url,external_games.uid,external_games.category,external_games.external_game_source;
+        limit 8;
       `
     )
 
@@ -170,7 +171,14 @@ export async function ingestGame(
       return { ok: false, error: 'No IGDB match' }
     }
 
-    const igdbGame = igdbGames[0]
+    // A known Steam AppID is authoritative. IGDB search can rank DLC/editions above the
+    // base game (e.g. a "... Weapon Pack" crossover), so prefer the result that actually
+    // links to the seed's Steam AppID rather than blindly taking the top hit.
+    let igdbGame = igdbGames[0]
+    if (steamAppId) {
+      const byAppId = igdbGames.find((g: any) => igdbHasSteamAppId(g, steamAppId))
+      if (byAppId) igdbGame = byAppId
+    }
     const igdbMatches = igdbGameMatchesSeed(seed.name, igdbGame, steamAppId)
     if (steamAppId && !igdbMatches) {
       return {
@@ -190,21 +198,10 @@ export async function ingestGame(
       catalogCover?.url ??
       (steamAppId ? steamLibraryCoverUrl(steamAppId) : null)
 
-    let existingGame: { id: string; cover_url: string | null } | null = null
-    if (!dryRun) {
-      const { data, error } = await client
-        .from('games')
-        .select('id, cover_url')
-        .eq('slug', seed.slug)
-        .maybeSingle()
-      if (error) return { ok: false, error: `Find game: ${error.message}` }
-      existingGame = data as { id: string; cover_url: string | null } | null
-    }
-
     const gameRow: Record<string, unknown> = {
       slug: seed.slug,
       name: igdbMatches ? igdbGame.name : seed.name,
-      cover_url: existingGame?.cover_url ?? skeletonCover,
+      cover_url: skeletonCover,
       steam_app_id: steamAppId ?? catalogCover?.steamAppId ?? null,
     }
 
@@ -269,96 +266,98 @@ export async function ingestGame(
 
     const ATTRIB =
       'Sourced from IGDB (https://www.igdb.com). Images © respective copyright holders. Used for non-commercial informational purposes.'
-    const mediaToProcess: Array<{ remoteUrl: string; type: string; sort: number; attr: string }> = []
+    let mediaCount = 0
+    let uploadedCoverForGame: string | null = null
+    let uploadedCoverAttr = ATTRIB
 
-    if (catalogCover) {
-      mediaToProcess.push({
-        remoteUrl: catalogCover.url,
-        type: 'cover',
-        sort: 0,
-        attr: catalogCover.attribution,
-      })
-    } else if (igdbMatches && igdbGame.cover?.image_id) {
-      mediaToProcess.push({
-        remoteUrl: `https://images.igdb.com/igdb/image/upload/t_original/${igdbGame.cover.image_id}.jpg`,
-        type: 'cover',
-        sort: 0,
-        attr: ATTRIB,
-      })
-    } else if (steamAppId) {
-      mediaToProcess.push({
-        remoteUrl: steamLibraryCoverUrl(steamAppId),
-        type: 'cover',
-        sort: 0,
-        attr: 'Cover from Steam CDN (https://store.steampowered.com/). © Valve Corporation.',
-      })
+    // Resolve the cover by trying sources in priority order (catalog -> IGDB -> Steam)
+    // until one actually uploads. A 404 on the preferred source (e.g. Steam serves no
+    // portrait capsule for many Xbox/very-new titles) must fall through, not leave the
+    // game cover-less.
+    const coverCandidates = buildCoverCandidates({
+      catalogCover,
+      igdbCoverImageId: igdbGame.cover?.image_id ?? null,
+      igdbMatches,
+      steamAppId: steamAppId ?? null,
+    })
+    for (const cand of coverCandidates) {
+      const publicUrl = await uploadImageToStorage(client, cand.url, seed.slug, 'cover', dryRun)
+      if (publicUrl) {
+        uploadedCoverForGame = publicUrl
+        uploadedCoverAttr = cand.attr
+        break
+      }
     }
 
+    if (uploadedCoverForGame && !dryRun && gameId) {
+      const { data: insertedMedia, error } = await client
+        .from('game_media')
+        .insert({
+          game_id: gameId,
+          media_type: 'cover',
+          url: uploadedCoverForGame,
+          thumbnail_url: uploadedCoverForGame,
+          sort_order: 0,
+          source: 'igdb',
+          attribution: uploadedCoverAttr,
+        })
+        .select('id')
+        .single()
+      if (error) return { ok: false, error: `Insert media: ${error.message}` }
+      mediaCount++
+      await client
+        .from('game_media')
+        .delete()
+        .eq('game_id', gameId)
+        .eq('media_type', 'cover')
+        .neq('id', (insertedMedia as { id: string }).id)
+    } else if (uploadedCoverForGame && dryRun) {
+      mediaCount++
+    }
+
+    // Screenshots (IGDB only)
+    const screenshotUrls: string[] = []
     if (igdbMatches) {
       const ss = (igdbGame.screenshots || []).slice(0, 3)
-      ss.forEach((s: any, idx: number) => {
+      ss.forEach((s: any) => {
         const u = s.image_id
           ? `https://images.igdb.com/igdb/image/upload/t_screenshot_big/${s.image_id}.jpg`
           : 'https:' + (s.url || '').replace('t_thumb', 't_screenshot_big')
-        if (u) mediaToProcess.push({ remoteUrl: u, type: `screenshot-${idx}`, sort: 10 + idx, attr: ATTRIB })
+        if (u) screenshotUrls.push(u)
       })
     }
-
-    let mediaCount = 0
-    let uploadedCoverForGame: string | null = null
-
-    for (const m of mediaToProcess) {
-      const publicUrl = await uploadImageToStorage(client, m.remoteUrl, seed.slug, m.type, dryRun)
+    for (let i = 0; i < screenshotUrls.length; i++) {
+      const publicUrl = await uploadImageToStorage(client, screenshotUrls[i]!, seed.slug, `screenshot-${i}`, dryRun)
       if (!publicUrl) continue
-      if (m.type === 'cover') uploadedCoverForGame = publicUrl
-
       if (!dryRun && gameId) {
-        const mediaType = m.type.startsWith('screenshot')
-          ? 'screenshot'
-          : m.type === 'cover'
-            ? 'cover'
-            : 'artwork'
+        const sortOrder = 10 + i
         const { data: insertedMedia, error } = await client
           .from('game_media')
           .insert({
             game_id: gameId,
-            media_type: mediaType,
+            media_type: 'screenshot',
             url: publicUrl,
             thumbnail_url: publicUrl,
-            sort_order: m.sort,
+            sort_order: sortOrder,
             source: 'igdb',
-            attribution: m.attr,
+            attribution: ATTRIB,
           })
           .select('id')
           .single()
         if (error) return { ok: false, error: `Insert media: ${error.message}` }
         mediaCount++
-
-        if (mediaType === 'cover') {
-          const { error: deleteCoverErr } = await client
-            .from('game_media')
-            .delete()
-            .eq('game_id', gameId)
-            .eq('media_type', 'cover')
-            .neq('id', (insertedMedia as { id: string }).id)
-          if (deleteCoverErr) return { ok: false, error: `Dedupe cover: ${deleteCoverErr.message}` }
-        } else if (mediaType === 'screenshot') {
-          const { error: deleteScreenshotErr } = await client
-            .from('game_media')
-            .delete()
-            .eq('game_id', gameId)
-            .eq('media_type', 'screenshot')
-            .eq('sort_order', m.sort)
-            .neq('id', (insertedMedia as { id: string }).id)
-          if (deleteScreenshotErr) return { ok: false, error: `Dedupe screenshot: ${deleteScreenshotErr.message}` }
-        }
+        // Dedupe: drop any prior screenshot occupying this slot from an earlier ingest.
+        const { error: dedupeErr } = await client
+          .from('game_media')
+          .delete()
+          .eq('game_id', gameId)
+          .eq('media_type', 'screenshot')
+          .eq('sort_order', sortOrder)
+          .neq('id', (insertedMedia as { id: string }).id)
+        if (dedupeErr) return { ok: false, error: `Dedupe screenshot: ${dedupeErr.message}` }
       } else if (dryRun) {
         mediaCount++
       }
-    }
-
-    if (mediaToProcess.length > 0 && mediaCount === 0) {
-      return { ok: false, gameId: gameId ?? undefined, error: 'No media uploaded' }
     }
 
     if (uploadedCoverForGame && !dryRun && gameId) {
@@ -370,11 +369,10 @@ export async function ingestGame(
         coverUpdate.ingest_status = 'enriched'
       }
 
-      const { error: coverUpdateErr } = await client
+      await client
         .from('games')
         .update(coverUpdate)
         .eq('id', gameId)
-      if (coverUpdateErr) return { ok: false, error: `Update cover: ${coverUpdateErr.message}` }
     }
 
     return { ok: true, gameId: gameId ?? undefined, mediaUploaded: mediaCount }

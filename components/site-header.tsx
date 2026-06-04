@@ -9,7 +9,8 @@ export async function SiteHeader() {
 
   // My Rig indicator is a separate client component (full DB persistence via user_rigs/profiles for logged-in,
   // localStorage guest fallback only; see my-rig-indicator.tsx + data.ts adapter per Master Plan).
-  // Auth state comes from Supabase via server client + middleware. (Some reloads on sign in/out for server parts.)
+  // Auth state comes from Supabase via server client + middleware. Sign-in handlers call
+  // router.refresh() and sign-out reloads, so this server component re-renders with fresh auth.
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur">

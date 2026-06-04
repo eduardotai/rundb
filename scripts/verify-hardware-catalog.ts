@@ -75,6 +75,44 @@ function main() {
     console.log(`  "${t}" -> ${hit ? hit.canonical + ` (P${hit.perfIndex})` : 'NO MATCH'}`);
   }
 
+  // Gap-coverage assertions for the importer-added long tail (the reason this exists).
+  // Each query MUST resolve to the listed canonical, else fail.
+  const gapTests: Array<[string, string]> = [
+    ['i5 9400', 'Intel Core i5-9400'],
+    ['9400f', 'Intel Core i5-9400F'],
+    ['i5-9400', 'Intel Core i5-9400'],
+    ['9900k', 'Intel Core i9-9900K'],
+    ['11700k', 'Intel Core i7-11700K'],
+    ['12700', 'Intel Core i7-12700'],
+    ['14900ks', 'Intel Core i9-14900KS'],
+    ['5700x', 'AMD Ryzen 7 5700X'],
+    ['5900x', 'AMD Ryzen 9 5900X'],
+    ['3300x', 'AMD Ryzen 3 3300X'],
+    ['7600x3d', 'AMD Ryzen 5 7600X3D'],
+    ['gtx 970', 'NVIDIA GeForce GTX 970'],
+    ['5500 xt', 'AMD Radeon RX 5500 XT'],
+    ['arc a380', 'Intel Arc A380'],
+  ];
+  console.log('\nGap-coverage assertions (importer-added):');
+  const gapFailures: string[] = [];
+  for (const [q, expected] of gapTests) {
+    const hit = findHardwareByQuery(q, 1)[0];
+    const ok = hit?.canonical === expected;
+    console.log(`  "${q}" -> ${hit ? hit.canonical : 'NO MATCH'} ${ok ? 'OK' : `EXPECTED ${expected}`}`);
+    if (!ok) gapFailures.push(`"${q}" resolved to ${hit?.canonical ?? 'NO MATCH'}, expected ${expected}`);
+  }
+  if (gapFailures.length) {
+    console.error('\nGAP COVERAGE FAILURES:', gapFailures);
+    process.exit(1);
+  }
+
+  // The importer must have contributed entries (catch a broken/stub generated file).
+  if (stats.total < 200) {
+    console.error(`Catalog total ${stats.total} is unexpectedly low — generated entries may be missing.`);
+    process.exit(1);
+  }
+  console.log(`\nGenerated long-tail loaded: OK (catalog total ${stats.total}).`);
+
   console.log('\n=== Verification PASSED ===');
   console.log('Catalog is large, sane, and searchable for 2015-16+ hardware (expanded v3 with RX 9000, more 50-series, X3Ds, value SKUs).');
 }

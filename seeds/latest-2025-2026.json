@@ -1,0 +1,12 @@
+[
+  { "name": "Resident Evil Requiem", "slug": "resident-evil-requiem", "steamAppId": "3764200" },
+  { "name": "Forza Horizon 6", "slug": "forza-horizon-6", "steamAppId": "2483190" },
+  { "name": "DOOM: The Dark Ages", "slug": "doom-the-dark-ages", "steamAppId": "3017860" },
+  { "name": "Kingdom Come: Deliverance II", "slug": "kingdom-come-deliverance-2", "steamAppId": "1771300" },
+  { "name": "Clair Obscur: Expedition 33", "slug": "clair-obscur-expedition-33", "steamAppId": "1903340" },
+  { "name": "Assassin's Creed Shadows", "slug": "assassins-creed-shadows", "steamAppId": "3159330" },
+  { "name": "Borderlands 4", "slug": "borderlands-4", "steamAppId": "1285190" },
+  { "name": "Sid Meier's Civilization VII", "slug": "civilization-7", "steamAppId": "1295660" },
+  { "name": "Avowed", "slug": "avowed", "steamAppId": "2457220" },
+  { "name": "The Elder Scrolls IV: Oblivion Remastered", "slug": "oblivion-remastered", "steamAppId": "2623190" }
+]

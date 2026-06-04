@@ -24,13 +24,14 @@
  * Maintenance: Admin bulk import for quick adds; curator promotes popular/obscure to static periodically.
  */
 
-import type { HardwareCatalogEntry, HardwareComponentType } from './types';
+import type { HardwareCatalogEntry } from './types';
+import { GENERATED_CATALOG, GENERATED_ABBREVIATIONS } from './hardware-catalog-generated';
 
 // ============================================
 // CATALOG VERSIONING
 // ============================================
-export const HARDWARE_CATALOG_VERSION = '2026.06.v3-expanded';
-export const HARDWARE_CATALOG_LAST_UPDATED = '2026-06-20';
+export const HARDWARE_CATALOG_VERSION = '2026.06.v4-importer';
+export const HARDWARE_CATALOG_LAST_UPDATED = '2026-06-04';
 
 // ============================================
 // GPU CATALOG — Comprehensive desktop gaming GPUs since ~2016 (Pascal/Polaris era)
@@ -2160,10 +2161,18 @@ export const CPU_CATALOG: Record<string, HardwareCatalogEntry> = {
 // COMBINED ACCESSORS (pure, fast)
 // ============================================
 
-const ALL_ENTRIES = [
-  ...Object.values(GPU_CATALOG),
-  ...Object.values(CPU_CATALOG),
-];
+// Curated static entries are blessed and win on canonical collision; generated
+// entries (from seeds/hardware-catalog-dataset.json via the importer) fill the
+// long tail. Live DB rows still override both at runtime via the mapper merge.
+const ALL_ENTRIES: HardwareCatalogEntry[] = (() => {
+  const byCanonical = new Map<string, HardwareCatalogEntry>();
+  for (const e of Object.values(GENERATED_CATALOG)) byCanonical.set(e.canonical, e);
+  // Curated overwrites generated on collision.
+  for (const e of [...Object.values(GPU_CATALOG), ...Object.values(CPU_CATALOG)]) {
+    byCanonical.set(e.canonical, e);
+  }
+  return Array.from(byCanonical.values());
+})();
 
 export function getAllHardwareCatalog(): HardwareCatalogEntry[] {
   return ALL_ENTRIES;
@@ -2393,23 +2402,25 @@ const BUILTIN_ABBREVIATIONS: Record<string, string> = {
 
 export function resolveAbbreviation(raw: string): string | undefined {
   const cleaned = raw.toLowerCase().trim();
-  return BUILTIN_ABBREVIATIONS[cleaned];
+  // Curated explicit shorthands win; generated aliases fill the rest.
+  return BUILTIN_ABBREVIATIONS[cleaned] ?? GENERATED_ABBREVIATIONS[cleaned];
 }
 
 /**
  * Quick stats helper (used by admin + verify scripts).
  */
 export function getHardwareCatalogStats() {
-  const gpus = Object.values(GPU_CATALOG);
-  const cpus = Object.values(CPU_CATALOG);
-  const years = [...gpus, ...cpus].map((e) => e.releaseYear).filter((y): y is number => !!y);
+  // Count the merged set (curated + generated, curated winning on collision).
+  const gpus = ALL_ENTRIES.filter((e) => e.componentType === 'gpu');
+  const cpus = ALL_ENTRIES.filter((e) => e.componentType === 'cpu');
+  const years = ALL_ENTRIES.map((e) => e.releaseYear).filter((y): y is number => !!y);
   return {
     gpuCount: gpus.length,
     cpuCount: cpus.length,
-    total: gpus.length + cpus.length,
+    total: ALL_ENTRIES.length,
     minReleaseYear: years.length ? Math.min(...years) : null,
     maxReleaseYear: years.length ? Math.max(...years) : null,
-    vendors: Array.from(new Set([...gpus, ...cpus].map((e) => e.vendor))),
+    vendors: Array.from(new Set(ALL_ENTRIES.map((e) => e.vendor))),
   };
 }
 
