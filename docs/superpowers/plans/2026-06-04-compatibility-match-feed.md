@@ -29,7 +29,7 @@
 - Modify: `lib/similarity.ts`
 - Test: `lib/similarity.test.ts` (create)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `lib/similarity.test.ts`:
 
@@ -95,7 +95,9 @@ test('calculateMatchBreakdown: score equals calculateHardwareAwareSimilarity', (
 Run: `npx tsx --test lib/similarity.test.ts`
 Expected: FAIL — `calculateMatchBreakdown` is not exported.
 
-- [ ] **Step 3: Write minimal implementation**
+> Codex note: skipped as a separate red step in this run; implementation was added before the test command was executed.
+
+- [x] **Step 3: Write minimal implementation**
 
 In `lib/similarity.ts`, after the existing `calculateHardwareAwareSimilarity` function (before the `rankReportsBySimilarity` block), add:
 
@@ -154,7 +156,7 @@ export function calculateMatchBreakdown(report: Report, rig: UserPC): MatchBreak
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx tsx --test lib/similarity.test.ts`
 Expected: PASS (5 tests).
@@ -175,7 +177,7 @@ git commit -m "feat(similarity): add per-component match breakdown"
 - Modify: `lib/data.ts`
 - Test: `lib/similarity.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `lib/similarity.test.ts`:
 
@@ -239,7 +241,9 @@ test('rankAndFilterMatches: default sort is match score descending', () => {
 Run: `npx tsx --test lib/similarity.test.ts`
 Expected: FAIL — `rankAndFilterMatches` is not exported.
 
-- [ ] **Step 3: Write minimal implementation**
+> Codex note: skipped as a separate red step in this run; implementation was added before the test command was executed.
+
+- [x] **Step 3: Write minimal implementation**
 
 In `lib/similarity.ts`, after `calculateMatchBreakdown`, add:
 
@@ -295,12 +299,12 @@ export function rankAndFilterMatches(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx tsx --test lib/similarity.test.ts`
 Expected: PASS (all tests, including Task 1's).
 
-- [ ] **Step 5: Add the async wrapper in `lib/data.ts`**
+- [x] **Step 5: Add the async wrapper in `lib/data.ts`**
 
 Find the existing `getAllReportsAsync` function (around `lib/data.ts:938`). Immediately after it, add:
 
@@ -321,7 +325,7 @@ export async function getMatchesForRigAsync(
 }
 ```
 
-- [ ] **Step 6: Verify types + lint**
+- [x] **Step 6: Verify types + lint**
 
 Run: `npx tsc --noEmit`
 Expected: no new errors.
@@ -344,7 +348,7 @@ git commit -m "feat(data): add getMatchesForRigAsync ranking seam"
 
 `ReportCard` already shows a "% match to your rig" badge when `similarity > 65`. Add two optional props: `showGame` (render the report's game name) and `breakdown` (render per-part chips). Both default off so existing call sites are unchanged.
 
-- [ ] **Step 1: Extend the props interface**
+- [x] **Step 1: Extend the props interface**
 
 In `components/report-card.tsx`, change the `ReportCardProps` interface to add the two optional props and import the type:
 
@@ -373,7 +377,7 @@ And update the destructure:
 export function ReportCard({ report, userRig, onHelpful, onVote, onViewFull, compact = false, showGame = false, breakdown }: ReportCardProps) {
 ```
 
-- [ ] **Step 2: Render the game label**
+- [x] **Step 2: Render the game label**
 
 Inside the top `<div className="min-w-0 flex-1">` block, as the FIRST child (immediately after the opening tag, before the existing `<div className="flex flex-col gap-1 text-sm">`), add:
 
@@ -385,7 +389,7 @@ Inside the top `<div className="min-w-0 flex-1">` block, as the FIRST child (imm
 )}
 ```
 
-- [ ] **Step 3: Render breakdown chips**
+- [x] **Step 3: Render breakdown chips**
 
 Replace the existing similarity badge block:
 
@@ -418,7 +422,7 @@ with:
 )}
 ```
 
-- [ ] **Step 4: Add the `MatchChip` helper**
+- [x] **Step 4: Add the `MatchChip` helper**
 
 At the bottom of `components/report-card.tsx`, after the `ReportCard` function, add:
 
@@ -438,7 +442,7 @@ function MatchChip({ label, level }: { label: string; level: 'exact' | 'close' |
 }
 ```
 
-- [ ] **Step 5: Verify types + lint**
+- [x] **Step 5: Verify types + lint**
 
 Run: `npx tsc --noEmit`
 Expected: no new errors.
@@ -461,7 +465,7 @@ git commit -m "feat(report-card): optional game label + match breakdown chips"
 
 A client component that owns filter state, fetches matches via `getMatchesForRigAsync`, and renders the summary line, filter bar, and ranked `ReportCard` list. Handles the empty/looser-match state.
 
-- [ ] **Step 1: Create the component**
+- [x] **Step 1: Create the component**
 
 Create `components/match-feed.tsx`:
 
@@ -632,7 +636,7 @@ export function MatchFeed({ rig, allGames }: MatchFeedProps) {
 }
 ```
 
-- [ ] **Step 2: Verify types + lint**
+- [x] **Step 2: Verify types + lint**
 
 Run: `npx tsc --noEmit`
 Expected: no new errors.
@@ -655,14 +659,14 @@ git commit -m "feat(match-feed): ranked cross-game match feed with filters"
 
 Remove the manual game-pill selector, the `predictions` state, the predictions `useEffect`, and the per-game prediction render block. Mount `MatchFeed` when a rig is saved. Keep the rig form and the `allGames` load (now feeds the game filter).
 
-- [ ] **Step 1: Update imports**
+- [x] **Step 1: Update imports**
 
 In `components/compatibility-checker.tsx`:
 - Add: `import { MatchFeed } from '@/components/match-feed';`
 - Remove these now-unused imports: `PerformanceBadge` (from `./performance-badge`), `ReportCard` (from `./report-card`), and from the `@/lib/data` import block remove `predictForUserRigAsync` and `getReportsForGameAsync` (keep `loadMyRigAsync`, `saveMyRigAsync`, `clearMyRigAsync`, `getAllGames`).
 - Remove `cn` only if it becomes unused after Step 4 (it is used by the game pills being deleted — verify and remove from the import if no longer referenced).
 
-- [ ] **Step 2: Remove predictions state**
+- [x] **Step 2: Remove predictions state**
 
 Delete the `selectedGames` state line and the entire `predictions` state block:
 
@@ -678,11 +682,11 @@ const [predictions, setPredictions] = useState<Array<{
 }>>([]);
 ```
 
-- [ ] **Step 3: Remove the predictions `useEffect`**
+- [x] **Step 3: Remove the predictions `useEffect`**
 
 Delete the entire second `useEffect` (the one with the comment "Recompute predictions whenever rig, selection, or games list changes." — the `recomputePredictions` block, from `useEffect(() => {` through its closing `}, [myRig, selectedGames, allGames]);`).
 
-- [ ] **Step 4: Remove `toggleGame` and the predictions/game-selector JSX**
+- [x] **Step 4: Remove `toggleGame` and the predictions/game-selector JSX**
 
 Delete the `toggleGame` function:
 
@@ -698,7 +702,7 @@ In `clearRig`, delete the line `setPredictions([]);` and the line `setSelectedGa
 
 Delete the entire `{/* Game selector */}` block (the `<div>` containing `Check these games`) and the entire `{/* Results … */}` block (`{myRig && predictions.length > 0 && ( … )}`).
 
-- [ ] **Step 5: Mount the feed**
+- [x] **Step 5: Mount the feed**
 
 Where the deleted `{/* Results */}` block was (still inside `<CardContent>`, before the loading/empty-state blocks), insert:
 
@@ -708,7 +712,7 @@ Where the deleted `{/* Results */}` block was (still inside `<CardContent>`, bef
 
 Keep the existing `!myRig && !isLoading` empty-state prompt below it.
 
-- [ ] **Step 6: Verify types + lint**
+- [x] **Step 6: Verify types + lint**
 
 Run: `npx tsc --noEmit`
 Expected: no new errors. If tsc reports an unused `Game` import or `cn`, remove it.
@@ -728,22 +732,24 @@ git commit -m "feat(compatibility): replace game pills with auto match feed"
 
 **Files:** none (verification only)
 
-- [ ] **Step 1: Run the full unit-test suite**
+- [x] **Step 1: Run the full unit-test suite**
 
 Run: `npm test`
 Expected: all tests pass, including the new `lib/similarity.test.ts`.
 
-- [ ] **Step 2: Type check the whole project**
+- [x] **Step 2: Type check the whole project**
 
 Run: `npx tsc --noEmit`
 Expected: no errors.
 
-- [ ] **Step 3: Lint touched files**
+- [x] **Step 3: Lint touched files**
 
 Run: `npx eslint lib/similarity.ts lib/data.ts components/report-card.tsx components/match-feed.tsx components/compatibility-checker.tsx`
 Expected: clean.
 
-- [ ] **Step 4: Manual smoke test (dev server already running, or start with `npm run dev`)**
+> Codex note: command exits 0 with no errors. All touched files except legacy `lib/data.ts` are warning-free; `lib/data.ts` still emits existing warning debt unrelated to this feature slice.
+
+- [x] **Step 4: Manual smoke test (dev server already running, or start with `npm run dev`)**
 
 In the browser at `/compatibility`:
 - Save a rig (e.g. CPU `Ryzen 7 7800X3D`, GPU `RTX 4070`, 32 GB, 2560x1440).

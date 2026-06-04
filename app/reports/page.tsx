@@ -17,8 +17,10 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import Image from 'next/image';
 import { gameMediaLoader } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/client';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { X, LayoutGrid, Rows3, Loader2 } from 'lucide-react';
+import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 
 // /reports — global, browsable, filterable reports explorer.
 // Filters are catalog-backed (GPU from the real hardware DB, games searchable) and never lose
@@ -64,13 +66,39 @@ export default function ReportsBrowser() {
   const [sortKey, setSortKey] = useState<SortKey>('reports');
   const [view, setView] = useState<ViewMode>('games');
   const [reportsShown, setReportsShown] = useState(INITIAL_REPORTS_SHOWN);
+  const [canVote, setCanVote] = useState(false);
   // Per-game banner error states for real covers (robust graceful degradation)
   const [bannerErrors, setBannerErrors] = useState<Record<string, boolean>>({});
+
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedGameSearch(gameSearch), 250);
     return () => clearTimeout(t);
   }, [gameSearch]);
+
+  useEffect(() => {
+    let mounted = true;
+    const userCanVote = (user: User | null | undefined) =>
+      Boolean(user?.id && user.email && !(user as { is_anonymous?: boolean }).is_anonymous);
+
+    supabase.auth.getUser()
+      .then((result: { data: { user: User | null } }) => {
+        if (mounted) setCanVote(userCanVote(result.data.user));
+      })
+      .catch(() => {
+        if (mounted) setCanVote(false);
+      });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+      if (mounted) setCanVote(userCanVote(session?.user));
+    });
+
+    return () => {
+      mounted = false;
+      authListener?.subscription?.unsubscribe();
+    };
+  }, [supabase]);
 
   // Server-side search-as-you-type for the game filter — only ~20 matches are fetched/rendered
   // at a time, so the page no longer loads (and the combobox no longer renders) the whole catalog.
@@ -512,7 +540,7 @@ export default function ReportsBrowser() {
                         {game.name}
                       </Link>
                     )}
-                    <ReportCard report={r} compact onVote={handleReportVote} />
+                    <ReportCard report={r} compact onVote={handleReportVote} canVote={canVote} />
                   </div>
                 );
               })}

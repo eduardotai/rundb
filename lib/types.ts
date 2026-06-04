@@ -103,6 +103,8 @@ export interface Report {
   tweaks?: string;
   issues?: string;
   driverVersion?: string;
+  kernel?: string;
+  distro?: string;
   createdAt: string; // ISO
   helpfulVotes: number;
   downvoteVotes?: number;
@@ -295,7 +297,7 @@ export interface LinkedAccount {
   user_id: string;
   provider: 'steam';
   provider_user_id: string;
-  provider_data?: Record<string, any>;
+  provider_data?: Record<string, unknown>;
   createdAt: string;
   updatedAt?: string;
 }
