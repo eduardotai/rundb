@@ -161,7 +161,7 @@ export async function ingestGame(
       'games',
       `
         search "${seed.name.replace(/"/g, '\\"')}";
-        fields id,name,slug,genres.name,release_dates.y,first_release_date,involved_companies.developer,involved_companies.publisher,involved_companies.company.name,cover.image_id,cover.url,screenshots.image_id,screenshots.url,external_games.uid,external_games.category;
+        fields id,name,slug,genres.name,release_dates.y,first_release_date,involved_companies.developer,involved_companies.publisher,involved_companies.company.name,cover.image_id,cover.url,screenshots.image_id,screenshots.url,external_games.uid,external_games.category,external_games.external_game_source;
         limit 1;
       `
     )
