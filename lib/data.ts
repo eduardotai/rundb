@@ -870,6 +870,7 @@ export interface TrendingResult {
  */
 export async function getTrendingGamesAsync(limit: number = 6, windowDays: number = 7): Promise<TrendingResult> {
   const safeLimit = Math.min(48, Math.max(1, limit))
+  const safeDays = Math.min(365, Math.max(1, windowDays))
   const starterFallback = (): TrendingResult => ({
     games: publicStarterGames().slice(0, safeLimit),
     recentCounts: {},
@@ -883,7 +884,7 @@ export async function getTrendingGamesAsync(limit: number = 6, windowDays: numbe
     const { createClient } = await import('@/lib/supabase/client')
     const supabase = createClient()
 
-    const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString()
+    const cutoff = new Date(Date.now() - safeDays * 24 * 60 * 60 * 1000).toISOString()
 
     // 1. Recent ranking rows (cheap: two columns).
     const recentResult = await withSupabaseReadTimeout<any>(
@@ -917,7 +918,9 @@ export async function getTrendingGamesAsync(limit: number = 6, windowDays: numbe
           .limit(200),
         'getTrendingGamesAsync.fallback',
       )
-      if (fallbackResult && !fallbackResult.error) {
+      if (fallbackResult?.error) {
+        console.warn('[data] getTrendingGamesAsync fallback query error (continuing without top-up):', fallbackResult.error)
+      } else if (fallbackResult) {
         fallbackRows = (fallbackResult.data || []).map((r: any) => ({
           gameId: r.game_id,
           createdAt: r.created_at,
