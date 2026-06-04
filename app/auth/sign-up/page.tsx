@@ -263,7 +263,7 @@ function SignUpForm() {
   // Success state after email sign up (awaiting confirmation)
   if (signupSuccess) {
     return (
-      <div className="mx-auto max-w-md px-4 py-12 sm:py-16">
+      <div className="mx-auto max-w-md px-4 py-12 sm/py-16">
         <Card className="text-center">
           <CardHeader>
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
@@ -296,7 +296,7 @@ function SignUpForm() {
   }
 
   return (
-    <div className="mx-auto max-w-md px-4 py-12 sm:py-16">
+    <div className="mx-auto max-w-md px-4 py-12 sm/py-16">
       <div className="text-center mb-8">
         <h1 className="text-3xl font-semibold tracking-tight">Create your account</h1>
         <p className="mt-2 text-muted-foreground">
@@ -450,9 +450,9 @@ function SignUpForm() {
                 <a href="#" className="text-foreground hover:underline">Privacy Policy</a>.
               </Label>
             </div>
-            {form.formState.errors.acceptTerms && (
-              <p className="text-xs text-destructive -mt-3">{form.formState.errors.acceptTerms.message}</p>
-            )}
+              {form.formState.errors.acceptTerms && (
+                <p className="text-xs text-destructive -mt-3">{form.formState.errors.acceptTerms.message}</p>
+              )}
 
             <Button 
               type="submit" 
@@ -509,4 +509,3 @@ export default function SignUpPage() {
     </Suspense>
   );
 }
-

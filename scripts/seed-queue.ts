@@ -81,36 +81,51 @@ async function main() {
         continue
       }
 
-      const { data: insertedGame, error: gameErr } = await client
+      const { data: existingGame, error: existingGameErr } = await client
         .from('games')
-        .upsert(gameRow, { onConflict: 'slug', ignoreDuplicates: true })
         .select('id')
+        .eq('slug', seed.slug)
         .maybeSingle()
 
-      if (gameErr) {
-        console.warn(`  skip ${seed.slug}: ${gameErr.message}`)
+      if (existingGameErr) {
+        console.warn(`  skip ${seed.slug}: ${existingGameErr.message}`)
         skipped++
         continue
       }
 
-      let game = insertedGame as { id: string } | null
+      let game = existingGame
       if (!game) {
-        const { data: existingGame, error: existingGameErr } = await client
+        const { data: insertedGame, error: gameErr } = await client
           .from('games')
+          .insert(gameRow)
           .select('id')
-          .eq('slug', seed.slug)
           .single()
 
-        if (existingGameErr) {
-          console.warn(`  skip ${seed.slug}: ${existingGameErr.message}`)
+        if (gameErr) {
+          console.warn(`  skip ${seed.slug}: ${gameErr.message}`)
           skipped++
           continue
         }
 
-        game = existingGame as { id: string }
+        game = insertedGame
+        gamesUpserted++
       }
 
-      gamesUpserted++
+      const { data: existingQueue, error: existingQueueErr } = await client
+        .from('game_ingest_queue')
+        .select('id')
+        .eq('slug', seed.slug)
+        .maybeSingle()
+
+      if (existingQueueErr) {
+        console.warn(`  queue skip ${seed.slug}: ${existingQueueErr.message}`)
+        skipped++
+        continue
+      }
+
+      if (existingQueue) {
+        continue
+      }
 
       const queueRow = {
         game_id: game.id,
@@ -124,7 +139,7 @@ async function main() {
 
       const { error: queueErr } = await client
         .from('game_ingest_queue')
-        .upsert(queueRow, { onConflict: 'slug', ignoreDuplicates: true })
+        .insert(queueRow)
 
       if (queueErr) {
         console.warn(`  queue skip ${seed.slug}: ${queueErr.message}`)

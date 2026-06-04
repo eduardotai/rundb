@@ -522,8 +522,14 @@ export async function searchGames(query: string, limit = 25): Promise<Game[]> {
           .limit(limit),
         'searchGames'
       )
-      const data = result?.data
+      if (!result) return []
+      const { data, error } = result
+      if (error) {
+        console.error('[data] searchGames initial load error:', error)
+        return []
+      }
       if (data?.length) return enrichGamesWithCovers(data.map(mapDbGameToGame))
+      return []
     }
     return searchStarterGames('', limit)
   }
@@ -1256,6 +1262,37 @@ export function clearMyRig() {
   mock.clearMyRig()
 }
 
+function mapUserRigRowToUserPC(row: any): UserPC | null {
+  if (!row?.cpu || !row?.gpu) return null
+  return {
+    cpu: row.cpu,
+    gpu: row.gpu,
+    ram: row.ram,
+    resolution: row.resolution || undefined,
+    driverVersion: row.driver_version || undefined,
+    kernel: row.kernel || undefined,
+    distro: row.distro || undefined,
+  } as UserPC
+}
+
+async function loadPrimaryUserRigRow(supabase: any, userId: string): Promise<any | null> {
+  const { data, error } = await supabase
+    .from('user_rigs')
+    .select('id, cpu, gpu, ram, resolution, driver_version, kernel, distro, is_primary, updated_at')
+    .eq('user_id', userId)
+    .order('is_primary', { ascending: false })
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    console.warn('[data] loadPrimaryUserRigRow failed:', error.message)
+    return null
+  }
+
+  return data ?? null
+}
+
 /**
  * Phase 2 real-data async loader for My Rig (UserPC).
  * If authenticated user + USE_REAL: queries user_rigs (preferred, per schema "for compatibility checker"),
@@ -1271,24 +1308,9 @@ export async function loadMyRigAsync(): Promise<UserPC | null> {
 
       const { data: { user } } = await supabase.auth.getUser()
       if (user?.id) {
-        // Preferred: user_rigs table (current saved hardware for compatibility checker)
-        const { data: rigRow, error: rigErr } = await supabase
-          .from('user_rigs')
-          .select('cpu, gpu, ram, resolution, driver_version, kernel, distro')
-          .eq('user_id', user.id)
-          .maybeSingle()
-
-        if (!rigErr && rigRow && rigRow.cpu && rigRow.gpu) {
-          return {
-            cpu: rigRow.cpu,
-            gpu: rigRow.gpu,
-            ram: rigRow.ram,
-            resolution: rigRow.resolution || undefined,
-            driverVersion: rigRow.driver_version || undefined,
-            kernel: rigRow.kernel || undefined,
-            distro: rigRow.distro || undefined,
-          } as UserPC
-        }
+        // Preferred: newest primary user_rigs row. limit(1) keeps multi-device rows from making maybeSingle() error.
+        const rig = mapUserRigRowToUserPC(await loadPrimaryUserRigRow(supabase, user.id))
+        if (rig) return rig
 
         // Fallback: profiles table (main_* fields, kept in sync with ProfileRigEditor)
         const { data: profile, error: profErr } = await supabase
@@ -1323,28 +1345,35 @@ export async function loadMyRigAsync(): Promise<UserPC | null> {
  */
 export async function saveMyRigAsync(rig: UserPC): Promise<void> {
   if (USE_REAL) {
+    let authenticatedUserId: string | null = null
     try {
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
 
       const { data: { user } } = await supabase.auth.getUser()
       if (user?.id) {
-        // Save to user_rigs (primary for CompatibilityChecker per schema)
-        const { error: rigErr } = await supabase
-          .from('user_rigs')
-          .upsert({
-            user_id: user.id,
-            cpu: rig.cpu,
-            gpu: rig.gpu,
-            ram: rig.ram,
-            resolution: rig.resolution || null,
-            driver_version: (rig as any).driverVersion || null,
-            kernel: (rig as any).kernel || null,
-            distro: (rig as any).distro || null,
-          }, { onConflict: 'user_id' })
+        authenticatedUserId = user.id
+        const payload = {
+          user_id: user.id,
+          label: 'My Rig',
+          cpu: rig.cpu,
+          gpu: rig.gpu,
+          ram: rig.ram,
+          resolution: rig.resolution || null,
+          driver_version: (rig as any).driverVersion || null,
+          kernel: (rig as any).kernel || null,
+          distro: (rig as any).distro || null,
+          is_primary: true,
+        }
 
+        // Update the current primary row when present; insert otherwise. This works with both
+        // legacy UNIQUE(user_id) installs and multi-device installs where that constraint is removed.
+        const existingRig = await loadPrimaryUserRigRow(supabase, user.id)
+        const { error: rigErr } = existingRig?.id
+          ? await supabase.from('user_rigs').update(payload).eq('id', existingRig.id).eq('user_id', user.id)
+          : await supabase.from('user_rigs').insert(payload)
         if (rigErr) {
-          console.warn('[data] saveMyRigAsync user_rigs upsert failed (RLS or schema?):', rigErr.message)
+          throw new Error(`Failed to save rig: ${rigErr.message}`)
         }
 
         // Mirror to profiles for compatibility with existing ProfileRigEditor + profile display
@@ -1362,11 +1391,15 @@ export async function saveMyRigAsync(rig: UserPC): Promise<void> {
           console.warn('[data] saveMyRigAsync profiles mirror failed:', profErr.message)
         }
 
-        return // DB path succeeded (or warned); do not touch localStorage for authenticated users
+        return // DB path succeeded; do not touch localStorage for authenticated users
       }
       // No user: fall through to localStorage below
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
+      if (authenticatedUserId) {
+        console.error('[data] saveMyRigAsync Supabase save failed:', msg)
+        throw err instanceof Error ? err : new Error(msg)
+      }
       console.warn('[data] saveMyRigAsync Supabase error, falling back to localStorage save:', msg)
     }
   }
@@ -1380,24 +1413,30 @@ export async function saveMyRigAsync(rig: UserPC): Promise<void> {
  */
 export async function clearMyRigAsync(): Promise<void> {
   if (USE_REAL) {
+    let authenticatedUserId: string | null = null
     try {
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
 
       const { data: { user } } = await supabase.auth.getUser()
       if (user?.id) {
+        authenticatedUserId = user.id
         const { error } = await supabase
           .from('user_rigs')
           .delete()
           .eq('user_id', user.id)
 
         if (error) {
-          console.warn('[data] clearMyRigAsync user_rigs delete failed:', error.message)
+          throw new Error(`Failed to clear rig: ${error.message}`)
         }
         return // DB cleared for user; do not clear localStorage for auth users
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
+      if (authenticatedUserId) {
+        console.error('[data] clearMyRigAsync Supabase clear failed:', msg)
+        throw err instanceof Error ? err : new Error(msg)
+      }
       console.warn('[data] clearMyRigAsync Supabase error, falling back to localStorage clear:', msg)
     }
   }
@@ -1487,13 +1526,14 @@ export async function saveUserDevice(device: UserDeviceInput & { id?: string }):
 
       if (device.id) {
         const { error } = await supabase.from('user_rigs').update(payload).eq('id', device.id)
-        if (error) console.warn('[data] saveUserDevice update failed', error.message)
+        if (error) throw new Error(`Failed to update device: ${error.message}`)
       } else {
         const { error } = await supabase.from('user_rigs').insert(payload)
-        if (error) console.warn('[data] saveUserDevice insert failed', error.message)
+        if (error) throw new Error(`Failed to save device: ${error.message}`)
       }
       return
     } catch (err) {
+      if (err instanceof Error) throw err
       console.warn('[data] saveUserDevice Supabase error', err)
     }
   }
@@ -1506,9 +1546,10 @@ export async function deleteUserDevice(id: string): Promise<void> {
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
       const { error } = await supabase.from('user_rigs').delete().eq('id', id)
-      if (error) console.warn('[data] deleteUserDevice failed', error.message)
+      if (error) throw new Error(`Failed to delete device: ${error.message}`)
       return
     } catch (err) {
+      if (err instanceof Error) throw err
       console.warn('[data] deleteUserDevice error', err)
     }
   }

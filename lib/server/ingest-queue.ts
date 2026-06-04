@@ -64,7 +64,8 @@ export async function recoverStaleQueueLocks(client: SupabaseClient): Promise<nu
 
 export async function claimQueueBatch(
   client: SupabaseClient,
-  batchSize: number
+  batchSize: number,
+  excludedIds: Set<string> = new Set()
 ): Promise<QueueRow[]> {
   await recoverStaleQueueLocks(client)
 
@@ -73,14 +74,14 @@ export async function claimQueueBatch(
     .select('*')
     .eq('status', 'pending')
     .order('priority', { ascending: true })
-    .limit(batchSize)
+    .limit(batchSize + excludedIds.size)
 
   if (error || !pending?.length) return []
 
   const claimed: QueueRow[] = []
   const now = new Date().toISOString()
 
-  for (const row of pending as QueueRow[]) {
+  for (const row of (pending as QueueRow[]).filter((item) => !excludedIds.has(item.id)).slice(0, batchSize)) {
     const { data, error: claimErr } = await client
       .from('game_ingest_queue')
       .update({
@@ -97,6 +98,21 @@ export async function claimQueueBatch(
   }
 
   return claimed
+}
+
+async function getPendingQueueRows(
+  client: SupabaseClient,
+  batchSize: number
+): Promise<QueueRow[]> {
+  const { data, error } = await client
+    .from('game_ingest_queue')
+    .select('*')
+    .eq('status', 'pending')
+    .order('priority', { ascending: true })
+    .limit(batchSize)
+
+  if (error || !data?.length) return []
+  return data as QueueRow[]
 }
 
 export async function markQueueRowDone(
@@ -161,11 +177,19 @@ export async function runIngestBatch(
   opts?: { dryRun?: boolean; maxAttempts?: number; onLog?: (msg: string) => void }
 ): Promise<{ processed: number; success: number; failed: number }> {
   const maxAttempts = opts?.maxAttempts ?? 3
-  const rows = await claimQueueBatch(client, batchSize)
+  const dryRun = opts?.dryRun ?? false
+  const rows = dryRun ? await getPendingQueueRows(client, batchSize) : []
+  const seenIds = new Set<string>()
+  let processed = 0
   let success = 0
   let failed = 0
 
-  for (const row of rows) {
+  while (processed < batchSize) {
+    const row = dryRun ? rows[processed] : (await claimQueueBatch(client, 1, seenIds))[0]
+    if (!row) break
+    seenIds.add(row.id)
+    processed++
+
     const seed: IngestGameSeed = {
       name: row.name,
       slug: row.slug,
@@ -178,12 +202,12 @@ export async function runIngestBatch(
 
     if (result.ok) {
       success++
-      if (!opts?.dryRun) {
+      if (!dryRun) {
         await markQueueRowDone(client, row.id, result.gameId ?? row.game_id)
       }
     } else {
       failed++
-      if (!opts?.dryRun) {
+      if (!dryRun) {
         await markQueueRowFailed(
           client,
           row.id,
@@ -195,7 +219,7 @@ export async function runIngestBatch(
     }
   }
 
-  return { processed: rows.length, success, failed }
+  return { processed, success, failed }
 }
 
 export async function getFailedQueueRows(
