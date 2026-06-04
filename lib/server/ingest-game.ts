@@ -330,17 +330,30 @@ export async function ingestGame(
       const publicUrl = await uploadImageToStorage(client, screenshotUrls[i]!, seed.slug, `screenshot-${i}`, dryRun)
       if (!publicUrl) continue
       if (!dryRun && gameId) {
-        const { error } = await client.from('game_media').insert({
-          game_id: gameId,
-          media_type: 'screenshot',
-          url: publicUrl,
-          thumbnail_url: publicUrl,
-          sort_order: 10 + i,
-          source: 'igdb',
-          attribution: ATTRIB,
-        })
+        const sortOrder = 10 + i
+        const { data: insertedMedia, error } = await client
+          .from('game_media')
+          .insert({
+            game_id: gameId,
+            media_type: 'screenshot',
+            url: publicUrl,
+            thumbnail_url: publicUrl,
+            sort_order: sortOrder,
+            source: 'igdb',
+            attribution: ATTRIB,
+          })
+          .select('id')
+          .single()
         if (error) return { ok: false, error: `Insert media: ${error.message}` }
         mediaCount++
+        const { error: deleteErr } = await client
+          .from('game_media')
+          .delete()
+          .eq('game_id', gameId)
+          .eq('media_type', 'screenshot')
+          .eq('sort_order', sortOrder)
+          .neq('id', (insertedMedia as { id: string }).id)
+        if (deleteErr) return { ok: false, error: `Replace screenshot media: ${deleteErr.message}` }
       } else if (dryRun) {
         mediaCount++
       }

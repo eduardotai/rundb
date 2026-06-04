@@ -18,13 +18,19 @@ import { discoverLatestSteamGames } from '../lib/server/discover-steam-games'
 import { ingestGame } from '../lib/server/ingest-game'
 import { ensureGameMediaBucket } from '../lib/server/game-media'
 
-loadEnvLocal()
-
 interface Flags {
   dryRun: boolean
   limit?: number
   sinceYear?: number
   includeUnreleased: boolean
+}
+
+const EXISTING_GAMES_PAGE_SIZE = 1000
+
+export interface ExistingGameKeys {
+  rows: Array<{ slug: string; steam_app_id: string | number | null }>
+  slugs: Set<string>
+  steamAppIds: Set<string>
 }
 
 function parseArgs(): Flags {
@@ -52,7 +58,36 @@ function parseArgs(): Flags {
   return flags
 }
 
+export async function readExistingGameKeys(client: any): Promise<ExistingGameKeys> {
+  const rows: ExistingGameKeys['rows'] = []
+
+  for (let from = 0; ; from += EXISTING_GAMES_PAGE_SIZE) {
+    const to = from + EXISTING_GAMES_PAGE_SIZE - 1
+    const { data, error } = await client
+      .from('games')
+      .select('slug, steam_app_id')
+      .order('slug', { ascending: true })
+      .range(from, to)
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    const page = (data || []) as ExistingGameKeys['rows']
+    rows.push(...page)
+    if (page.length < EXISTING_GAMES_PAGE_SIZE) break
+  }
+
+  return {
+    rows,
+    slugs: new Set(rows.map((g) => g.slug)),
+    steamAppIds: new Set(rows.map((g) => g.steam_app_id).filter(Boolean).map(String)),
+  }
+}
+
 async function main() {
+  loadEnvLocal()
+
   const flags = parseArgs()
   const start = Date.now()
 
@@ -77,19 +112,18 @@ async function main() {
   })
   console.log(`Discovered ${discovered.length} candidate game(s) from Steam charts.`)
 
-  const { data: existing, error } = await client.from('games').select('slug, steam_app_id')
-  if (error) {
-    console.error('Failed to read existing games:', error.message)
+  let existing: ExistingGameKeys
+  try {
+    existing = await readExistingGameKeys(client)
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e)
+    console.error('Failed to read existing games:', message)
     process.exit(1)
   }
-  const existingSlugs = new Set((existing || []).map((g: any) => g.slug))
-  const existingAppIds = new Set(
-    (existing || []).map((g: any) => g.steam_app_id).filter(Boolean).map(String)
-  )
   const fresh = discovered.filter(
-    (s) => !existingSlugs.has(s.slug) && !existingAppIds.has(s.steamAppId)
+    (s) => !existing.slugs.has(s.slug) && !existing.steamAppIds.has(s.steamAppId)
   )
-  console.log(`${fresh.length} new (after dedup against ${existing?.length ?? 0} existing).`)
+  console.log(`${fresh.length} new (after dedup against ${existing.rows.length} existing).`)
   for (const s of fresh) {
     console.log(`  • ${s.name} (${s.slug}) [appid ${s.steamAppId}]`)
   }
@@ -133,7 +167,9 @@ async function main() {
   process.exit(stats.failed > 0 ? 1 : 0)
 }
 
-main().catch((e) => {
-  console.error('Fatal:', e)
-  process.exit(1)
-})
+if (process.argv[1]?.endsWith('import-latest-games.ts')) {
+  main().catch((e) => {
+    console.error('Fatal:', e)
+    process.exit(1)
+  })
+}

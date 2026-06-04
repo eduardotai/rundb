@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { verifySteamOpenIDCallback, fetchSteamPlayerSummary, extractSteamIdFromClaimedId } from '@/lib/steam';
+import {
+  STEAM_LINK_STATE_COOKIE,
+  verifySteamOpenIDCallback,
+  fetchSteamPlayerSummary,
+  validateSteamLinkState,
+} from '@/lib/steam';
 
 /**
  * Steam OpenID callback for account linking.
@@ -11,23 +16,32 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const params = url.searchParams;
 
-  // Basic state validation (echoed by Steam)
-  const state = params.get('state');
-  if (!state) {
-    return NextResponse.redirect(new URL('/auth/auth-code-error?reason=missing_state', url.origin));
-  }
+  const redirectWithClearedState = (target: URL) => {
+    const response = NextResponse.redirect(target);
+    response.cookies.set(STEAM_LINK_STATE_COOKIE, '', {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/auth/steam',
+      maxAge: 0,
+    });
+    return response;
+  };
 
-  const [claimedUserId, tsStr] = state.split(':');
-  const ts = parseInt(tsStr || '0', 10);
-  if (!claimedUserId || Date.now() - ts > 10 * 60 * 1000) {
-    // 10 min expiry
-    return NextResponse.redirect(new URL('/auth/auth-code-error?reason=state_expired', url.origin));
+  const state = params.get('state');
+  const stateCheck = validateSteamLinkState({
+    state,
+    cookieValue: request.cookies.get(STEAM_LINK_STATE_COOKIE)?.value,
+  });
+  if (!stateCheck.ok) {
+    return redirectWithClearedState(new URL(`/auth/auth-code-error?reason=${stateCheck.reason}`, url.origin));
   }
+  const claimedUserId = stateCheck.userId;
 
   // Verify with Steam
   const steamId = await verifySteamOpenIDCallback(params);
   if (!steamId) {
-    return NextResponse.redirect(new URL('/auth/auth-code-error?reason=steam_verify_failed', url.origin));
+    return redirectWithClearedState(new URL('/auth/auth-code-error?reason=steam_verify_failed', url.origin));
   }
 
   // Get current Supabase user from cookies (must be present from the same browser session)
@@ -36,7 +50,7 @@ export async function GET(request: NextRequest) {
 
   if (!user?.id || user.id !== claimedUserId) {
     // Mismatch or no session — abort
-    return NextResponse.redirect(new URL('/auth/auth-code-error?reason=session_mismatch', url.origin));
+    return redirectWithClearedState(new URL('/auth/auth-code-error?reason=session_mismatch', url.origin));
   }
 
   // Fetch public profile snapshot (best effort)
@@ -65,7 +79,7 @@ export async function GET(request: NextRequest) {
 
   if (linkErr) {
     console.error('[steam] link upsert failed', linkErr);
-    return NextResponse.redirect(new URL('/auth/auth-code-error?reason=db_error', url.origin));
+    return redirectWithClearedState(new URL('/auth/auth-code-error?reason=db_error', url.origin));
   }
 
   // Denorm onto profiles for fast display (avatar, persona)
@@ -83,5 +97,5 @@ export async function GET(request: NextRequest) {
 
   // Success — redirect back to profile with success flag
   const redirectTo = new URL('/profile?steam_linked=1', url.origin);
-  return NextResponse.redirect(redirectTo);
+  return redirectWithClearedState(redirectTo);
 }
