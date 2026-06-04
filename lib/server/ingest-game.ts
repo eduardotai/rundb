@@ -9,6 +9,7 @@ import { normalizeSlug } from '@/lib/utils'
 import { getCatalogCover } from '@/lib/game-cover-catalog'
 import { igdbGameMatchesSeed, igdbHasSteamAppId } from '@/lib/igdb-game-match'
 import { steamLibraryCoverUrl } from '@/lib/cover-image-url'
+import { buildCoverCandidates } from './cover-candidates'
 
 const RATE_LIMIT_MS = 300
 
@@ -265,79 +266,81 @@ export async function ingestGame(
 
     const ATTRIB =
       'Sourced from IGDB (https://www.igdb.com). Images © respective copyright holders. Used for non-commercial informational purposes.'
-    const mediaToProcess: Array<{ remoteUrl: string; type: string; sort: number; attr: string }> = []
+    let mediaCount = 0
+    let uploadedCoverForGame: string | null = null
+    let uploadedCoverAttr = ATTRIB
 
-    if (catalogCover) {
-      mediaToProcess.push({
-        remoteUrl: catalogCover.url,
-        type: 'cover',
-        sort: 0,
-        attr: catalogCover.attribution,
-      })
-    } else if (igdbMatches && igdbGame.cover?.image_id) {
-      mediaToProcess.push({
-        remoteUrl: `https://images.igdb.com/igdb/image/upload/t_original/${igdbGame.cover.image_id}.jpg`,
-        type: 'cover',
-        sort: 0,
-        attr: ATTRIB,
-      })
-    } else if (steamAppId) {
-      mediaToProcess.push({
-        remoteUrl: steamLibraryCoverUrl(steamAppId),
-        type: 'cover',
-        sort: 0,
-        attr: 'Cover from Steam CDN (https://store.steampowered.com/). © Valve Corporation.',
-      })
+    // Resolve the cover by trying sources in priority order (catalog -> IGDB -> Steam)
+    // until one actually uploads. A 404 on the preferred source (e.g. Steam serves no
+    // portrait capsule for many Xbox/very-new titles) must fall through, not leave the
+    // game cover-less.
+    const coverCandidates = buildCoverCandidates({
+      catalogCover,
+      igdbCoverImageId: igdbGame.cover?.image_id ?? null,
+      igdbMatches,
+      steamAppId: steamAppId ?? null,
+    })
+    for (const cand of coverCandidates) {
+      const publicUrl = await uploadImageToStorage(client, cand.url, seed.slug, 'cover', dryRun)
+      if (publicUrl) {
+        uploadedCoverForGame = publicUrl
+        uploadedCoverAttr = cand.attr
+        break
+      }
     }
 
+    if (uploadedCoverForGame && !dryRun && gameId) {
+      const { data: insertedMedia, error } = await client
+        .from('game_media')
+        .insert({
+          game_id: gameId,
+          media_type: 'cover',
+          url: uploadedCoverForGame,
+          thumbnail_url: uploadedCoverForGame,
+          sort_order: 0,
+          source: 'igdb',
+          attribution: uploadedCoverAttr,
+        })
+        .select('id')
+        .single()
+      if (error) return { ok: false, error: `Insert media: ${error.message}` }
+      mediaCount++
+      await client
+        .from('game_media')
+        .delete()
+        .eq('game_id', gameId)
+        .eq('media_type', 'cover')
+        .neq('id', (insertedMedia as { id: string }).id)
+    } else if (uploadedCoverForGame && dryRun) {
+      mediaCount++
+    }
+
+    // Screenshots (IGDB only)
+    const screenshotUrls: string[] = []
     if (igdbMatches) {
       const ss = (igdbGame.screenshots || []).slice(0, 3)
-      ss.forEach((s: any, idx: number) => {
+      ss.forEach((s: any) => {
         const u = s.image_id
           ? `https://images.igdb.com/igdb/image/upload/t_screenshot_big/${s.image_id}.jpg`
           : 'https:' + (s.url || '').replace('t_thumb', 't_screenshot_big')
-        if (u) mediaToProcess.push({ remoteUrl: u, type: `screenshot-${idx}`, sort: 10 + idx, attr: ATTRIB })
+        if (u) screenshotUrls.push(u)
       })
     }
-
-    let mediaCount = 0
-    let uploadedCoverForGame: string | null = null
-
-    for (const m of mediaToProcess) {
-      const publicUrl = await uploadImageToStorage(client, m.remoteUrl, seed.slug, m.type, dryRun)
+    for (let i = 0; i < screenshotUrls.length; i++) {
+      const publicUrl = await uploadImageToStorage(client, screenshotUrls[i]!, seed.slug, `screenshot-${i}`, dryRun)
       if (!publicUrl) continue
-      if (m.type === 'cover') uploadedCoverForGame = publicUrl
-
       if (!dryRun && gameId) {
-        const mediaType = m.type.startsWith('screenshot')
-          ? 'screenshot'
-          : m.type === 'cover'
-            ? 'cover'
-            : 'artwork'
-        const { data: insertedMedia, error } = await client
-          .from('game_media')
-          .insert({
-            game_id: gameId,
-            media_type: mediaType,
-            url: publicUrl,
-            thumbnail_url: publicUrl,
-            sort_order: m.sort,
-            source: 'igdb',
-            attribution: m.attr,
-          })
-          .select('id')
-          .single()
+        const { error } = await client.from('game_media').insert({
+          game_id: gameId,
+          media_type: 'screenshot',
+          url: publicUrl,
+          thumbnail_url: publicUrl,
+          sort_order: 10 + i,
+          source: 'igdb',
+          attribution: ATTRIB,
+        })
         if (error) return { ok: false, error: `Insert media: ${error.message}` }
         mediaCount++
-
-        if (mediaType === 'cover') {
-          await client
-            .from('game_media')
-            .delete()
-            .eq('game_id', gameId)
-            .eq('media_type', 'cover')
-            .neq('id', (insertedMedia as { id: string }).id)
-        }
       } else if (dryRun) {
         mediaCount++
       }
