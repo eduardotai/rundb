@@ -1,7 +1,7 @@
 /**
  * RunDB Mock Data Layer
  *
- * 18 popular games (real metadata).
+ * 47 popular games (real metadata), including the latest 2025–2026 releases.
  *
  * Report persistence (demo mode):
  * - A small set of realistic *seed* reports is included so /reports (advanced browser), home trending/recent/stats,
@@ -46,7 +46,7 @@ import {
 // This keeps mock-data pure/sync while enabling full resolver usage for seeds + runtime.
 
 // ============================================
-// GAMES (18 titles — good coverage of genres + difficulty)
+// GAMES (47 titles — good coverage of genres + difficulty, incl. latest 2025–2026 releases)
 // ============================================
 // REAL BANNERS (Agent 1 / PR 1): All 18 coverImage values modernized from picsum.photos
 // to distinct official high-quality public CDN art (no duplicates).
@@ -451,6 +451,120 @@ export const GAMES: Game[] = [
     releaseYear: 2024,
     developer: 'Eleventh Hour Games',
     publisher: 'Eleventh Hour Games',
+  },
+
+  // === Latest releases (2025–2026) — verified Steam AppIDs for correct library art ===
+  // Added to keep the catalog current with major recent launches. Reqs intentionally
+  // omitted (like other recent entries) rather than fabricated; prediction works off reports.
+  {
+    id: 'g38',
+    slug: 'resident-evil-requiem',
+    name: 'Resident Evil Requiem',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/3764200/library_600x900_2x.jpg',
+    steamAppId: '3764200',
+    genres: ['Action', 'Horror', 'Survival'],
+    releaseYear: 2026,
+    developer: 'Capcom',
+    publisher: 'Capcom',
+  },
+  {
+    id: 'g39',
+    slug: 'forza-horizon-6',
+    name: 'Forza Horizon 6',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2483190/library_600x900_2x.jpg',
+    steamAppId: '2483190',
+    genres: ['Racing', 'Open World'],
+    releaseYear: 2026,
+    developer: 'Playground Games',
+    publisher: 'Xbox Game Studios',
+  },
+  {
+    id: 'g40',
+    slug: 'doom-the-dark-ages',
+    name: 'DOOM: The Dark Ages',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/3017860/library_600x900_2x.jpg',
+    steamAppId: '3017860',
+    genres: ['Action', 'Shooter'],
+    releaseYear: 2025,
+    developer: 'id Software',
+    publisher: 'Bethesda Softworks',
+  },
+  {
+    id: 'g41',
+    slug: 'kingdom-come-deliverance-2',
+    name: 'Kingdom Come: Deliverance II',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1771300/library_600x900_2x.jpg',
+    steamAppId: '1771300',
+    genres: ['RPG', 'Action', 'Open World'],
+    releaseYear: 2025,
+    developer: 'Warhorse Studios',
+    publisher: 'Deep Silver',
+  },
+  {
+    id: 'g42',
+    slug: 'clair-obscur-expedition-33',
+    name: 'Clair Obscur: Expedition 33',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1903340/library_600x900_2x.jpg',
+    steamAppId: '1903340',
+    genres: ['RPG', 'Turn-Based', 'Story'],
+    releaseYear: 2025,
+    developer: 'Sandfall Interactive',
+    publisher: 'Kepler Interactive',
+  },
+  {
+    id: 'g43',
+    slug: 'assassins-creed-shadows',
+    name: "Assassin's Creed Shadows",
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/3159330/library_600x900_2x.jpg',
+    steamAppId: '3159330',
+    genres: ['Action', 'RPG', 'Open World'],
+    releaseYear: 2025,
+    developer: 'Ubisoft Quebec',
+    publisher: 'Ubisoft',
+  },
+  {
+    id: 'g44',
+    slug: 'borderlands-4',
+    name: 'Borderlands 4',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1285190/library_600x900_2x.jpg',
+    steamAppId: '1285190',
+    genres: ['Action', 'Shooter', 'Looter'],
+    releaseYear: 2025,
+    developer: 'Gearbox Software',
+    publisher: '2K',
+  },
+  {
+    id: 'g45',
+    slug: 'civilization-7',
+    name: "Sid Meier's Civilization VII",
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1295660/library_600x900_2x.jpg',
+    steamAppId: '1295660',
+    genres: ['Strategy', 'Turn-Based'],
+    releaseYear: 2025,
+    developer: 'Firaxis Games',
+    publisher: '2K',
+  },
+  {
+    id: 'g46',
+    slug: 'avowed',
+    name: 'Avowed',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2457220/library_600x900_2x.jpg',
+    steamAppId: '2457220',
+    genres: ['RPG', 'Action'],
+    releaseYear: 2025,
+    developer: 'Obsidian Entertainment',
+    publisher: 'Xbox Game Studios',
+  },
+  {
+    id: 'g47',
+    slug: 'oblivion-remastered',
+    name: 'The Elder Scrolls IV: Oblivion Remastered',
+    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2623190/library_600x900_2x.jpg',
+    steamAppId: '2623190',
+    genres: ['RPG', 'Open World'],
+    releaseYear: 2025,
+    developer: 'Virtuos',
+    publisher: 'Bethesda Softworks',
   },
 ];
 
