@@ -35,7 +35,9 @@ export type SteamLinkStateValidation =
 export function createSteamLinkState(
   userId: string,
   now = Date.now(),
-  nonce = randomUUID()
+  // Explicit string type: defaults to a UUID but callers/tests may pass any nonce.
+  // Without this, the param infers randomUUID()'s branded `${string}-...` type.
+  nonce: string = randomUUID()
 ): string {
   return `${userId}:${now}:${nonce}`;
 }
