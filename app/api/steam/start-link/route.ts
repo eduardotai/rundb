@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { generateSteamOpenIDLoginUrl } from '@/lib/steam';
+import {
+  createSteamLinkState,
+  generateSteamOpenIDLoginUrl,
+  STEAM_LINK_STATE_COOKIE,
+  STEAM_LINK_STATE_TTL_MS,
+} from '@/lib/steam';
 
 /**
  * Protected endpoint: Returns a Steam OpenID login URL for the currently authenticated user.
@@ -18,11 +23,19 @@ export async function GET(request: NextRequest) {
   const origin = request.nextUrl.origin;
   const callbackUrl = `${origin}/auth/steam/callback`;
 
-  // Simple state: userId + timestamp + random (verified on callback)
-  const nonce = Math.random().toString(36).slice(2);
-  const state = `${user.id}:${Date.now()}:${nonce}`;
-
+  // Bind the OpenID state to this browser session so a valid Steam assertion
+  // cannot be replayed into another logged-in user's callback.
+  const state = createSteamLinkState(user.id);
   const steamLoginUrl = generateSteamOpenIDLoginUrl(callbackUrl, state);
+  const response = NextResponse.json({ url: steamLoginUrl, state });
 
-  return NextResponse.json({ url: steamLoginUrl, state });
+  response.cookies.set(STEAM_LINK_STATE_COOKIE, state, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/auth/steam',
+    maxAge: Math.floor(STEAM_LINK_STATE_TTL_MS / 1000),
+  });
+
+  return response;
 }
