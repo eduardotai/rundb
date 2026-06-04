@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ReportCard } from '@/components/report-card';
+import { GameCombobox } from '@/components/game-combobox';
 import { getMatchesForRigAsync } from '@/lib/data';
 import type { Game, PerformanceTier, UserPC } from '@/lib/types';
 import type { MatchSort, RigMatch } from '@/lib/similarity';
@@ -28,10 +29,10 @@ export function MatchFeed({ rig, allGames }: MatchFeedProps) {
   const [matches, setMatches] = useState<RigMatch[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const gameNameById = useMemo(() => {
-    const names = new Map<string, string>();
-    for (const game of allGames) names.set(game.id, game.name);
-    return names;
+  const gameById = useMemo(() => {
+    const map = new Map<string, Game>();
+    for (const game of allGames) map.set(game.id, game);
+    return map;
   }, [allGames]);
 
   useEffect(() => {
@@ -77,19 +78,7 @@ export function MatchFeed({ rig, allGames }: MatchFeedProps) {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="min-w-0">
           <Label className="mb-1 block text-xs">Game</Label>
-          <Select value={gameId} onValueChange={setGameId}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All games</SelectItem>
-              {allGames.map((game) => (
-                <SelectItem key={game.id} value={game.id}>
-                  {game.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <GameCombobox value={gameId} onChange={setGameId} games={allGames} />
         </div>
 
         <div className="min-w-0">
@@ -154,7 +143,8 @@ export function MatchFeed({ rig, allGames }: MatchFeedProps) {
               key={match.report.id}
               report={{
                 ...match.report,
-                gameName: match.report.gameName || gameNameById.get(match.report.gameId),
+                gameName: match.report.gameName || gameById.get(match.report.gameId)?.name,
+                game: match.report.game || gameById.get(match.report.gameId),
               }}
               userRig={rig}
               breakdown={match.breakdown}
