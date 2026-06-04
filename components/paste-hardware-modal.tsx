@@ -105,7 +105,7 @@ export function PasteHardwareModal({ open, onOpenChange, onApply }: PasteHardwar
         <DialogHeader>
           <DialogTitle>Paste Hardware Output (Most Accurate)</DialogTitle>
           <DialogDescription>
-            This is the real way to detect your actual CPU model + exact RAM (browser "Detect" can only give rough hints). Run the one-liner for your OS, paste the output. 100% local, same technique ProtonDB uses.
+            This is the real way to detect your actual CPU model + exact RAM (browser &quot;Detect&quot; can only give rough hints). Run the one-liner for your OS, paste the output. 100% local, same technique ProtonDB uses.
           </DialogDescription>
         </DialogHeader>
 
