@@ -538,6 +538,9 @@ function GameDetailInner({ game }: { game: Game }) {
           queryClient.invalidateQueries({ queryKey: ['game-reports', game.id] });
           queryClient.invalidateQueries({ queryKey: ['game-stats', game.id] });
           queryClient.invalidateQueries({ queryKey: ['all-reports'] });
+          // Home page surfaces: trending ranking + global hero counts pick up the new report on next query.
+          queryClient.invalidateQueries({ queryKey: ['trending-games'] });
+          queryClient.invalidateQueries({ queryKey: ['global-counts'] });
         }}
       />
     </div>

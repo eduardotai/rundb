@@ -24,7 +24,7 @@ export default function Home() {
     queryFn: () => getTrendingGamesAsync(6, 7),
   });
 
-  const trending = trendingQuery.data?.games ?? [];
+  const trending = useMemo(() => trendingQuery.data?.games ?? [], [trendingQuery.data]);
   const trendingIds = useMemo(() => trending.map((g) => g.id), [trending]);
 
   // Per-card stats for ONLY the visible trending games (batched single query).
@@ -233,16 +233,10 @@ export default function Home() {
                 imageSizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1280px) 16vw, 180px"
               />
             ))
-          ) : trendingIds.length === 0 ? (
-            <div className="col-span-full rounded-2xl border border-dashed border-border py-10 text-center">
-              <p className="text-muted-foreground">No games in the database yet — the database grows through community reports and the ingest pipeline.</p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Run the ingest queue and worker to populate Supabase before public launch.
-              </p>
-            </div>
           ) : (
+            // trending is empty (no games to rank, even after the all-time top-up + starter fallback).
             <div className="col-span-full rounded-2xl border border-dashed border-border py-10 text-center text-muted-foreground">
-              <p>Community reports will rank titles here. Save a rig, browse games, or submit a few reports to see activity.</p>
+              <p>No trending games yet — community reports rank titles here as they come in. Browse the catalog or submit a report to get things moving.</p>
               <Link
                 href="/games"
                 className="mt-2 inline-block text-sm text-primary hover:underline"
