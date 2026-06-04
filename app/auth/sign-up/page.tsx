@@ -231,7 +231,7 @@ function SignUpForm() {
         router.push(next);
       } else {
         setSignupSuccess(true);
-        showUserSuccess('Check your email', 'We sent a confirmation link. Click it to activate your account.');
+        showUserSuccess('Check your email', 'If an account exists for this email, we sent a confirmation link.');
       }
     } catch (error) {
       showUserError('Sign up failed. Please try again in a moment.');
@@ -267,7 +267,7 @@ function SignUpForm() {
             </div>
             <CardTitle className="text-2xl">Check your inbox</CardTitle>
             <CardDescription className="pt-2 text-base">
-              We sent a confirmation link to <span className="font-medium text-foreground">{form.getValues('email')}</span>
+              If an account exists for <span className="font-medium text-foreground">{form.getValues('email')}</span>, we sent a confirmation link.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -279,11 +279,11 @@ function SignUpForm() {
                 <Link href="/auth/sign-in">Back to sign in</Link>
               </Button>
               <p className="text-xs text-muted-foreground">
-                Already have an account? Use the button above to sign in instead.
+                Already have an account? Sign in instead — no new confirmation will be sent.
               </p>
             </div>
             <p className="text-xs text-muted-foreground">
-              Didn&apos;t receive it? Check spam or try signing up again in a few minutes.
+              Didn&apos;t receive it? Check spam. If you already have an account, use &quot;Back to sign in&quot; above.
             </p>
           </CardContent>
         </Card>

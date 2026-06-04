@@ -36,6 +36,17 @@ export interface ProfileReportLite {
   downvoteVotes: number;
   voteScore: number;
   createdAt: string;
+  // Full editable content — carried so the owner-only "My Reports" edit dialog can
+  // prefill without a second round-trip. All are base-schema columns, so they survive
+  // the incremental-column fallback query below. Optional everywhere else.
+  ramSpeed?: string | null;
+  refreshRate?: number | null;
+  customSettingsNotes?: string | null;
+  fps1PercentLow?: number | null;
+  notes?: string | null;
+  tweaks?: string | null;
+  issues?: string | null;
+  driverVersion?: string | null;
 }
 
 export interface ProfileStats {
@@ -190,6 +201,14 @@ function mapReportRow(row: Record<string, unknown>): ProfileReportLite {
     downvoteVotes: Number(row.downvote_votes ?? 0),
     voteScore: Number(row.vote_score ?? row.helpful_votes ?? 0),
     createdAt: String(row.created_at ?? ''),
+    ramSpeed: row.ram_speed != null ? String(row.ram_speed) : null,
+    refreshRate: row.refresh_rate != null ? Number(row.refresh_rate) : null,
+    customSettingsNotes: row.custom_settings_notes != null ? String(row.custom_settings_notes) : null,
+    fps1PercentLow: row.fps_1_percent_low != null ? Number(row.fps_1_percent_low) : null,
+    notes: row.notes != null ? String(row.notes) : null,
+    tweaks: row.tweaks != null ? String(row.tweaks) : null,
+    issues: row.issues != null ? String(row.issues) : null,
+    driverVersion: row.driver_version != null ? String(row.driver_version) : null,
   };
 }
 
@@ -217,7 +236,7 @@ export async function getProfileData(userId: string): Promise<ProfileData> {
       supabase
         .from('reports')
         .select(
-          'id, game_id, game_name, cpu, gpu, ram, resolution, settings_preset, avg_fps, performance_tier, status, helpful_votes, downvote_votes, vote_score, created_at'
+          'id, game_id, game_name, cpu, gpu, ram, ram_speed, resolution, refresh_rate, settings_preset, custom_settings_notes, avg_fps, fps_1_percent_low, performance_tier, status, notes, tweaks, issues, driver_version, helpful_votes, downvote_votes, vote_score, created_at'
         )
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
@@ -250,7 +269,7 @@ export async function getProfileData(userId: string): Promise<ProfileData> {
         const fallbackRes = await supabase
           .from('reports')
           .select(
-            'id, game_id, game_name, cpu, gpu, ram, resolution, settings_preset, avg_fps, performance_tier, status, helpful_votes, created_at'
+            'id, game_id, game_name, cpu, gpu, ram, ram_speed, resolution, refresh_rate, settings_preset, custom_settings_notes, avg_fps, fps_1_percent_low, performance_tier, status, notes, tweaks, issues, driver_version, helpful_votes, created_at'
           )
           .eq('user_id', userId)
           .order('created_at', { ascending: false })

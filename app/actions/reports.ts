@@ -115,11 +115,15 @@ export async function submitReportAction(input: SubmitReportInput): Promise<Repo
     }
     const tier = calculatePerformanceTier(avgFps)
 
-    // Hardware Catalog normalization (server-safe)
+    // Hardware Catalog normalization (server-safe). Used ONLY for the moderator
+    // "unknown hardware" hint below — we deliberately persist the user's EXACT typed
+    // CPU/GPU strings so reports display the hardware exactly as the reporter entered
+    // it. The similarity engine normalizes on the fly (getPerfIndexForRaw), so matching
+    // is unaffected by storing the raw values rather than the canonical form.
     const cpuNorm = normalizeHardwareSync(input.cpu)
     const gpuNorm = normalizeHardwareSync(input.gpu)
-    const storedCpu = cpuNorm.canonical ?? input.cpu
-    const storedGpu = gpuNorm.canonical ?? input.gpu
+    const storedCpu = input.cpu.trim()
+    const storedGpu = input.gpu.trim()
 
     // Basic plausibility note (future: full validation using perfIndex)
     let moderatorNotePrefix = ''
@@ -214,6 +218,170 @@ export async function submitReportAction(input: SubmitReportInput): Promise<Repo
       throw err
     }
     throw new Error(err?.message || 'Failed to submit report. Please try again.')
+  }
+}
+
+/**
+ * Editable subset of a report. Owners may correct these after submission (e.g. the game
+ * patched and FPS changed, or they fixed a typo). Identity-bound fields (game, user,
+ * status, vote counts, moderation) are deliberately excluded.
+ */
+export interface UpdateReportInput {
+  cpu: string
+  gpu: string
+  ram: number
+  ramSpeed?: string | null
+  resolution: string
+  refreshRate?: number | null
+  settingsPreset: GraphicsPreset
+  customSettingsNotes?: string | null
+  avgFps: number
+  fps1PercentLow?: number | null
+  notes?: string | null
+  tweaks?: string | null
+  issues?: string | null
+  driverVersion?: string | null
+}
+
+const GRAPHICS_PRESETS: GraphicsPreset[] = ['Low', 'Medium', 'High', 'Ultra', 'Custom']
+
+/** Trim a free-text field to a null-or-value, capped at `max` chars (defense in depth). */
+function cleanText(value: string | null | undefined, max: number): string | null {
+  if (value == null) return null
+  const t = String(value).trim()
+  if (!t) return null
+  return t.slice(0, max)
+}
+
+/**
+ * Edit one of the current user's own reports (post-submission corrections).
+ *
+ * Ownership is verified in-code before any write, then the update is performed with the
+ * service client constrained by `user_id`. This is required because reports publish as
+ * `status='approved'` while the owner-update RLS policy only covers `status='pending'`
+ * (schema.sql) — so a user-scoped update would silently match zero rows for live reports.
+ * The same "verify-then-service-write" pattern is used by moderateReportAction.
+ *
+ * performance_tier is always recomputed server-side from the (possibly new) avgFps so the
+ * authoritative tier can never drift from the number. game_id / game_name / user_id /
+ * status / vote counters / moderation fields are never touched.
+ */
+export async function updateReportAction(reportId: string, input: UpdateReportInput): Promise<Report> {
+  try {
+    if (!reportId || typeof reportId !== 'string') {
+      throw new Error('Missing report id.')
+    }
+
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      throw new Error('You must sign in to edit a report.')
+    }
+
+    // Ownership check via the user-scoped client (RLS lets a user read their own reports
+    // at any status). A missing row here means "not yours / doesn't exist" — same opaque
+    // message either way so we never confirm the existence of someone else's report.
+    const { data: existing, error: readErr } = await supabase
+      .from('reports')
+      .select('id, user_id')
+      .eq('id', reportId)
+      .maybeSingle()
+
+    if (readErr) {
+      console.error('[updateReportAction] read error', readErr)
+      throw new Error('Could not load the report to edit. Please try again.')
+    }
+    if (!existing || existing.user_id !== user.id) {
+      throw new Error('You can only edit your own reports.')
+    }
+
+    // Validate + recompute authoritative tier (mirrors submitReportAction).
+    const avgFps = Number(input.avgFps)
+    if (!Number.isFinite(avgFps) || avgFps < 1 || avgFps > 600) {
+      throw new Error('Average FPS must be a number between 1 and 600.')
+    }
+    const tier = calculatePerformanceTier(avgFps)
+
+    const ram = Number(input.ram)
+    if (!Number.isFinite(ram) || ram < 2 || ram > 256) {
+      throw new Error('RAM must be between 2 and 256 GB.')
+    }
+
+    const storedCpu = String(input.cpu ?? '').trim()
+    const storedGpu = String(input.gpu ?? '').trim()
+    if (storedCpu.length < 2 || storedGpu.length < 2) {
+      throw new Error('CPU and GPU are required.')
+    }
+
+    if (!GRAPHICS_PRESETS.includes(input.settingsPreset)) {
+      throw new Error('Invalid graphics preset.')
+    }
+
+    const onePctLow = input.fps1PercentLow != null && input.fps1PercentLow !== ('' as unknown)
+      ? Number(input.fps1PercentLow)
+      : null
+    if (onePctLow != null && (!Number.isFinite(onePctLow) || onePctLow <= 0)) {
+      throw new Error('1% low FPS must be a positive number.')
+    }
+
+    const refreshRate = input.refreshRate != null && input.refreshRate !== ('' as unknown)
+      ? Number(input.refreshRate)
+      : null
+    if (refreshRate != null && (!Number.isFinite(refreshRate) || refreshRate < 30 || refreshRate > 1000)) {
+      throw new Error('Refresh rate must be between 30 and 1000 Hz.')
+    }
+
+    const updatePayload = {
+      cpu: storedCpu,
+      gpu: storedGpu,
+      ram,
+      ram_speed: cleanText(input.ramSpeed, 20),
+      resolution: String(input.resolution ?? '').trim(),
+      refresh_rate: refreshRate,
+      settings_preset: input.settingsPreset,
+      // Custom notes only meaningful for the Custom preset; clear otherwise.
+      custom_settings_notes: input.settingsPreset === 'Custom' ? cleanText(input.customSettingsNotes, 300) : null,
+      avg_fps: avgFps,
+      fps_1_percent_low: onePctLow,
+      performance_tier: tier,
+      notes: cleanText(input.notes, 500),
+      tweaks: cleanText(input.tweaks, 300),
+      issues: cleanText(input.issues, 500),
+      driver_version: cleanText(input.driverVersion, 40),
+    }
+
+    // Service-client write, still scoped to this user's row as defense in depth.
+    const service = createServiceClient()
+    const { data: updated, error: updateErr } = await service
+      .from('reports')
+      .update(updatePayload)
+      .eq('id', reportId)
+      .eq('user_id', user.id)
+      .select('*')
+      .single()
+
+    if (updateErr || !updated) {
+      console.error('[updateReportAction] update error', updateErr)
+      throw new Error(updateErr?.message || 'Failed to save changes. Please try again.')
+    }
+
+    return mapDbReportToReport(updated)
+  } catch (err: any) {
+    console.error('[updateReportAction] error', err)
+    if (err?.message && (
+      err.message.includes('sign in') ||
+      err.message.includes('own reports') ||
+      err.message.includes('Average FPS') ||
+      err.message.includes('RAM must') ||
+      err.message.includes('required') ||
+      err.message.includes('preset') ||
+      err.message.includes('1% low') ||
+      err.message.includes('Refresh rate') ||
+      err.message.includes('report id')
+    )) {
+      throw err
+    }
+    throw new Error(err?.message || 'Failed to save changes. Please try again.')
   }
 }
 

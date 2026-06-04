@@ -161,14 +161,16 @@ function GameDetailInner({ game }: { game: Game }) {
   // Signed-vote handler. ReportCard owns the optimistic display (and undo); here we
   // just persist the vote (value 0 = remove) and invalidate so DB-recomputed counters
   // (score/reputation/badges) are pulled back in as the authoritative source of truth.
+  //
+  // We MUST await the refetch before resolving: ReportCard keeps its buttons locked
+  // (`voting`) until this promise settles. If we returned before the authoritative data
+  // landed, a rapid second click would race an in-flight refetch — the stale refetch
+  // resets the optimistic offset against an out-of-date base, corrupting the count.
+  // Awaiting serializes clicks so the displayed score stays consistent. Errors propagate
+  // so ReportCard can revert its optimistic state (it catches + logs).
   const handleVoteOptimistic = async (reportId: string, value: 1 | -1 | 0) => {
-    // Errors (auth/backend) are swallowed gracefully; ReportCard reverts + logs.
-    try {
-      await voteReport(reportId, value);
-      queryClient.invalidateQueries({ queryKey: ['game-reports', game.id] });
-    } catch {
-      // ignore — ReportCard already handles user feedback (reverts optimistic state)
-    }
+    await voteReport(reportId, value);
+    await queryClient.invalidateQueries({ queryKey: ['game-reports', game.id] });
   };
 
   return (

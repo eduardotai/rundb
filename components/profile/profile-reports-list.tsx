@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ThumbsUp, Clock, CheckCircle2, XCircle, Flag } from 'lucide-react';
+import { ThumbsUp, Clock, CheckCircle2, XCircle, Flag, Pencil } from 'lucide-react';
 import { PerformanceBadge } from '@/components/performance-badge';
 import type { ProfileReportLite } from '@/lib/server/profile';
 import { cn } from '@/lib/utils';
@@ -54,10 +54,13 @@ export function ProfileReportsList({
   reports,
   emptyMessage = 'No reports yet.',
   limit,
+  onEdit,
 }: {
   reports: ProfileReportLite[];
   emptyMessage?: string;
   limit?: number;
+  /** When provided, each row shows an Edit button that calls this with the report. */
+  onEdit?: (report: ProfileReportLite) => void;
 }) {
   const shown = limit ? reports.slice(0, limit) : reports;
 
@@ -113,6 +116,18 @@ export function ProfileReportsList({
           <div className="hidden w-20 text-right text-[11px] text-muted-foreground md:block">
             {formatDate(r.createdAt)}
           </div>
+
+          {onEdit && (
+            <button
+              type="button"
+              onClick={() => onEdit(r)}
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background/60 px-2 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              title={`Edit your ${r.gameName} report`}
+            >
+              <Pencil className="h-3 w-3" />
+              <span className="hidden sm:inline">Edit</span>
+            </button>
+          )}
         </li>
       ))}
     </ul>

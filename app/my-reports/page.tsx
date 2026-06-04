@@ -1,5 +1,16 @@
+import type { Metadata } from 'next';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
+import { getProfileData } from '@/lib/server/profile';
+import { MyReportsView } from '@/components/my-reports/my-reports-view';
+
+export const metadata: Metadata = {
+  title: 'RunDB · My Reports',
+  description: 'Track, filter, and edit the performance reports you have submitted to RunDB.',
+};
+
+// Always render fresh — a user's own reports (and their statuses) change as they submit/edit.
+export const dynamic = 'force-dynamic';
 
 export default async function MyReportsPage() {
   const supabase = await createClient();
@@ -9,17 +20,7 @@ export default async function MyReportsPage() {
     redirect(`/auth/sign-in?next=${encodeURIComponent('/my-reports')}`);
   }
 
-  return (
-    <div className="mx-auto max-w-6xl px-4 py-10">
-      <h1 className="text-3xl font-semibold tracking-tight">My Reports</h1>
-      <p className="mt-2 text-muted-foreground">
-        Your submitted reports will appear here.
-      </p>
+  const { reports, stats } = await getProfileData(user.id);
 
-      <div className="mt-8 rounded-xl border border-dashed border-border p-12 text-center text-muted-foreground">
-        <p>You haven&apos;t submitted any reports yet. Real submissions (Phase 2) are stored in Supabase and will appear here after full read migration + My Reports query impl.</p>
-        <p className="mt-2 text-xs">Reports publish immediately; community votes and automatic flags drive credibility.</p>
-      </div>
-    </div>
-  );
+  return <MyReportsView reports={reports} stats={stats} />;
 }
