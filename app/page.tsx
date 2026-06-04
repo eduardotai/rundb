@@ -4,63 +4,55 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { GameCard } from '@/components/game-card';
-import { CompatibilityChecker } from '@/components/compatibility-checker';
 import { ValueLoopExplainer } from '@/components/value-loop-explainer';
-import { getAllGames, getAllReportsAsync, computeGameStatsFromReports } from '@/lib/data';
+import { getTrendingGamesAsync, getReportsForGamesAsync, getGlobalCountsAsync, computeGameStatsFromReports } from '@/lib/data';
 import { ArrowRight, BarChart3, Users, Zap } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { GameStats } from '@/lib/types';
 
-// Phase 3: Home now uses real-data adapters (getAllGames + getAllReportsAsync) + React Query.
-// When NEXT_PUBLIC_USE_REAL_DATA=true: trending + aggregates driven by Supabase data.
-// Client-side derivation for trending (by report count) kept minimal (pure, after real fetch).
-// No direct mock-data calls or computeGameStats in this page. Full backward compat (flag=false uses mocks instantly).
-// Enhanced with graceful Skeleton loading states, error notices, and real stats passed to GameCards (via computeGameStatsFromReports).
-// Uses root QueryClientProvider from app/providers.tsx (no per-page client creation).
+// Home page. The "Trending right now" section ranks games by recent report
+// activity via getTrendingGamesAsync (last 7 days, with all-time top-up). Per-card
+// stats come from a batched getReportsForGamesAsync over just the visible games,
+// and hero counts from the lightweight getGlobalCountsAsync. All data access goes
+// through the lib/data adapters (React Query), which handle their own fallbacks.
 export default function Home() {
-  // Real adapter calls via RQ (replaces previous top-level sync mock imports + client computes).
-  const gamesQuery = useQuery({
-    queryKey: ['all-games'],
-    queryFn: () => getAllGames(),
+  // Trending = games with the most new reports in the last 7 days (adapter handles
+  // ranking + all-time top-up + fallbacks). Replaces the old all-games/all-reports derive.
+  const trendingQuery = useQuery({
+    queryKey: ['trending-games'],
+    queryFn: () => getTrendingGamesAsync(6, 7),
   });
 
-  const reportsQuery = useQuery({
-    queryKey: ['all-reports'],
-    queryFn: () => getAllReportsAsync(),
+  const trending = useMemo(() => trendingQuery.data?.games ?? [], [trendingQuery.data]);
+  const trendingIds = useMemo(() => trending.map((g) => g.id), [trending]);
+
+  // Per-card stats for ONLY the visible trending games (batched single query).
+  const statsQuery = useQuery({
+    queryKey: ['trending-game-stats', trendingIds],
+    queryFn: () => getReportsForGamesAsync(trendingIds),
+    enabled: trendingIds.length > 0,
   });
 
-  const games = gamesQuery.data || [];
-  const allReports = reportsQuery.data || [];
-
-  // Derive trending using same logic as before, but from real adapter data (when flag true).
-  // (Avoids needing a dedicated getTrendingGamesAsync while still using real sources for counts.)
-  const trending = useMemo(() => {
-    if (games.length === 0 || allReports.length === 0) return [];
-    return [...games]
-      .sort((a, b) => {
-        const aReports = allReports.filter((r) => r.gameId === a.id).length;
-        const bReports = allReports.filter((r) => r.gameId === b.id).length;
-        return bReports - aReports;
-      })
-      .slice(0, 6);
-  }, [games, allReports]);
-
-  // Phase 3: Derive real stats (using pure helper + adapter-fetched reports) for trending GameCards.
-  // Ensures badges, report counts, avg FPS in cards reflect real data (not mock) when flag=true.
-  // Falls back gracefully (map empty -> cards use their internal fallback).
   const gameStatsMap = useMemo(() => {
     const map: Record<string, GameStats> = {};
-    if (games.length === 0 || allReports.length === 0) return map;
-    games.forEach((g) => {
-      const greports = allReports.filter((r) => r.gameId === g.id);
-      map[g.id] = computeGameStatsFromReports(greports);
+    const byGame = statsQuery.data;
+    if (!byGame) return map;
+    trending.forEach((g) => {
+      const greports = byGame.get(g.id) ?? [];
+      if (greports.length > 0) map[g.id] = computeGameStatsFromReports(greports);
     });
     return map;
-  }, [games, allReports]);
+  }, [statsQuery.data, trending]);
 
-  const totalReports = allReports.length;
-  const totalGames = games.length;
+  // Lightweight global counts (head:true count queries — no row payloads).
+  const countsQuery = useQuery({
+    queryKey: ['global-counts'],
+    queryFn: () => getGlobalCountsAsync(),
+  });
+
+  const totalReports = countsQuery.data?.totalReports ?? 0;
+  const totalGames = countsQuery.data?.totalGames ?? 0;
   const avgReportsPerGame = totalGames > 0 ? Math.round(totalReports / totalGames) : 0;
 
   // Resilience for aggressive privacy tools / adblockers (the play.google.com/log + Supabase blocks some users see).
@@ -69,12 +61,12 @@ export default function Home() {
   const [showLoadingNotice, setShowLoadingNotice] = useState(false);
   useMemo(() => {
     const t = setTimeout(() => {
-      if ((gamesQuery.isLoading || reportsQuery.isLoading) && trending.length === 0) {
+      if (trendingQuery.isLoading && trending.length === 0) {
         setShowLoadingNotice(true);
       }
     }, 2200);
     return () => clearTimeout(t);
-  }, [gamesQuery.isLoading, reportsQuery.isLoading, trending.length]);
+  }, [trendingQuery.isLoading, trending.length]);
 
   return (
     <div className="mx-auto max-w-7xl px-4 pb-20">
@@ -210,21 +202,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Compatibility Checker — front and center */}
-      <div className="mb-16">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-semibold tracking-tight">Check your rig</h2>
-            <p className="text-muted-foreground">See predicted performance across popular titles instantly.</p>
-          </div>
-          <Button asChild variant="ghost" size="sm" className="hidden md:inline-flex hover:bg-accent hover:text-accent-foreground">
-            <Link href="/compatibility">Full checker <ArrowRight className="ml-1 h-4 w-4" /></Link>
-          </Button>
-        </div>
-        <CompatibilityChecker embedded />
-      </div>
-
-      {/* Trending Games — now sourced from real adapters + RQ when flag true */}
+      {/* Trending Games — ranked by recent report activity (getTrendingGamesAsync) */}
       <div className="mb-16">
         <div className="mb-4 flex items-baseline justify-between">
           <h2 className="text-2xl font-semibold tracking-tight">Trending right now</h2>
@@ -233,7 +211,7 @@ export default function Home() {
           </Link>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          {(gamesQuery.isLoading || reportsQuery.isLoading) && trending.length === 0 ? (
+          {trendingQuery.isLoading && trending.length === 0 ? (
             // Graceful loading skeletons for trending cards (Phase 3)
             Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="rounded-2xl border border-border bg-card overflow-hidden">
@@ -255,16 +233,10 @@ export default function Home() {
                 imageSizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1280px) 16vw, 180px"
               />
             ))
-          ) : games.length === 0 ? (
-            <div className="col-span-full rounded-2xl border border-dashed border-border py-10 text-center">
-              <p className="text-muted-foreground">No games in the database yet — the database grows through community reports and the ingest pipeline.</p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Run the ingest queue and worker to populate Supabase before public launch.
-              </p>
-            </div>
           ) : (
+            // trending is empty (no games to rank, even after the all-time top-up + starter fallback).
             <div className="col-span-full rounded-2xl border border-dashed border-border py-10 text-center text-muted-foreground">
-              <p>Community reports will rank titles here. Save a rig, browse games, or submit a few reports to see activity.</p>
+              <p>No trending games yet — community reports rank titles here as they come in. Browse the catalog or submit a report to get things moving.</p>
               <Link
                 href="/games"
                 className="mt-2 inline-block text-sm text-primary hover:underline"
@@ -276,17 +248,17 @@ export default function Home() {
         </div>
 
         {/* Privacy tools / adblocker resilience notice — directly addresses the play.google.com/log ERR_BLOCKED_BY_CLIENT + stuck loading some users hit */}
-        {(showLoadingNotice || (gamesQuery.isLoading || reportsQuery.isLoading)) && trending.length === 0 && (
+        {(showLoadingNotice || trendingQuery.isLoading) && trending.length === 0 && (
           <div className="mt-3 text-center text-xs text-amber-400/90">
             Still loading live data… If you use a strict ad blocker or Brave Shields, some requests (including Google telemetry during auth) get blocked.
             The app works fine — try disabling the blocker for this site or check the Supabase connection.
           </div>
         )}
 
-        {(gamesQuery.isLoading || reportsQuery.isLoading) && trending.length > 0 && (
+        {trendingQuery.isFetching && trending.length > 0 && (
           <div className="text-center text-sm text-muted-foreground mt-2">Refreshing trending…</div>
         )}
-        {(gamesQuery.isError || reportsQuery.isError) && (
+        {trendingQuery.isError && (
           <div className="text-center text-sm text-amber-500 mt-2">Some live data unavailable — showing available results.</div>
         )}
       </div>
