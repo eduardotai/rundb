@@ -11,6 +11,7 @@ import { igdbGameMatchesSeed } from '@/lib/igdb-game-match'
 import { steamLibraryCoverUrl } from '@/lib/cover-image-url'
 
 const RATE_LIMIT_MS = 300
+const MAX_IGDB_429_RETRIES = 5
 
 export interface IngestGameSeed {
   name: string
@@ -68,9 +69,7 @@ async function igdbRequest(
   endpoint: string,
   body: string
 ): Promise<any[]> {
-  const maxRetries = 5
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+  for (let attempt = 0; attempt <= MAX_IGDB_429_RETRIES; attempt++) {
     await sleep(RATE_LIMIT_MS)
     const token = await getIgdbToken(clientId, clientSecret)
     const res = await fetch(`https://api.igdb.com/v4/${endpoint}`, {
@@ -84,21 +83,22 @@ async function igdbRequest(
     })
 
     if (res.status === 429) {
-      if (attempt === maxRetries) {
-        throw new Error(`IGDB ${endpoint} rate limited after ${maxRetries + 1} attempts`)
+      if (attempt === MAX_IGDB_429_RETRIES) {
+        throw new Error(`IGDB ${endpoint} rate limited after ${MAX_IGDB_429_RETRIES + 1} attempts`)
       }
-      await sleep(2000 * (attempt + 1))
+      const retryAfterSeconds = Number(res.headers.get('retry-after'))
+      const retryDelayMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+        ? retryAfterSeconds * 1000
+        : 2000 * (attempt + 1)
+      await sleep(retryDelayMs)
       continue
     }
-
     if (!res.ok) {
       throw new Error(`IGDB ${endpoint} error ${res.status}: ${await res.text()}`)
     }
-
     return res.json()
   }
-
-  throw new Error(`IGDB ${endpoint} request failed`)
+  throw new Error(`IGDB ${endpoint} request exhausted retries`)
 }
 
 async function uploadImageToStorage(
