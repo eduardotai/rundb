@@ -80,14 +80,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
 }
 
-async function fetchJson(url: string, retries = 1): Promise<any | null> {
+async function fetchJson(url: string, retries = 1): Promise<unknown> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
     try {
       const res = await fetch(url, {
         signal: controller.signal,
-        headers: { 'User-Agent': 'RunDB-LatestImporter/1.0 (+https://store.steampowered.com/)' },
+        headers: { 'User-Agent': 'RunDB-LatestImporter/1.0 (+https://github.com/example/rundb)' },
       })
       if (res.status === 429 || res.status >= 500) {
         if (attempt < retries) {
@@ -124,13 +124,14 @@ export async function discoverLatestSteamGames(opts: DiscoverOptions = {}): Prom
   if (!featured) {
     throw new Error('Steam featuredcategories endpoint unreachable')
   }
+  const featuredSections = featured as Record<string, { items?: Array<{ id?: unknown }> } | undefined>
 
   const sections = ['new_releases', 'top_sellers']
   if (includeUnreleased) sections.push('coming_soon')
 
   const appIds = new Set<string>()
   for (const key of sections) {
-    const items = featured?.[key]?.items
+    const items = featuredSections[key]?.items
     if (Array.isArray(items)) {
       for (const it of items) {
         if (it?.id != null) appIds.add(String(it.id))
@@ -147,7 +148,7 @@ export async function discoverLatestSteamGames(opts: DiscoverOptions = {}): Prom
     const detail = await fetchJson(
       `https://store.steampowered.com/api/appdetails?appids=${appId}&cc=us&l=en`
     )
-    const res = detail?.[appId] as SteamAppDetailsResponse | undefined
+    const res = (detail as Record<string, SteamAppDetailsResponse> | null)?.[appId]
     const seed = appDetailsToSeed(appId, res, { sinceYear, includeUnreleased })
     if (seed && !seenSlugs.has(seed.slug)) {
       seeds.push(seed)
