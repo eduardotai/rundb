@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Report, UserPC } from '@/lib/types';
+import type { MatchBreakdown } from '@/lib/similarity';
 import { PerformanceBadge } from './performance-badge';
 import { formatRelativeTime, calculateHardwareAwareSimilarity as calculateSimilarity } from '@/lib/data';
 import { normalizeHardwareSync } from '@/lib/normalize-hardware';
@@ -18,6 +19,7 @@ import {
   ShieldCheck,
   Zap,
 } from 'lucide-react';
+import { showUserError } from '@/lib/toast';
 
 // Reports store the short model the user reported (e.g. "RTX 4070", "Ryzen 7 5700X3D").
 // For display we resolve it to the full catalog name (e.g. "NVIDIA GeForce RTX 4070").
@@ -39,10 +41,23 @@ interface ReportCardProps {
   onHelpful?: (id: string) => void | Promise<void>;
   onVote?: (id: string, value: 1 | -1 | 0) => void | Promise<void>;
   onViewFull?: (report: Report) => void;
+  canVote?: boolean;
   compact?: boolean;
+  showGame?: boolean;
+  breakdown?: MatchBreakdown;
 }
 
-export function ReportCard({ report, userRig, onHelpful, onVote, onViewFull, compact = false }: ReportCardProps) {
+export function ReportCard({
+  report,
+  userRig,
+  onHelpful,
+  onVote,
+  onViewFull,
+  canVote = Boolean(onVote || onHelpful),
+  compact = false,
+  showGame = false,
+  breakdown,
+}: ReportCardProps) {
   const [expanded, setExpanded] = useState(false);
   // Which way the current user has voted (drives button highlight + undo).
   const [userVote, setUserVote] = useState<1 | -1 | 0>(0);
@@ -58,7 +73,7 @@ export function ReportCard({ report, userRig, onHelpful, onVote, onViewFull, com
 
   const similarity = userRig ? calculateSimilarity(report, userRig) : 0;
   const isSimilar = similarity > 65;
-  const hasDetails = !!(report.tweaks || report.issues || report.driverVersion || report.notes || (report as any).kernel || (report as any).distro);
+  const hasDetails = !!(report.tweaks || report.issues || report.driverVersion || report.notes || report.kernel || report.distro);
   const baseScore = report.voteScore ?? report.helpfulVotes ?? 0;
   const displayedScore = baseScore + pendingDelta;
   const reportBadge = report.credibilityBadge || (displayedScore >= 10 ? 'Trusted' : displayedScore >= 3 ? 'Helpful' : 'New');
@@ -76,6 +91,10 @@ export function ReportCard({ report, userRig, onHelpful, onVote, onViewFull, com
   const handleVote = async (value: 1 | -1, e: React.MouseEvent) => {
     e.stopPropagation();
     if (voting) return;
+    if (!canVote) {
+      showUserError('Sign in to vote on reports.');
+      return;
+    }
 
     const prevVote = userVote;
     // Clicking the already-active direction clears the vote (undo).
@@ -94,11 +113,11 @@ export function ReportCard({ report, userRig, onHelpful, onVote, onViewFull, com
           ? onHelpful?.(report.id)
           : undefined;
       if (maybePromise instanceof Promise) await maybePromise;
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Revert optimistic state on failure.
       setUserVote(prevVote);
       setPendingDelta((d) => d - delta);
-      console.warn('[ReportCard] vote failed:', err?.message || err);
+      console.warn('[ReportCard] vote failed:', err instanceof Error ? err.message : err);
     } finally {
       setVoting(false);
     }
@@ -120,6 +139,11 @@ export function ReportCard({ report, userRig, onHelpful, onVote, onViewFull, com
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
+          {showGame && (report.gameName || report.game?.name) && (
+            <div className="mb-1 truncate text-xs font-semibold uppercase text-primary">
+              {report.gameName || report.game?.name}
+            </div>
+          )}
           <div className="flex flex-col gap-1 text-sm">
             {/* Full hardware names (e.g. "NVIDIA GeForce RTX 4070", "AMD Ryzen 7 5700X3D") —
                 stacked on their own lines so the entire name is shown, not just the model. */}
@@ -175,9 +199,20 @@ export function ReportCard({ report, userRig, onHelpful, onVote, onViewFull, com
         </div>
       )}
 
-      {isSimilar && (
-        <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400">
-          <Zap className="h-3 w-3" /> {similarity}% match to your rig
+      {(breakdown || isSimilar) && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400">
+            <Zap className="h-3 w-3" /> {breakdown ? breakdown.score : similarity}% match
+          </span>
+          {breakdown && (
+            <>
+              <MatchChip label="GPU" level={breakdown.gpu} />
+              <MatchChip label="CPU" level={breakdown.cpu} />
+              <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                {report.ram}GB{breakdown.ram === 'exact' ? ' ok' : ''}
+              </span>
+            </>
+          )}
         </div>
       )}
 
@@ -194,12 +229,14 @@ export function ReportCard({ report, userRig, onHelpful, onVote, onViewFull, com
             <motion.button
               onClick={(e) => handleVote(1, e)}
               disabled={voting}
+              aria-disabled={!canVote}
               whileTap={{ scale: 0.82 }}
               className={cn(
                 'relative grid h-6 w-7 place-items-center transition hover:bg-muted hover:text-foreground disabled:opacity-60',
+                !canVote && 'opacity-50 hover:bg-transparent hover:text-muted-foreground',
                 userVote === 1 && 'text-emerald-400'
               )}
-              title={userVote === 1 ? 'Remove your upvote' : 'Upvote report credibility'}
+              title={!canVote ? 'Sign in to upvote reports' : userVote === 1 ? 'Remove your upvote' : 'Upvote report credibility'}
               aria-pressed={userVote === 1}
             >
               <AnimatePresence>
@@ -243,12 +280,14 @@ export function ReportCard({ report, userRig, onHelpful, onVote, onViewFull, com
             <motion.button
               onClick={(e) => handleVote(-1, e)}
               disabled={voting}
+              aria-disabled={!canVote}
               whileTap={{ scale: 0.82 }}
               className={cn(
                 'relative grid h-6 w-7 place-items-center transition hover:bg-muted hover:text-foreground disabled:opacity-60',
+                !canVote && 'opacity-50 hover:bg-transparent hover:text-muted-foreground',
                 userVote === -1 && 'text-rose-400'
               )}
-              title={userVote === -1 ? 'Remove your downvote' : 'Downvote report credibility'}
+              title={!canVote ? 'Sign in to downvote reports' : userVote === -1 ? 'Remove your downvote' : 'Downvote report credibility'}
               aria-pressed={userVote === -1}
             >
               <AnimatePresence>
@@ -313,14 +352,14 @@ export function ReportCard({ report, userRig, onHelpful, onVote, onViewFull, com
               <span className="font-medium text-muted-foreground">Driver:</span> {report.driverVersion}
             </div>
           )}
-          {(report as any).kernel && (
+          {report.kernel && (
             <div className="text-xs text-muted-foreground">
-              <span className="font-medium">Kernel:</span> {(report as any).kernel}
+              <span className="font-medium">Kernel:</span> {report.kernel}
             </div>
           )}
-          {(report as any).distro && (
+          {report.distro && (
             <div className="text-xs text-muted-foreground">
-              <span className="font-medium">Distro:</span> {(report as any).distro}
+              <span className="font-medium">Distro:</span> {report.distro}
             </div>
           )}
           {report.issues && (
@@ -331,5 +370,20 @@ export function ReportCard({ report, userRig, onHelpful, onVote, onViewFull, com
         </div>
       )}
     </div>
+  );
+}
+
+function MatchChip({ label, level }: { label: string; level: 'exact' | 'close' | 'far' }) {
+  const styles: Record<typeof level, string> = {
+    exact: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400',
+    close: 'border-amber-500/20 bg-amber-500/10 text-amber-400',
+    far: 'border-border bg-muted/40 text-muted-foreground',
+  };
+  const text = level === 'exact' ? 'exact' : level === 'close' ? 'close' : 'differs';
+
+  return (
+    <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-medium', styles[level])}>
+      {label} {text}
+    </span>
   );
 }

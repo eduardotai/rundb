@@ -44,6 +44,8 @@ import * as coverResolver from './game-cover-resolver'
 import { getCatalogCover } from './game-cover-catalog'
 import { upgradeCoverImageSrc } from './cover-image-url'
 import { cleanPublicReportNotes } from './report-notes'
+import type { MatchFilters, RigMatch } from './similarity'
+import { rankAndFilterMatches } from './similarity'
 
 export const ALLOW_MOCK_DATA =
   process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_ALLOW_MOCK_DATA === 'true'
@@ -962,6 +964,14 @@ export async function getAllReportsAsync(): Promise<Report[]> {
   return Promise.resolve(getAllReports())
 }
 
+export async function getMatchesForRigAsync(
+  rig: UserPC,
+  filters: MatchFilters = {}
+): Promise<RigMatch[]> {
+  const reports = await getAllReportsAsync()
+  return rankAndFilterMatches(reports, rig, filters)
+}
+
 /**
  * Async real-data version of getFilteredGlobalReports (basic reports read).
  * Fetches approved reports from Supabase, maps snake->camel.
@@ -1216,9 +1226,9 @@ export async function voteReport(reportId: string, value: 1 | -1 | 0): Promise<v
     return voteReportAction(reportId, value)
   }
   if (USE_REAL) {
-    console.warn('[data] USE_REAL=true but Supabase not configured; report vote is a no-op.')
+    console.warn('[data] USE_REAL=true but Supabase not configured; report voting is unavailable.')
   }
-  return Promise.resolve()
+  throw new Error('You must sign in to vote on reports.')
 }
 
 export async function upvoteReport(reportId: string): Promise<void> {

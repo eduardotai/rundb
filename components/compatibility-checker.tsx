@@ -6,28 +6,24 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { PerformanceBadge } from './performance-badge';
-import { ReportCard } from './report-card';
+import { MatchFeed } from '@/components/match-feed';
 import { ValueLoopExplainer } from './value-loop-explainer';
-import { Game, UserPC, MAIN_RESOLUTIONS, MainResolution } from '@/lib/types';
+import { Game, UserPC, MAIN_RESOLUTIONS } from '@/lib/types';
 import {
   loadMyRigAsync,
   saveMyRigAsync,
   clearMyRigAsync,
-  predictForUserRigAsync,
   getAllGames,
-  getReportsForGameAsync,
 } from '@/lib/data';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
-import { showUserError, showUserSuccess } from '@/lib/toast';
-import { Monitor, Save, Trash2, X, Cpu } from 'lucide-react';
+import { showUserError } from '@/lib/toast';
+import { Monitor, Save, Trash2 } from 'lucide-react';
 import { HardwareDetectButton } from '@/components/hardware-detect-button';
 import { DetectedHardwareBanner } from '@/components/detected-hardware-banner';
 import { PasteHardwareModal } from '@/components/paste-hardware-modal';
 import type { DetectedHardware } from '@/lib/types';
 import { mergeDetected } from '@/lib/hardware-detector';
-import { cn } from '@/lib/utils';
 import { sanitizeFullName } from '@/lib/sanitize';
 import { HardwareCombobox } from '@/components/hardware-combobox';
 
@@ -36,9 +32,12 @@ interface CompatibilityCheckerProps {
   preselectedGameSlug?: string;
 }
 
-export function CompatibilityChecker({ embedded = false, preselectedGameSlug }: CompatibilityCheckerProps) {
+function coerceMainResolution(value: string | undefined) {
+  return ((MAIN_RESOLUTIONS as readonly string[]).includes(value || '') ? value : MAIN_RESOLUTIONS[1]) as string;
+}
+
+export function CompatibilityChecker({ embedded = false }: CompatibilityCheckerProps) {
   const [myRig, setMyRig] = useState<UserPC | null>(null);
-  const [selectedGames, setSelectedGames] = useState<string[]>(preselectedGameSlug ? [preselectedGameSlug] : []);
   const [cpu, setCpu] = useState('');
   const [gpu, setGpu] = useState('');
   const [ram, setRam] = useState(32);
@@ -55,14 +54,6 @@ export function CompatibilityChecker({ embedded = false, preselectedGameSlug }: 
   const [detectedRig, setDetectedRig] = useState<DetectedHardware | null>(null);
   const [detectionState, setDetectionState] = useState<'idle' | 'detecting' | 'detected' | 'applied'>('idle');
   const [pasteModalOpen, setPasteModalOpen] = useState(false);
-
-  // Phase 2 complete: Predictions computed async so they can use real DB reports + similarity scoring
-  // when NEXT_PUBLIC_USE_REAL_DATA=true (via predictForUserRigAsync + getReportsForGameAsync)
-  const [predictions, setPredictions] = useState<Array<{
-    game: Game;
-    prediction: Awaited<ReturnType<typeof predictForUserRigAsync>> | null;
-    sampleReports: Awaited<ReturnType<typeof getReportsForGameAsync>>;
-  }>>([]);
 
   const supabase = createClient();
 
@@ -83,8 +74,7 @@ export function CompatibilityChecker({ embedded = false, preselectedGameSlug }: 
           setCpu(saved.cpu);
           setGpu(saved.gpu);
           setRam(saved.ram);
-          const r = (saved.resolution || '2560x1440') as any;
-          setResolution(MAIN_RESOLUTIONS.includes(r) ? r : '2560x1440');
+          setResolution(coerceMainResolution(saved.resolution));
         }
       } catch (e) {
         console.warn('[CompatibilityChecker] loadMyRigAsync error', e);
@@ -118,8 +108,7 @@ export function CompatibilityChecker({ embedded = false, preselectedGameSlug }: 
               setCpu(saved.cpu);
               setGpu(saved.gpu);
               setRam(saved.ram);
-              const r = saved.resolution || MAIN_RESOLUTIONS[1];
-              setResolution(((MAIN_RESOLUTIONS as readonly string[]).includes(r) ? r : MAIN_RESOLUTIONS[1]) as string);
+              setResolution(coerceMainResolution(saved.resolution));
             } else {
               // Signed out or no rig: clear form state
               setMyRig(null);
@@ -140,54 +129,6 @@ export function CompatibilityChecker({ embedded = false, preselectedGameSlug }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Recompute predictions whenever rig, selection, or games list changes.
-  // Uses the real-data async paths when the flag is on → real reports from DB + pure similarity scoring.
-  useEffect(() => {
-    let cancelled = false;
-
-    async function recomputePredictions() {
-      if (!myRig || selectedGames.length === 0 || allGames.length === 0) {
-        if (!cancelled) setPredictions([]);
-        return;
-      }
-
-      const results = await Promise.all(
-        selectedGames.map(async (slug) => {
-          const game = allGames.find((g) => g.slug === slug);
-          if (!game) return null;
-
-          let pred: Awaited<ReturnType<typeof predictForUserRigAsync>> | null = null;
-          let sample: Awaited<ReturnType<typeof getReportsForGameAsync>> = [];
-
-          try {
-            pred = await predictForUserRigAsync(myRig, game.id);
-          } catch (e) {
-            console.warn('[CompatibilityChecker] predictForUserRigAsync failed', e);
-          }
-
-          try {
-            const reports = await getReportsForGameAsync(game.id);
-            sample = reports.slice(0, 3);
-          } catch (e) {
-            console.warn('[CompatibilityChecker] getReportsForGameAsync failed', e);
-          }
-
-          return { game, prediction: pred, sampleReports: sample };
-        })
-      );
-
-      if (!cancelled) {
-        setPredictions(results.filter((r): r is NonNullable<typeof r> => r !== null));
-      }
-    }
-
-    recomputePredictions();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [myRig, selectedGames, allGames]);
-
   const saveRig = async () => {
     const safeCpu = sanitizeFullName(cpu);
     const safeGpu = sanitizeFullName(gpu);
@@ -206,7 +147,7 @@ export function CompatibilityChecker({ embedded = false, preselectedGameSlug }: 
       toast.success('Rig saved!', {
         description: 'Compatibility predictions will now use your hardware (persisted to DB for logged-in users).',
       });
-    } catch (e: unknown) {
+    } catch {
       showUserError('Could not save your rig. Please try again.');
       // Still update local state so UI works even if DB write had transient issue
       setMyRig(rig);
@@ -242,7 +183,6 @@ export function CompatibilityChecker({ embedded = false, preselectedGameSlug }: 
     setGpu('');
     setRam(32);
     setResolution(MAIN_RESOLUTIONS[1]);
-    setPredictions([]);
 
     try {
       await clearMyRigAsync();
@@ -259,13 +199,17 @@ export function CompatibilityChecker({ embedded = false, preselectedGameSlug }: 
     toast.info('My Rig cleared');
   };
 
-  const toggleGame = (slug: string) => {
-    setSelectedGames((prev) =>
-      prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug]
-    );
-  };
-
   const isLoading = isLoadingRig || isLoadingGames;
+
+  // Has the form diverged from the saved rig? When no rig is saved yet, there is always
+  // something to save. Once a rig exists (incl. one saved on another page), the button is
+  // only meaningful if the user has edited a field — otherwise matches already show below.
+  const isDirty =
+    !myRig ||
+    cpu !== myRig.cpu ||
+    gpu !== myRig.gpu ||
+    ram !== myRig.ram ||
+    resolution !== coerceMainResolution(myRig.resolution);
 
   return (
     <div className={embedded ? '' : 'max-w-5xl mx-auto'}>
@@ -350,12 +294,12 @@ export function CompatibilityChecker({ embedded = false, preselectedGameSlug }: 
           </div>
 
           <div className="flex gap-3">
-            <Button 
-              onClick={saveRig} 
-              className="gap-2 bg-white text-black font-medium hover:bg-white/90" 
-              disabled={isSaving || isLoadingRig}
+            <Button
+              onClick={saveRig}
+              className="gap-2 bg-white text-black font-medium hover:bg-white/90"
+              disabled={isSaving || isLoadingRig || (!!myRig && !isDirty)}
             >
-              <Save className="h-4 w-4" /> {isSaving ? 'Saving...' : 'Save My Rig'}
+              <Save className="h-4 w-4" /> {isSaving ? 'Saving...' : myRig ? 'Update Rig' : 'Save My Rig'}
             </Button>
             {myRig && (
               <Button
@@ -370,84 +314,7 @@ export function CompatibilityChecker({ embedded = false, preselectedGameSlug }: 
             {isLoadingRig && <span className="text-xs text-muted-foreground self-center">Loading rig…</span>}
           </div>
 
-          {/* Game selector */}
-          <div>
-            <Label className="mb-2 block">Check these games</Label>
-            {isLoadingGames ? (
-              <div className="text-sm text-muted-foreground">Loading games…</div>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {allGames.slice(0, 12).map((g) => {
-                  const active = selectedGames.includes(g.slug);
-                  return (
-                    <button
-                      key={g.slug}
-                      onClick={() => toggleGame(g.slug)}
-                      className={cn(
-                        'rounded-full border px-3 py-1 text-sm transition',
-                        active
-                          ? 'border-primary bg-white text-black shadow-sm'
-                          : 'border-border hover:bg-muted'
-                      )}
-                    >
-                      {g.name}
-                    </button>
-                  );
-                })}
-                {selectedGames.length > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setSelectedGames([])}
-                    className="h-7 gap-1 px-2 text-xs text-destructive/80 hover:bg-destructive/10 hover:text-destructive"
-                  >
-                    <X className="h-3 w-3" />
-                    Clear
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Results — now driven by async real-DB predictions when flag enabled */}
-          {myRig && predictions.length > 0 && (
-            <div className="space-y-4 pt-2">
-              <div className="text-sm font-medium text-muted-foreground">Predictions for your rig</div>
-
-              {predictions.map(({ game, prediction, sampleReports }) => (
-                <div key={game.slug} className="rounded-xl border border-border bg-background p-4">
-                  <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
-                    <div>
-                      <div className="font-semibold">{game.name}</div>
-                      {prediction && (
-                        <div className="mt-1 text-sm text-muted-foreground">{prediction.explanation}</div>
-                      )}
-                    </div>
-                    {prediction && <PerformanceBadge tier={prediction.predictedTier} size="lg" />}
-                  </div>
-
-                  {prediction && (
-                    <div className="mt-2 text-sm">
-                      <span className="text-muted-foreground">Recommended:</span> {prediction.recommendedSettings}
-                    </div>
-                  )}
-
-                  {sampleReports.length > 0 && (
-                    <div className="mt-3">
-                      <div className="mb-2 text-xs uppercase tracking-widest text-muted-foreground">
-                        Similar reports
-                      </div>
-                      <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-                        {sampleReports.map((r) => (
-                          <ReportCard key={r.id} report={r} userRig={myRig} compact />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+          {myRig && <MatchFeed rig={myRig} allGames={allGames} />}
 
           {isLoading && !myRig && (
             <div className="rounded-lg bg-muted/40 p-4 text-center text-sm text-muted-foreground">

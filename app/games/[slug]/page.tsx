@@ -11,7 +11,7 @@ import { SubmitReportDialog } from '@/components/submit-report-dialog';
 import { CompatibilityChecker } from '@/components/compatibility-checker';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { X } from 'lucide-react';
+import { ShieldCheck, Sparkles, X } from 'lucide-react';
 import {
   loadMyRigAsync,
   voteReport,
@@ -25,6 +25,7 @@ import { upgradeCoverImageSrc } from '@/lib/cover-image-url';
 import Image from 'next/image';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
+import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 
 export default function GameDetailPage() {
   const params = useParams<{ slug: string }>();
@@ -70,17 +71,22 @@ function GameDetailInner({ game }: { game: Game }) {
   const [filters, setFilters] = useState<ReportFilters>({});
   const [showSubmit, setShowSubmit] = useState(false);
   const [myRig, setMyRig] = useState<UserPC | null>(null);
+  const [canVote, setCanVote] = useState(false);
   // Error state for real hero cover (robustness for external real banner URLs)
   const [heroImgError, setHeroImgError] = useState(false);
   const heroCoverSrc = upgradeCoverImageSrc(game.coverImage, game.steamAppId);
 
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   // Phase 2 full DB rig persistence (Master Plan): load from user_rigs/profiles when logged in,
   // localStorage guest fallback only. Listener keeps teaser + ReportCard similarity highlights in sync
   // on sign in/out (without page reload). The embedded CompatibilityChecker manages its own rig state.
   useEffect(() => {
     let mounted = true;
+
+    function userCanVote(user: User | null | undefined) {
+      return Boolean(user?.id && user.email && !(user as { is_anonymous?: boolean }).is_anonymous);
+    }
 
     async function loadRig() {
       try {
@@ -92,9 +98,17 @@ function GameDetailInner({ game }: { game: Game }) {
     }
 
     loadRig();
+    supabase.auth.getUser()
+      .then((result: { data: { user: User | null } }) => {
+        if (mounted) setCanVote(userCanVote(result.data.user));
+      })
+      .catch(() => {
+        if (mounted) setCanVote(false);
+      });
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(() => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       if (mounted) {
+        setCanVote(userCanVote(session?.user));
         loadMyRigAsync()
           .then((saved) => {
             if (mounted) setMyRig(saved);
@@ -107,7 +121,7 @@ function GameDetailInner({ game }: { game: Game }) {
       mounted = false;
       authListener?.subscription?.unsubscribe();
     };
-  }, []);
+  }, [supabase]);
 
   // Phase 3 real-data paths via adapter (when NEXT_PUBLIC_USE_REAL_DATA=true):
   // - Reports list (filtered): getReportsForGameAsync(gameId, filters) — Supabase + RLS-approved + map + pure filterReports inside adapter
@@ -173,13 +187,37 @@ function GameDetailInner({ game }: { game: Game }) {
     await queryClient.invalidateQueries({ queryKey: ['game-reports', game.id] });
   };
 
+  const hasCommunityReports = stats.totalReports > 0;
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
       {/* Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <Link href="/games" className="text-sm text-muted-foreground hover:text-foreground">← All games</Link>
-          <h1 className="mt-1 text-4xl font-semibold tracking-tighter">{game.name}</h1>
+          <div className="mt-1 flex flex-wrap items-center gap-3">
+            <h1 className="text-4xl font-semibold tracking-tighter">{game.name}</h1>
+            <Badge
+              variant="outline"
+              className={cn(
+                'gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold',
+                hasCommunityReports
+                  ? 'border-cyan-400/35 bg-cyan-500/10 text-cyan-200'
+                  : 'border-amber-400/40 bg-amber-500/10 text-amber-200'
+              )}
+            >
+              {hasCommunityReports ? (
+                <ShieldCheck className="h-3.5 w-3.5" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" />
+              )}
+              {statsQuery.isLoading
+                ? 'Checking reports'
+                : hasCommunityReports
+                  ? `${stats.totalReports} community ${stats.totalReports === 1 ? 'report' : 'reports'}`
+                  : 'Needs first report'}
+            </Badge>
+          </div>
           <div className="mt-1 text-muted-foreground">
             {game.developer} • {game.releaseYear} • {game.genres.join(', ')}
           </div>
@@ -459,6 +497,7 @@ function GameDetailInner({ game }: { game: Game }) {
                   report={report}
                   userRig={myRig}
                   onVote={handleVoteOptimistic}
+                  canVote={canVote}
                 />
               ))
             ) : (

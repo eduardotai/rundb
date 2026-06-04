@@ -22,6 +22,7 @@ import type { AdminReport, Report, SubmitReportInput, PerformanceTier, ReportSta
 import { normalizeSlug } from '@/lib/utils'
 import { normalizeHardwareSync } from '@/lib/normalize-hardware'
 import { cleanPublicReportNotes } from '@/lib/report-notes'
+import type { User } from '@supabase/supabase-js'
 
 const REPORT_STATUSES: ReportStatus[] = ['pending', 'approved', 'rejected', 'flagged']
 
@@ -46,6 +47,10 @@ function calculatePerformanceTier(avgFps: number): PerformanceTier {
   if (avgFps >= 40) return 'Playable'
   if (avgFps >= 25) return 'Struggling'
   return 'Unplayable'
+}
+
+function isRegisteredUser(user: User | null): boolean {
+  return Boolean(user?.id && user.email && !user.is_anonymous)
 }
 
 function mapDbReportToReport(row: any): Report {
@@ -397,7 +402,7 @@ export async function voteReportAction(reportId: string, value: 1 | -1 | 0): Pro
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
 
-    if (!user) {
+    if (!isRegisteredUser(user)) {
       throw new Error('You must sign in to vote on reports.')
     }
 

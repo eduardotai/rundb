@@ -4,11 +4,11 @@ import Link from 'next/link';
 import { useState } from 'react';
 import Image from 'next/image';
 import { Game, GameStats, PerformanceTier } from '@/lib/types';
-import { getReportsForGame, computeGameStats } from '@/lib/data';
+import { computeGameStats } from '@/lib/data';
 import { PerformanceBadge } from './performance-badge';
 import { cn, gameMediaLoader } from '@/lib/utils';
 import { upgradeCoverImageSrc } from '@/lib/cover-image-url';
-import { Sparkles } from 'lucide-react';
+import { ShieldCheck, Sparkles } from 'lucide-react';
 
 // Phase 3: GameCard now supports optional precomputed `stats` (from adapter + computeGameStatsFromReports in parent RQ data).
 // When provided (e.g. home trending, games list after wiring): uses real data for badges/counts/FPS.
@@ -93,6 +93,22 @@ export function GameCard({
 
         {/* Subtle gradient always present for text legibility on real art or fallback */}
         <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/80 to-transparent" />
+
+        <div
+          className={cn(
+            'absolute left-2 top-2 z-20 inline-flex max-w-[calc(100%-1rem)] items-center gap-1 rounded-md border px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg backdrop-blur-md',
+            reportCount > 0
+              ? 'border-cyan-300/25 bg-cyan-950/75'
+              : 'border-amber-300/30 bg-amber-950/75'
+          )}
+        >
+          {reportCount > 0 ? (
+            <ShieldCheck className="h-3 w-3 shrink-0 text-cyan-200" />
+          ) : (
+            <Sparkles className="h-3 w-3 shrink-0 text-amber-200" />
+          )}
+          <span className="truncate">{reportCount > 0 ? (isCompact ? 'Tested' : 'Community tested') : 'Needs reports'}</span>
+        </div>
 
         {/* Optional attribution polish (subtle, only when provided by real cover source; non-breaking) */}
         {game.coverAttribution && !imgError && (
