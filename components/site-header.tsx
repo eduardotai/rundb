@@ -24,7 +24,10 @@ export async function SiteHeader() {
             <Link href="/reports" className="text-muted-foreground hover:text-foreground transition">Reports</Link>
             <Link href="/compatibility" className="text-muted-foreground hover:text-foreground transition">Compatibility</Link>
             {isAdmin && (
-              <Link href="/admin" className="text-amber-400 hover:text-amber-300 transition font-medium">Admin</Link>
+              <>
+                <Link href="/admin" className="text-amber-400 hover:text-amber-300 transition font-medium">Admin</Link>
+                <Link href="/dashboard" className="text-amber-400 hover:text-amber-300 transition font-medium">Dashboard</Link>
+              </>
             )}
           </nav>
         </div>

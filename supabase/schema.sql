@@ -65,6 +65,14 @@ CREATE TABLE profiles (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Usernames must be unique across accounts (case-insensitive; nulls for guests are fine).
+-- This prevents two users from registering the same display name at signup time.
+-- Use a unique index on the expression (the supported way in Postgres for this).
+DROP INDEX IF EXISTS profiles_username_unique;
+
+CREATE UNIQUE INDEX IF NOT EXISTS profiles_username_unique 
+  ON public.profiles (lower(username));
+
 -- User Rigs (current saved hardware for compatibility checker)
 CREATE TABLE user_rigs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -146,6 +154,10 @@ CREATE TABLE hardware_aliases (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Indexes for aliases (used in normalization / combobox fallback)
+CREATE INDEX idx_hardware_aliases_raw ON hardware_aliases (lower(raw_string));
+CREATE INDEX idx_hardware_aliases_canonical ON hardware_aliases (canonical);
+
 -- ============================================
 -- INDEXES (critical for performance)
 -- ============================================
@@ -221,6 +233,8 @@ AFTER INSERT OR DELETE ON report_votes
 FOR EACH ROW EXECUTE FUNCTION public.update_helpful_votes();
 
 -- Auto-create profile on new user
+-- username is the public display nick (no real names). Prefer explicit 'username' from our signup or provider (Discord provides 'username' handle),
+-- never copy real full_name from Google etc to avoid personal data exposure. Existing rows with old names can be edited by users in /profile.
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
@@ -229,7 +243,7 @@ BEGIN
   INSERT INTO public.profiles (id, username, avatar_url)
   VALUES (
     NEW.id,
-    NEW.raw_user_meta_data ->> 'full_name',
+    NEW.raw_user_meta_data ->> 'username',
     NEW.raw_user_meta_data ->> 'avatar_url'
   );
   RETURN NEW;
@@ -239,6 +253,26 @@ $$;
 CREATE TRIGGER on_auth_user_created
 AFTER INSERT ON auth.users
 FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- Public helper to check username availability before/during registration.
+-- Uses SECURITY DEFINER so anon clients can call it without RLS allowing full profile reads.
+CREATE OR REPLACE FUNCTION public.is_username_taken(p_username text)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+BEGIN
+  IF p_username IS NULL OR length(btrim(p_username)) = 0 THEN
+    RETURN false;
+  END IF;
+  RETURN EXISTS (
+    SELECT 1 FROM public.profiles 
+    WHERE lower(username) = lower(p_username)
+  );
+END;
+$$;
+
+-- Allow unauthenticated users (at signup) and authenticated to call the check.
+GRANT EXECUTE ON FUNCTION public.is_username_taken(text) TO anon, authenticated;
 
 -- ============================================
 -- ROW LEVEL SECURITY (RLS)
@@ -259,14 +293,23 @@ CREATE POLICY "Games are publicly readable" ON games FOR SELECT USING (true);
 CREATE POLICY "Approved reports are publicly readable" ON reports
   FOR SELECT USING (status = 'approved');
 
--- Authenticated users can insert their own reports (or anonymous)
-CREATE POLICY "Authenticated users can insert reports" ON reports
-  FOR INSERT WITH CHECK (
-    status = 'pending'
-    AND helpful_votes = 0
-    AND moderated_by IS NULL
-    AND moderated_at IS NULL
-    AND moderator_notes IS NULL
+-- Owners can always read their own reports (any status). REQUIRED so that:
+--   1. insert().select() can return the freshly inserted 'pending' row (otherwise the
+--      RETURNING clause is denied by RLS and you get error 42501 on submit), and
+--   2. the rate-limit / duplicate-detection count queries in submitReportAction can
+--      actually see the user's own pending reports.
+CREATE POLICY "Users can read their own reports" ON reports
+  FOR SELECT USING (user_id = auth.uid());
+
+-- Anyone (including fully anonymous clients using the anon key, or authenticated users/guests via signInAnonymously)
+-- can insert reports. The row must claim user_id=NULL or exactly the current auth.uid().
+-- Submissions use submitReportAction (direct insert, status=approved for immediate publish) or submit_report RPC (pending).
+-- Policy allows both; counters/moderator_notes default or set by action (catalog prefix only).
+CREATE POLICY "Anyone can insert reports (self or anonymous)" ON reports
+  FOR INSERT
+  TO anon, authenticated
+  WITH CHECK (
+    status IN ('pending', 'approved')
     AND ((user_id IS NULL) OR (user_id = auth.uid()))
   );
 
@@ -292,6 +335,12 @@ CREATE POLICY "Users can insert own profile" ON profiles
 CREATE POLICY "Users can update own profile" ON profiles
   FOR UPDATE USING (auth.uid() = id)
   WITH CHECK (auth.uid() = id);
+
+-- Public read of basic profile fields (username, avatar, credibility/role) so approved reports can
+-- publicly attribute the reporting user and display their badges (e.g. "Trusted", Steam-verified intent).
+-- No sensitive data in profiles; this enables the "who reported this" + badge features on /games/[slug] etc.
+CREATE POLICY "Public can view basic profile info for report authors" ON profiles
+  FOR SELECT USING (true);
 
 -- User rigs: owners only
 CREATE POLICY "Users can manage their own rig" ON user_rigs
@@ -337,6 +386,7 @@ CREATE POLICY "Game media are publicly readable" ON game_media FOR SELECT USING 
 -- After running, enable Anonymous + Google + Discord providers in Authentication > Providers.
 -- Add your anon + service_role keys to .env.local as SUPABASE_URL and keys.
 -- For Phase 1 ingestion: re-apply this schema or run the added block if table missing.
+-- For hardware catalog (live autocomplete/similarity): use supabase/incremental-hardware-catalog.sql for existing DBs (or full schema for fresh).
 
 -- ============================================
 -- PHASE 2 ADDITIONS (Master Implementation Plan aligned)
@@ -443,20 +493,24 @@ BEGIN
     END IF;
   END IF;
 
-  -- Insert respects schema exactly: status=pending default, performance_tier computed, moderation fields NULL
+  -- Insert respects schema exactly: status=pending default, performance_tier computed, moderation fields NULL.
+  -- Note: kernel/distro (and other later ALTER columns) are omitted from this INSERT so the RPC
+  -- works even if the full schema.sql (with ADD COLUMN IF NOT EXISTS at the bottom) hasn't been
+  -- re-applied to an existing table. When those columns exist they will be NULL (fine, since
+  -- current submit UI doesn't populate them yet). Update this INSERT list when wiring richer paste data.
   INSERT INTO reports (
     game_id, user_id, game_name,
     cpu, gpu, ram, ram_speed, resolution, refresh_rate,
     settings_preset, custom_settings_notes,
     avg_fps, fps_1_percent_low, performance_tier,
-    notes, tweaks, issues, driver_version, kernel, distro,
+    notes, tweaks, issues, driver_version,
     status
   ) VALUES (
     p_game_id, v_user_id, v_game_name,
     p_cpu, p_gpu, p_ram, p_ram_speed, p_resolution, p_refresh_rate,
     p_settings_preset, p_custom_settings_notes,
     p_avg_fps, p_fps_1_percent_low, v_tier,
-    p_notes, p_tweaks, p_issues, p_driver_version, p_kernel, p_distro,
+    p_notes, p_tweaks, p_issues, p_driver_version,
     'pending'
   ) RETURNING id INTO v_report_id;
 
@@ -495,6 +549,12 @@ GRANT EXECUTE ON FUNCTION public.upvote_report TO authenticated;
 -- This is the live, editable hardware database backing autocomplete,
 -- similarity scoring, and validation when NEXT_PUBLIC_USE_REAL_DATA=true.
 -- The static file (lib/hardware-catalog.ts) remains the authoritative seed + offline fallback.
+--
+-- 2026-06 EXPANSION: Comprehensive market coverage since 2015-16 launches (Pascal/Polaris
+-- through RTX 50 / Zen 5 / Arc + mid/low-end density). See plan + static catalog header.
+-- New columns added for full HardwareCatalogEntry fidelity (architecture, threads, tdp_w).
+--
+-- For existing projects: Use supabase/incremental-hardware-catalog.sql (idempotent, recommended) OR scroll down to the "RECOMMENDED: COPY & PASTE THIS BLOCK" section (kept for backwards compat).
 -- =============================================================================
 
 CREATE TABLE hardware_catalog (
@@ -509,6 +569,9 @@ CREATE TABLE hardware_catalog (
   memory_type text,
   speed_mts integer,
   release_year integer,
+  architecture text,
+  threads integer,
+  tdp_w integer,
   notes text,
   source text,
   last_updated timestamptz NOT NULL DEFAULT now(),
@@ -565,6 +628,84 @@ CREATE POLICY "Moderators and admins can delete hardware catalog entries"
         AND profiles.role IN ('moderator', 'admin')
     )
   );
+
+-- =============================================================================
+-- HARDWARE CATALOG EXPANSION - SAFE MIGRATION FOR EXISTING PROJECTS
+-- Preferred: run supabase/incremental-hardware-catalog.sql (fully idempotent CREATE TABLE IF + DO policy blocks).
+-- The block below is kept for manual compatibility.
+-- =============================================================================
+
+-- =============================================================================
+-- RECOMMENDED (legacy path): COPY & PASTE THIS BLOCK INTO SUPABASE SQL EDITOR
+-- (For any project that had the old hardware_catalog / aliases tables)
+-- Completely safe. Uses DROP POLICY IF EXISTS + CREATE POLICY (Postgres does not support IF NOT EXISTS on policies).
+-- =============================================================================
+
+-- 1. Hardware catalog new columns (required for the big 2015-16+ database)
+ALTER TABLE hardware_catalog
+  ADD COLUMN IF NOT EXISTS architecture text,
+  ADD COLUMN IF NOT EXISTS threads integer,
+  ADD COLUMN IF NOT EXISTS tdp_w integer;
+
+CREATE INDEX IF NOT EXISTS idx_hardware_catalog_canonical_lower 
+  ON hardware_catalog (lower(canonical));
+
+-- 2. Hardware aliases table indexes + RLS (was incomplete before)
+CREATE INDEX IF NOT EXISTS idx_hardware_aliases_raw 
+  ON hardware_aliases (lower(raw_string));
+CREATE INDEX IF NOT EXISTS idx_hardware_aliases_canonical 
+  ON hardware_aliases (canonical);
+
+ALTER TABLE hardware_aliases ENABLE ROW LEVEL SECURITY;
+
+-- Public read for normalization/combobox
+DROP POLICY IF EXISTS "Hardware aliases are publicly readable" ON hardware_aliases;
+CREATE POLICY "Hardware aliases are publicly readable"
+  ON hardware_aliases FOR SELECT USING (true);
+
+-- Moderator / admin can manage aliases
+DROP POLICY IF EXISTS "Moderators and admins can insert hardware aliases" ON hardware_aliases;
+CREATE POLICY "Moderators and admins can insert hardware aliases"
+  ON hardware_aliases FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE profiles.id = auth.uid() 
+        AND profiles.role IN ('moderator', 'admin')
+    )
+  );
+
+DROP POLICY IF EXISTS "Moderators and admins can update hardware aliases" ON hardware_aliases;
+CREATE POLICY "Moderators and admins can update hardware aliases"
+  ON hardware_aliases FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE profiles.id = auth.uid() 
+        AND profiles.role IN ('moderator', 'admin')
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE profiles.id = auth.uid() 
+        AND profiles.role IN ('moderator', 'admin')
+    )
+  );
+
+DROP POLICY IF EXISTS "Moderators and admins can delete hardware aliases" ON hardware_aliases;
+CREATE POLICY "Moderators and admins can delete hardware aliases"
+  ON hardware_aliases FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE profiles.id = auth.uid() 
+        AND profiles.role IN ('moderator', 'admin')
+    )
+  );
+
+-- After running this, you can safely run: npm run seed:hardware
+-- =============================================================================
 
 -- ============================================================
 -- Hardware Identification (Plan 4) - Additive columns + Steam linking

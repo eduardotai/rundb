@@ -10,25 +10,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { showUserError, showUserSuccess } from '@/lib/toast';
 import { sanitizeFullName } from '@/lib/sanitize';
 import { HardwareDetectButton } from '@/components/hardware-detect-button';
-import { DetectedHardwareBanner } from '@/components/detected-hardware-banner';
 import { PasteHardwareModal } from '@/components/paste-hardware-modal';
-import type { DetectedHardware } from '@/lib/types';
 import { HardwareCombobox } from '@/components/hardware-combobox';
+import { SteamLinkButton } from '@/components/steam-link-button';
 import { MAIN_RESOLUTIONS } from '@/lib/types';
+import type { SteamLinkStatus } from '@/lib/data';
+import type { DetectedHardware } from '@/lib/types';
+import { mergeDetected } from '@/lib/hardware-detector';
 
 interface ProfileRigEditorProps {
-  user: {
-    id: string;
-    email?: string;
-    user_metadata?: {
-      full_name?: string;
-      avatar_url?: string;
-    };
-    app_metadata?: {
-      provider?: string;
-    };
-    is_anonymous?: boolean;
-  };
+  /** Only the id is required — identity (name/avatar) is managed in the profile hero. */
+  user: { id: string };
 }
 
 type RigFields = {
@@ -47,24 +39,13 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-
-  // Hardware Identification (Plan 4)
-  const [detectedRig, setDetectedRig] = useState<DetectedHardware | null>(null);
   const [pasteModalOpen, setPasteModalOpen] = useState(false);
+  const [lastBrowserDetect, setLastBrowserDetect] = useState<DetectedHardware | null>(null);
+  const [steamStatus, setSteamStatus] = useState<SteamLinkStatus | null>(null);
 
   const supabase = createClient();
 
-  const isAnonymous =
-    user.is_anonymous ||
-    user.app_metadata?.provider === 'anonymous' ||
-    !user.email;
-
-  const displayName =
-    user.user_metadata?.full_name ||
-    user.email ||
-    (isAnonymous ? 'Anonymous Guest' : 'User');
-
-  // Load existing profile data (My Rig fields from profiles table)
+  // Load existing My Rig fields from the profiles table.
   useEffect(() => {
     async function loadProfile() {
       setIsLoading(true);
@@ -82,7 +63,9 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
 
         if (data) {
           const loadedRes = data.preferred_resolution || '2560x1440';
-          const safeRes = (MAIN_RESOLUTIONS as readonly string[]).includes(loadedRes) ? loadedRes : '2560x1440';
+          const safeRes = (MAIN_RESOLUTIONS as readonly string[]).includes(loadedRes)
+            ? loadedRes
+            : '2560x1440';
           setRig({
             cpu: data.main_cpu || '',
             gpu: data.main_gpu || '',
@@ -99,6 +82,17 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
 
     loadProfile();
   }, [user.id, supabase]);
+
+  // Load Steam link status (additive, for verified + easier device management)
+  useEffect(() => {
+    (async () => {
+      try {
+        const { getLinkedSteamProfile } = await import('@/lib/data');
+        const s = await getLinkedSteamProfile();
+        setSteamStatus(s);
+      } catch {}
+    })();
+  }, []);
 
   const handleSave = async () => {
     const safeCpu = sanitizeFullName(rig.cpu);
@@ -132,7 +126,7 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
       if (error) throw error;
 
       showUserSuccess('Rig saved!');
-    } catch (error) {
+    } catch {
       showUserError('Could not save your rig. Please try again.');
     } finally {
       setIsSaving(false);
@@ -154,145 +148,175 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Account summary */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Account</CardTitle>
-          <CardDescription>
-            {isAnonymous
-              ? 'You are signed in anonymously. Your profile is stored in Supabase and tied to this session.'
-              : 'Signed in with persistent account.'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="text-sm space-y-1">
-          <p>
-            <span className="text-muted-foreground">Name:</span>{' '}
-            <span className="font-medium">{displayName}</span>
-          </p>
-          {user.email && (
-            <p>
-              <span className="text-muted-foreground">Email:</span> {user.email}
-            </p>
-          )}
-          <p>
-            <span className="text-muted-foreground">User ID:</span>{' '}
-            <code className="text-xs bg-muted px-1 py-0.5 rounded">{user.id.slice(0, 8)}…</code>
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* My Rig editor — saved to profiles table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>My Rig</CardTitle>
-          <CardDescription>
-            Edit your primary hardware configuration. This is stored in the <code>profiles</code> table
-            and will power personalized features (compatibility predictions, report filtering) in future phases.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <Label>CPU</Label>
-                <HardwareDetectButton
-                  mode="browser"
-                  onDetect={(r) => {
-                    if (r.cpu) updateField('cpu', r.cpu);
-                    if (r.gpu) updateField('gpu', r.gpu);
-                    if (r.ram) updateField('ram', r.ram);
-                  }}
-                  onRequestPaste={() => setPasteModalOpen(true)}
-                />
-              </div>
-              <HardwareCombobox
-                value={rig.cpu}
-                onChange={(val) => updateField('cpu', val)}
-                componentType="cpu"
-                placeholder="Search Ryzen 7 7800X3D or i5-13600K..."
-                disabled={isSaving}
+    <Card>
+      <CardHeader>
+        <CardTitle>My Rig</CardTitle>
+        <CardDescription>
+          Your primary hardware configuration. Stored in the <code>profiles</code> table and used to
+          power personalized compatibility predictions and report filtering.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <Label>CPU</Label>
+              <HardwareDetectButton
+                mode="browser"
+                onDetect={(r) => {
+                  setLastBrowserDetect(r);
+                  const isHint = (s?: string) => !!s && /browser hint/i.test(s);
+                  // Browser hints for CPU/RAM are shown conceptually via the detect result,
+                  // but we don't auto-fill the editable fields with "8-core (browser hint)".
+                  // Paste (or type real model) for actual CPU + RAM.
+                  if (r.cpu && !isHint(r.cpu)) updateField('cpu', r.cpu);
+                  if (r.gpu) updateField('gpu', r.gpu);
+                  if (r.ram != null && !isHint(r.cpu)) updateField('ram', r.ram);
+                  if (r.resolution) updateField('resolution', r.resolution);
+                }}
+                onRequestPaste={() => setPasteModalOpen(true)}
               />
             </div>
-            <div>
-              <Label>GPU</Label>
-              <HardwareCombobox
-                value={rig.gpu}
-                onChange={(val) => updateField('gpu', val)}
-                componentType="gpu"
-                placeholder="Search RTX 4070 Super or RX 7800 XT..."
-                disabled={isSaving}
-              />
-            </div>
+            <HardwareCombobox
+              value={rig.cpu}
+              onChange={(val) => updateField('cpu', val)}
+              componentType="cpu"
+              placeholder="Search Ryzen 7 7800X3D or i5-13600K..."
+              disabled={isSaving}
+            />
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="ram">RAM (GB)</Label>
-              <Input
-                id="ram"
-                type="number"
-                min={4}
-                max={128}
-                placeholder="32"
-                value={rig.ram}
-                onChange={(e) => updateField('ram', e.target.value === '' ? '' : parseInt(e.target.value, 10) || '')}
-                disabled={isSaving}
-              />
-              <p className="text-xs text-muted-foreground mt-1">4–128 GB</p>
-            </div>
-            <div>
-              <Label>Preferred Resolution</Label>
-              <Select
-                value={rig.resolution}
-                onValueChange={(v) => updateField('resolution', v)}
-                disabled={isSaving}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MAIN_RESOLUTIONS.map((r) => (
-                    <SelectItem key={r} value={r}>{r}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground mt-1">Common resolutions only.</p>
-            </div>
+          <div>
+            <Label>GPU</Label>
+            <HardwareCombobox
+              value={rig.gpu}
+              onChange={(val) => updateField('gpu', val)}
+              componentType="gpu"
+              placeholder="Search RTX 4070 Super or RX 7800 XT..."
+              disabled={isSaving}
+            />
           </div>
+        </div>
 
-          <div className="flex items-center gap-3 pt-2">
-            <Button 
-              onClick={handleSave} 
-              disabled={isSaving} 
-              size="lg"
-              className="bg-white text-black font-medium hover:bg-white/90"
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <Label htmlFor="ram">RAM (GB)</Label>
+            <Input
+              id="ram"
+              type="number"
+              min={4}
+              max={128}
+              placeholder="32"
+              value={rig.ram}
+              onChange={(e) =>
+                updateField('ram', e.target.value === '' ? '' : parseInt(e.target.value, 10) || '')
+              }
+              disabled={isSaving}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">4–128 GB</p>
+          </div>
+          <div>
+            <Label>Preferred Resolution</Label>
+            <Select
+              value={rig.resolution}
+              onValueChange={(v) => updateField('resolution', v)}
+              disabled={isSaving}
             >
-              {isSaving ? 'Saving...' : 'Save My Rig'}
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              Saved directly to your Supabase profile row.
-            </p>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {MAIN_RESOLUTIONS.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {r}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="mt-1 text-xs text-muted-foreground">Common resolutions only.</p>
           </div>
+        </div>
 
-          <div className="text-xs text-muted-foreground border-t pt-4">
-            Tip: Saving here writes to the <code>profiles</code> table (main_* fields). The CompatibilityChecker
+        <div className="flex items-center gap-3 pt-2">
+          <Button
+            onClick={handleSave}
+            disabled={isSaving}
+            size="lg"
+            className="bg-white font-medium text-black hover:bg-white/90"
+          >
+            {isSaving ? 'Saving...' : 'Save My Rig'}
+          </Button>
+          <p className="text-xs text-muted-foreground">Saved to your Supabase profile.</p>
+        </div>
 
-      <PasteHardwareModal
-        open={pasteModalOpen}
-        onOpenChange={setPasteModalOpen}
-        onApply={(r) => {
-          if (r.cpu) updateField('cpu', r.cpu);
-          if (r.gpu) updateField('gpu', r.gpu);
-          if (r.ram) updateField('ram', r.ram);
-          setPasteModalOpen(false);
-        }}
-      />
-            (and header/game pages) prefer <code>user_rigs</code> for logged-in users but fall back to your profile
-            data; localStorage only for guests. Full DB persistence complete (see data.ts Phase 2 adapter).
+        {/* Steam linking makes managing hardware (My Devices / rigs) easier and persistent.
+            Link once → easily select/import accurate rigs via paste of Steam System Information.
+            Note: Steam itself provides no CPU/GPU/RAM — you still paste once per device using our excellent parsers. */}
+        <div className="pt-4 border-t border-border/60">
+          <div className="mb-2 flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium">Steam connection</div>
+              <div className="text-[11px] text-muted-foreground">For verified badges + quick device selection across the app (profile, submit, checker).</div>
+            </div>
+            <SteamLinkButton
+              status={steamStatus}
+              onLinked={() => {
+                // Reload status after redirect success
+                import('@/lib/data').then(({ getLinkedSteamProfile }) => getLinkedSteamProfile().then(setSteamStatus));
+              }}
+              onUnlinked={() => setSteamStatus({ linked: false })}
+              size="sm"
+            />
           </div>
-        </CardContent>
-      </Card>
-    </div>
+          {steamStatus?.linked && (
+            <div className="space-y-1">
+              <p className="text-[11px] text-emerald-400/80">
+                Linked{steamStatus.persona ? ` as ${steamStatus.persona}` : ''}.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setPasteModalOpen(true)}
+              >
+                Import hardware from Steam client (paste System Information once)
+              </Button>
+              <p className="text-[10px] text-muted-foreground">After pasting accurate data it will be available as a saved device in Submit / Checker.</p>
+            </div>
+          )}
+        </div>
+
+        <PasteHardwareModal
+          open={pasteModalOpen}
+          onOpenChange={setPasteModalOpen}
+          onApply={async (pasteDetected) => {
+            // Merge prior browser result (if any) with this paste for richer rig (res + exact cpu/gpu/ram etc).
+            const merged = mergeDetected(lastBrowserDetect, pasteDetected);
+            if (merged.cpu) updateField('cpu', merged.cpu);
+            if (merged.gpu) updateField('gpu', merged.gpu);
+            if (merged.ram) updateField('ram', merged.ram);
+            if (merged.resolution) updateField('resolution', merged.resolution);
+            setLastBrowserDetect(null);
+            setPasteModalOpen(false);
+
+            // Also persist as a named user device so it appears in Submit "Choose saved device" and other surfaces.
+            // This is the key UX win when Steam-linked: paste accurate hardware *once*.
+            try {
+              const { saveUserDevice } = await import('@/lib/data');
+              await saveUserDevice({
+                label: steamStatus?.persona ? `Steam: ${steamStatus.persona}` : 'Imported from Steam',
+                cpu: merged.cpu || '',
+                gpu: merged.gpu || '',
+                ram: typeof merged.ram === 'number' ? merged.ram : (merged.ram ? parseInt(String(merged.ram), 10) : 16),
+                resolution: merged.resolution,
+                driverVersion: (merged as any).driverVersion,
+                kernel: (merged as any).kernel,
+                distro: (merged as any).distro,
+                isPrimary: false,
+              });
+            } catch {}
+          }}
+        />
+      </CardContent>
+    </Card>
   );
 }

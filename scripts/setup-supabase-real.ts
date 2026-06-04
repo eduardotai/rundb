@@ -1,15 +1,21 @@
 #!/usr/bin/env tsx
 /**
  * One-shot Supabase setup for real-data mode:
- * 1. Apply missing schema (game_media) via Management API or DATABASE_URL
+ * 1. Apply missing schema (game_media, hardware_catalog+aliases, security) via Management API or DATABASE_URL
  * 2. Refresh API keys into .env.local (optional, requires SUPABASE_ACCESS_TOKEN)
  * 3. Seed games from mock catalog (requires valid service role)
- * 4. Run IGDB ingest if credentials present
+ * 4. Seed hardware catalog (101+ entries)
+ * 5. Run IGDB ingest if credentials present
  *
  * Prerequisites (pick one path for SQL):
  *   A) SUPABASE_ACCESS_TOKEN in .env.local — from https://supabase.com/dashboard/account/tokens
+ *      (the token must have access to the Supabase project whose URL is in your .env.local)
  *   B) DATABASE_URL in .env.local — from Dashboard → Connect → URI (percent-encoded for CLI)
  *   C) Run `npx supabase login` then use --linked via CLI manually
+ *
+ * IMPORTANT: This script (and the old demo ref) is for convenience.
+ * Make sure NEXT_PUBLIC_SUPABASE_URL in .env.local matches the Supabase project you want to use.
+ * The PROJECT_REF is auto-detected from your .env URL.
  *
  * Usage: npm run setup:supabase
  */
@@ -19,12 +25,31 @@ import { resolve } from 'path'
 import { execSync } from 'child_process'
 import { loadEnvLocal } from './load-env-local'
 
-const PROJECT_REF = 'gyldcsduuzoqqamyudni'
 const ENV_PATH = resolve(process.cwd(), '.env.local')
+
+/** Extract project ref from a Supabase URL like https://<ref>.supabase.co */
+function getProjectRef(): string {
+  loadEnvLocal()
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || ''
+  const match = url.match(/https?:\/\/([a-z0-9]+)\.supabase\.(co|io)/i)
+  if (match && match[1]) {
+    return match[1]
+  }
+  // Fallback (original demo project). Users should set their own URL in .env.local
+  console.warn('Could not detect project ref from SUPABASE_URL / NEXT_PUBLIC_SUPABASE_URL in .env.local.')
+  console.warn('Using demo ref as fallback. Make sure your .env.local points to YOUR Supabase project.')
+  return 'gyldcsduuzoqqamyudni'
+}
+
+const PROJECT_REF = getProjectRef()
 const INCREMENTAL_SQL_FILES = [
   {
     path: resolve(process.cwd(), 'supabase/incremental-game-media.sql'),
     label: 'game_media',
+  },
+  {
+    path: resolve(process.cwd(), 'supabase/incremental-hardware-catalog.sql'),
+    label: 'hardware_catalog + hardware_aliases (for live catalog + normalization)',
   },
   {
     path: resolve(process.cwd(), 'supabase/incremental-security-rls.sql'),
@@ -71,6 +96,10 @@ function setEnvKey(key: string, value: string) {
   if (!found) out.push(`${key}=${value}`)
   writeFileSync(ENV_PATH, out.join('\n'), 'utf8')
   process.env[key] = value
+}
+
+function normalizeSupabaseProjectUrl(value: string): string {
+  return value.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '')
 }
 
 async function managementQuery(accessToken: string, sql: string): Promise<void> {
@@ -149,6 +178,15 @@ async function main() {
   const env = loadEnvMap()
   console.log('RunDB Supabase real-mode setup\n')
 
+  const configuredUrl = env.NEXT_PUBLIC_SUPABASE_URL || env.SUPABASE_URL
+  if (configuredUrl) {
+    const normalizedUrl = normalizeSupabaseProjectUrl(configuredUrl)
+    if (normalizedUrl !== configuredUrl) {
+      setEnvKey('NEXT_PUBLIC_SUPABASE_URL', normalizedUrl)
+      console.log('Normalized NEXT_PUBLIC_SUPABASE_URL in .env.local')
+    }
+  }
+
   const accessToken = env.SUPABASE_ACCESS_TOKEN
   if (accessToken) {
     console.log('Refreshing API keys from Management API...')
@@ -167,7 +205,9 @@ async function main() {
     for (const file of INCREMENTAL_SQL_FILES) {
       console.log(`  ${file.path}`)
     }
-    console.log(`  https://supabase.com/dashboard/project/${PROJECT_REF}/sql/new`)
+    console.log(`  https://supabase.com/dashboard/project/${PROJECT_REF}/sql/new  (or go to your project in the Supabase dashboard > SQL Editor)`)
+    console.log('\nTIP for Windows: Use this to copy cleanly without terminal ">" lines:')
+    console.log('  npm run copy:sql:hardware     # easiest')
   }
 
   loadEnvLocal()
@@ -178,9 +218,20 @@ async function main() {
     console.error(
       '\nSeed failed. If you see "Invalid API key", regenerate keys at:'
     )
-    console.error(`  https://supabase.com/dashboard/project/${PROJECT_REF}/settings/api`)
+    console.error(`  https://supabase.com/dashboard/project/${PROJECT_REF}/settings/api  (use the service_role key from your project, not anon)`)
     console.error('  Copy service_role into SUPABASE_SERVICE_ROLE_KEY in .env.local')
     process.exit(1)
+  }
+
+  // Hardware catalog (safe now that incremental was applied, or user instructed to paste)
+  console.log('\nSeeding hardware catalog (large 2015-16+ set, idempotent)...')
+  try {
+    execSync('npm run seed:hardware', { stdio: 'inherit', cwd: process.cwd() })
+  } catch {
+    console.warn('\nHardware seed did not complete (likely table was not auto-applied).')
+    console.warn('In PowerShell, run this for clean copy-paste SQL (avoids ">" prompt errors):')
+    console.warn('  npm run copy:sql:hardware     # easiest')
+    console.warn('Paste into Supabase SQL Editor (must start with -- comment), then re-run `npm run seed:hardware`.')
   }
 
   if (env.IGDB_CLIENT_ID && env.IGDB_CLIENT_SECRET) {

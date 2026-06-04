@@ -38,9 +38,13 @@ export default function RootLayout({
           <main className="flex-1">{children}</main>
 
           <footer className="border-t border-border py-8 text-center text-xs text-muted-foreground">
-            Real community-driven PC performance data. Hybrid mock + real backend (flag-controlled).
+            Real community-driven PC performance data.
             <span className="mx-2">·</span>
             Inspired by ProtonDB, PCPartPicker, and HowLongToBeat.
+            <span className="mx-2">·</span>
+            <a href="/dashboard" className="underline-offset-2 hover:text-foreground hover:underline">
+              Build dashboard
+            </a>
           </footer>
 
           <Toaster position="top-center" richColors closeButton />

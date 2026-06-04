@@ -16,9 +16,29 @@
  */
 
 import { createClient } from '@/lib/supabase/server'
-import type { Report, SubmitReportInput, PerformanceTier, ReportStatus, GraphicsPreset } from '@/lib/types'
+import { getStaffAccess } from '@/lib/admin-access'
+import { createServiceClient } from '@/lib/supabase/service'
+import type { AdminReport, Report, SubmitReportInput, PerformanceTier, ReportStatus, GraphicsPreset } from '@/lib/types'
 import { normalizeSlug } from '@/lib/utils'
 import { normalizeHardwareSync } from '@/lib/normalize-hardware'
+import { cleanPublicReportNotes } from '@/lib/report-notes'
+
+const REPORT_STATUSES: ReportStatus[] = ['pending', 'approved', 'rejected', 'flagged']
+
+function assertReportStatus(status: ReportStatus): ReportStatus {
+  if (!REPORT_STATUSES.includes(status)) {
+    throw new Error('Invalid report status.')
+  }
+  return status
+}
+
+async function requireModerationAccess(): Promise<string> {
+  const access = await getStaffAccess()
+  if (!access.user || !access.canModerate) {
+    throw new Error('Access denied. Moderator or admin role required.')
+  }
+  return access.user.id
+}
 
 function calculatePerformanceTier(avgFps: number): PerformanceTier {
   if (avgFps >= 90) return 'Excellent'
@@ -44,12 +64,20 @@ function mapDbReportToReport(row: any): Report {
     avgFps: Number(row.avg_fps),
     fps1PercentLow: row.fps_1_percent_low != null ? Number(row.fps_1_percent_low) : undefined,
     performanceTier: row.performance_tier as PerformanceTier,
-    notes: row.notes,
+    notes: cleanPublicReportNotes(row.notes),
     tweaks: row.tweaks,
     issues: row.issues,
     driverVersion: row.driver_version,
     createdAt: row.created_at,
     helpfulVotes: row.helpful_votes ?? 0,
+    downvoteVotes: row.downvote_votes ?? 0,
+    voteScore: row.vote_score ?? row.helpful_votes ?? 0,
+    credibilityScore: row.credibility_score,
+    credibilityBadge: row.credibility_badge,
+    canonicalCpu: row.canonical_cpu,
+    canonicalGpu: row.canonical_gpu,
+    gpuPerfIndex: row.gpu_perf_index != null ? Number(row.gpu_perf_index) : undefined,
+    cpuPerfIndex: row.cpu_perf_index != null ? Number(row.cpu_perf_index) : undefined,
     // Moderation fields (populated for admin UI)
     status: row.status as ReportStatus,
     userId: row.user_id,
@@ -65,131 +93,183 @@ function mapDbReportToReport(row: any): Report {
  * Anti-abuse enforced here (mirrors the submit_report RPC in schema.sql for defense-in-depth).
  */
 export async function submitReportAction(input: SubmitReportInput): Promise<Report> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const userId = user?.id ?? null
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    const userId = user?.id ?? null
 
-  // 1. Validate game exists + get denormalized name
-  const { data: game, error: gameErr } = await supabase
-    .from('games')
-    .select('id, name')
-    .eq('id', input.gameId)
-    .single()
+    // 1. Validate game exists + get denormalized name
+    const { data: game, error: gameErr } = await supabase
+      .from('games')
+      .select('id, name')
+      .eq('id', input.gameId)
+      .single()
 
-  if (gameErr || !game) {
-    throw new Error('Game not found. Cannot submit report.')
-  }
-
-  const avgFps = input.avgFps
-  const tier = calculatePerformanceTier(avgFps)
-
-  // Hardware Catalog normalization (server-safe)
-  const cpuNorm = normalizeHardwareSync(input.cpu)
-  const gpuNorm = normalizeHardwareSync(input.gpu)
-
-  // Basic plausibility note (future: full validation using perfIndex)
-  let moderatorNotePrefix = ''
-  if (cpuNorm.method === 'none' || gpuNorm.method === 'none') {
-    moderatorNotePrefix = '[Catalog: unknown hardware] '
-  }
-
-  // 2. Anti-abuse checks (only for authenticated users; anon has lighter protection)
-  if (userId) {
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-    const { count: recentCount } = await supabase
-      .from('reports')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .gte('created_at', oneHourAgo)
-
-    if ((recentCount ?? 0) >= 5) {
-      throw new Error('Rate limit exceeded: You can submit a maximum of 5 reports per hour.')
+    if (gameErr || !game) {
+      throw new Error('Game not found. Cannot submit report.')
     }
 
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-    const { count: dupCount } = await supabase
-      .from('reports')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('game_id', input.gameId)
-      .eq('cpu', input.cpu)
-      .eq('gpu', input.gpu)
-      .eq('ram', input.ram)
-      .eq('resolution', input.resolution)
-      .gte('created_at', oneDayAgo)
-
-    if ((dupCount ?? 0) > 0) {
-      throw new Error('Duplicate report detected: You submitted a nearly identical report for this game + hardware combination within the last 24 hours.')
+    const avgFps = input.avgFps
+    if (typeof avgFps !== 'number' || !Number.isFinite(avgFps) || avgFps < 1 || avgFps > 600) {
+      throw new Error('Average FPS must be a number between 1 and 600.')
     }
+    const tier = calculatePerformanceTier(avgFps)
+
+    // Hardware Catalog normalization (server-safe)
+    const cpuNorm = normalizeHardwareSync(input.cpu)
+    const gpuNorm = normalizeHardwareSync(input.gpu)
+    const storedCpu = cpuNorm.canonical ?? input.cpu
+    const storedGpu = gpuNorm.canonical ?? input.gpu
+
+    // Basic plausibility note (future: full validation using perfIndex)
+    let moderatorNotePrefix = ''
+    if (cpuNorm.method === 'none' || gpuNorm.method === 'none') {
+      moderatorNotePrefix = '[Catalog: unknown hardware]'
+    }
+
+    // 2. Anti-abuse checks (only for authenticated users; anon has lighter protection)
+    if (userId) {
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+      const { count: recentCount } = await supabase
+        .from('reports')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .gte('created_at', oneHourAgo)
+
+      if ((recentCount ?? 0) >= 5) {
+        throw new Error('Rate limit exceeded: You can submit a maximum of 5 reports per hour.')
+      }
+
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+      const { count: dupCount } = await supabase
+        .from('reports')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('game_id', input.gameId)
+        .eq('cpu', storedCpu)
+        .eq('gpu', storedGpu)
+        .eq('ram', input.ram)
+        .eq('resolution', input.resolution)
+        .gte('created_at', oneDayAgo)
+
+      if ((dupCount ?? 0) > 0) {
+        throw new Error('Duplicate report detected: You submitted a nearly identical report for this game + hardware combination within the last 24 hours.')
+      }
+    }
+
+    // 3. Insert. Reports publish automatically; vote/downvote scoring can later flag bad reports.
+    const insertPayload = {
+      game_id: input.gameId,
+      user_id: userId,
+      game_name: game.name,
+      cpu: storedCpu,
+      gpu: storedGpu,
+      ram: input.ram,
+      ram_speed: input.ramSpeed ?? null,
+      resolution: input.resolution,
+      refresh_rate: input.refreshRate ?? null,
+      settings_preset: input.settingsPreset,
+      custom_settings_notes: input.customSettingsNotes ?? null,
+      avg_fps: avgFps,
+      fps_1_percent_low: input.fps1PercentLow ?? null,
+      performance_tier: tier,
+      notes: input.notes?.trim() || null,
+      tweaks: input.tweaks ?? null,
+      issues: input.issues ?? null,
+      driver_version: input.driverVersion ?? null,
+      moderator_notes: moderatorNotePrefix || null,
+      // Hardware catalog denorm (future indexes + validation)
+      // Note: columns are optional in current schema; safe to send
+      // canonical_cpu: cpuNorm.canonical,
+      // canonical_gpu: gpuNorm.canonical,
+      status: 'approved' as ReportStatus,
+      // created_at, vote counters, moderated_* defaulted by schema / DB
+    }
+
+    const { data: inserted, error: insertErr } = await supabase
+      .from('reports')
+      .insert(insertPayload)
+      .select('*')
+      .single()
+
+    if (insertErr || !inserted) {
+      console.error('[submitReportAction] insert error', insertErr)
+      throw new Error(insertErr?.message || 'Failed to submit report. Please try again.')
+    }
+
+    // 4. Return mapped (status is live immediately unless DB-side automation changes it)
+    return mapDbReportToReport(inserted)
+  } catch (err: any) {
+    // Ensure every code path results in a thrown Error with message (never raw unhandled
+    // exception or rejected promise from supabase fetch). This prevents Next.js from
+    // returning opaque 500 for the server action, which manifests as "Failed to fetch"
+    // + 500 resource errors (and SW-uncaught variants) on the client.
+    console.error('[submitReportAction] error', err)
+    if (err?.message && (
+      err.message.includes('Game not found') ||
+      err.message.includes('Rate limit') ||
+      err.message.includes('Duplicate') ||
+      err.message.includes('Average FPS')
+    )) {
+      throw err
+    }
+    throw new Error(err?.message || 'Failed to submit report. Please try again.')
   }
-
-  // 3. Insert (schema defaults: status='pending', helpful_votes=0, moderation fields=NULL)
-  const insertPayload = {
-    game_id: input.gameId,
-    user_id: userId,
-    game_name: game.name,
-    cpu: input.cpu,
-    gpu: input.gpu,
-    ram: input.ram,
-    ram_speed: input.ramSpeed ?? null,
-    resolution: input.resolution,
-    refresh_rate: input.refreshRate ?? null,
-    settings_preset: input.settingsPreset,
-    custom_settings_notes: input.customSettingsNotes ?? null,
-    avg_fps: avgFps,
-    fps_1_percent_low: input.fps1PercentLow ?? null,
-    performance_tier: tier,
-    notes: (moderatorNotePrefix + (input.notes ?? '')).trim() || null,
-    tweaks: input.tweaks ?? null,
-    issues: input.issues ?? null,
-    driver_version: input.driverVersion ?? null,
-    // Hardware catalog denorm (future indexes + validation)
-    // Note: columns are optional in current schema; safe to send
-    // canonical_cpu: cpuNorm.canonical,
-    // canonical_gpu: gpuNorm.canonical,
-    // status, created_at, helpful_votes, moderated_* defaulted by schema / DB
-  }
-
-  const { data: inserted, error: insertErr } = await supabase
-    .from('reports')
-    .insert(insertPayload)
-    .select('*')
-    .single()
-
-  if (insertErr || !inserted) {
-    console.error('[submitReportAction] insert error', insertErr)
-    throw new Error(insertErr?.message || 'Failed to submit report. Please try again.')
-  }
-
-  // 4. Return mapped (status will be 'pending')
-  return mapDbReportToReport(inserted)
 }
 
 /**
- * Upvote a report (authenticated only).
+ * Cast or clear a signed vote on a report (authenticated only).
  * Leverages report_votes table + trigger (see schema.sql).
- * Duplicate prevented by UNIQUE constraint + RLS.
+ * - value 1 / -1: upsert the vote (duplicate prevented by UNIQUE constraint + RLS).
+ * - value 0: remove the user's existing vote (the DELETE RLS policy allows owners).
+ * Vote counters + reporter reputation are auto-updated by DB triggers/functions.
  */
-export async function upvoteReportAction(reportId: string): Promise<void> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+export async function voteReportAction(reportId: string, value: 1 | -1 | 0): Promise<void> {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
 
-  if (!user) {
-    throw new Error('You must sign in to upvote reports.')
-  }
-
-  const { error } = await supabase
-    .from('report_votes')
-    .insert({ report_id: reportId, user_id: user.id })
-
-  if (error) {
-    if (error.code === '23505' || error.message?.includes('duplicate')) {
-      throw new Error('You have already upvoted this report.')
+    if (!user) {
+      throw new Error('You must sign in to vote on reports.')
     }
-    console.error('[upvoteReportAction] error', error)
-    throw new Error('Failed to register upvote. Please try again.')
+
+    const { error } = value === 0
+      ? await supabase
+          .from('report_votes')
+          .delete()
+          .eq('report_id', reportId)
+          .eq('user_id', user.id)
+      : await supabase
+          .from('report_votes')
+          .upsert(
+            { report_id: reportId, user_id: user.id, vote: value },
+            { onConflict: 'report_id,user_id' }
+          )
+
+    if (error) {
+      console.error('[voteReportAction] error', error)
+      throw new Error('Failed to register vote. Please try again.')
+    }
+  } catch (err: any) {
+    console.error('[voteReportAction] error', err)
+    if (err?.message?.includes('sign in')) {
+      throw err
+    }
+    throw new Error(err?.message || 'Failed to register vote. Please try again.')
   }
-  // helpful_votes is auto-updated by trg_report_votes_count trigger. No further action needed.
+}
+
+export async function upvoteReportAction(reportId: string): Promise<void> {
+  return voteReportAction(reportId, 1)
+}
+
+export async function downvoteReportAction(reportId: string): Promise<void> {
+  return voteReportAction(reportId, -1)
+}
+
+/** Remove the current user's vote on a report (undo an upvote/downvote). */
+export async function removeVoteReportAction(reportId: string): Promise<void> {
+  return voteReportAction(reportId, 0)
 }
 
 /**
@@ -202,42 +282,75 @@ export async function moderateReportAction(
   newStatus: ReportStatus,
   moderatorNotes?: string
 ): Promise<void> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const status = assertReportStatus(newStatus)
+  const moderatorId = await requireModerationAccess()
+  const supabase = createServiceClient()
 
-  if (!user) {
-    throw new Error('Authentication required for moderation.')
-  }
-
-  // Defense-in-depth: verify moderator/admin role
-  const { data: profile, error: profileErr } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (profileErr || !profile || !['moderator', 'admin'].includes(profile.role)) {
-    throw new Error('Access denied. Moderator or admin role required.')
-  }
-
-  const updatePayload: any = {
-    status: newStatus,
-    moderated_by: user.id,
+  const updatePayload: {
+    status: ReportStatus
+    moderated_by: string
+    moderated_at: string
+    moderator_notes?: string | null
+  } = {
+    status,
+    moderated_by: moderatorId,
     moderated_at: new Date().toISOString(),
   }
   if (moderatorNotes !== undefined) {
     updatePayload.moderator_notes = moderatorNotes.trim() || null
   }
 
-  const { error: updateErr } = await supabase
+  const { data: updated, error: updateErr } = await supabase
     .from('reports')
     .update(updatePayload)
     .eq('id', reportId)
+    .select('id')
+    .single()
 
-  if (updateErr) {
+  if (updateErr || !updated) {
     console.error('[moderateReportAction] update error', updateErr)
-    throw new Error(updateErr.message || 'Failed to update report status.')
+    throw new Error(updateErr?.message || 'Failed to update report status.')
   }
+}
+
+/**
+ * Fetch the real moderation queue for /admin.
+ * Uses service-role reads only after staff authorization, so pending/rejected rows
+ * are visible without exposing privileged records to arbitrary clients.
+ */
+export async function getModerationQueueAction(
+  filterStatus?: ReportStatus | 'all'
+): Promise<AdminReport[]> {
+  await requireModerationAccess()
+  const supabase = createServiceClient()
+
+  const statusFilter =
+    filterStatus && filterStatus !== 'all' ? assertReportStatus(filterStatus) : null
+
+  let query = supabase
+    .from('reports')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(200)
+
+  if (statusFilter) {
+    query = query.eq('status', statusFilter)
+  }
+
+  const { data, error } = await query
+
+  if (error) {
+    console.error('[getModerationQueueAction] select error', error)
+    throw new Error(error.message || 'Failed to load moderation queue.')
+  }
+
+  return (data || [])
+    .map((row) => mapDbReportToReport(row) as AdminReport)
+    .sort((a, b) => {
+      if (a.status === 'pending' && b.status !== 'pending') return -1
+      if (a.status !== 'pending' && b.status === 'pending') return 1
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    })
 }
 
 /**

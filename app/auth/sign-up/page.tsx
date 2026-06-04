@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { showUserError, showUserSuccess } from '@/lib/toast';
 import { Eye, EyeOff, Loader2, CheckCircle2 } from 'lucide-react';
 import { sanitizeEmail, sanitizePassword, sanitizeFullName } from '@/lib/sanitize';
+import { getSafeAuthRedirectPath } from '@/lib/auth-redirect';
 
 // Brand icons for OAuth buttons (kept inline to avoid extra deps)
 function GoogleIcon({ className = "h-5 w-5" }: { className?: string }) {
@@ -39,11 +40,11 @@ function DiscordIcon({ className = "h-5 w-5" }: { className?: string }) {
 
 const signUpSchema = z
   .object({
-    fullName: z.string()
+    username: z.string()
       .trim()
-      .min(2, 'Please enter your full name')
-      .max(80, 'Name is too long')
-      .regex(/^[\p{L}\p{M}\s\-'.]+$/u, 'Name contains invalid characters')
+      .min(2, 'Username must be at least 2 characters')
+      .max(32, 'Username is too long')
+      .regex(/^[\p{L}\p{M}\p{N}\s\-_.]+$/u, 'Username contains invalid characters')
       .transform((val) => sanitizeFullName(val)),
     email: z.string()
       .trim()
@@ -69,10 +70,10 @@ const signUpSchema = z
     message: "Passwords don't match",
     path: ['confirmPassword'],
   })
-  // Extra: after transforms, make sure name is still valid
-  .refine((data) => data.fullName.length >= 2, {
-    message: 'Please enter a valid name',
-    path: ['fullName'],
+  // Extra: after transforms, make sure username is still valid
+  .refine((data) => data.username.length >= 2, {
+    message: 'Please enter a valid username',
+    path: ['username'],
   });
 
 type SignUpValues = z.infer<typeof signUpSchema>;
@@ -87,14 +88,14 @@ function SignUpForm() {
 
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get('next') || '/';
+  const next = getSafeAuthRedirectPath(searchParams.get('next'));
 
   const supabase = createClient();
 
   const form = useForm<SignUpValues>({
     resolver: zodResolver(signUpSchema) as any,
     defaultValues: {
-      fullName: '',
+      username: '',
       email: '',
       password: '',
       confirmPassword: '',
@@ -132,19 +133,93 @@ function SignUpForm() {
   const handleEmailSignUp = async (values: SignUpValues) => {
     setEmailLoading(true);
     try {
+      // Pre-check username for duplicates (case-insensitive).
+      // 1. Prefer the is_username_taken RPC (clean, no data leak).
+      // 2. Fallback to direct query using ilike (works if the public "basic profile info" policy is applied,
+      //    which it is in incremental-security-rls.sql). This helps on localhost before the dedicated
+      //    incremental-username-uniqueness.sql has been run.
+      let usernameTaken = false;
+      try {
+        const { data: taken, error: rpcError } = await supabase.rpc('is_username_taken', {
+          p_username: values.username,
+        });
+        if (!rpcError && taken === true) {
+          usernameTaken = true;
+        }
+      } catch {
+        // RPC not present yet — try direct query fallback
+      }
+
+      if (!usernameTaken) {
+        try {
+          const { data: existing } = await supabase
+            .from('profiles')
+            .select('id')
+            .ilike('username', values.username)
+            .limit(1)
+            .maybeSingle();
+          if (existing) usernameTaken = true;
+        } catch {
+          // If even the direct query fails (policy not applied), we fall through and rely on
+          // the post-signUp constraint error (if the unique index exists).
+        }
+      }
+
+      if (usernameTaken) {
+        form.setError('username', {
+          type: 'manual',
+          message: 'This username is already taken. Please choose another.',
+        });
+        showUserError('That username is already taken. Please choose another.');
+        return;
+      }
+
       const { data, error } = await supabase.auth.signUp({
         email: values.email,
         password: values.password,
         options: {
           data: {
-            full_name: values.fullName,
+            username: values.username,
           },
+          // After the user clicks the confirmation link, route them through the
+          // callback (which exchanges the code for a session) and land on the
+          // success page that confirms their email was verified.
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent('/auth/confirmed')}`,
         },
       });
 
       if (error) {
-        if (error.message.includes('already registered')) {
+        console.error('[signup] Supabase auth error:', error);
+        const msg = (error.message || '').toLowerCase();
+        const code = (error.code || '').toLowerCase();
+
+        const looksLikeEmailDup =
+          msg.includes('already registered') ||
+          msg.includes('user already registered') ||
+          msg.includes('already exists') ||
+          (msg.includes('email') && (msg.includes('already') || msg.includes('exists') || msg.includes('taken') || msg.includes('registered'))) ||
+          code.includes('email_exists') ||
+          code.includes('user_already_exists') ||
+          code.includes('email_address_exists') ||
+          code.includes('duplicate');
+
+        if (looksLikeEmailDup) {
+          form.setError('email', {
+            type: 'manual',
+            message: 'An account with this email already exists.',
+          });
           showUserError('An account with this email already exists. Try signing in instead.');
+        } else if (
+          msg.includes('duplicate key') ||
+          msg.includes('unique constraint') ||
+          msg.includes('already taken') ||
+          msg.includes('username')
+        ) {
+          form.setError('username', {
+            type: 'manual',
+            message: 'This username is already taken.',
+          });
+          showUserError('That username is already taken. Please choose another.');
         } else {
           throw error;
         }
@@ -156,7 +231,7 @@ function SignUpForm() {
         router.push(next);
       } else {
         setSignupSuccess(true);
-        showUserSuccess('Check your email', 'We sent a confirmation link. Click it to activate your account.');
+        showUserSuccess('Check your email', 'If an account exists for this email, we sent a confirmation link.');
       }
     } catch (error) {
       showUserError('Sign up failed. Please try again in a moment.');
@@ -184,7 +259,7 @@ function SignUpForm() {
   // Success state after email sign up (awaiting confirmation)
   if (signupSuccess) {
     return (
-      <div className="mx-auto max-w-md px-4 py-12 sm:py-16">
+      <div className="mx-auto max-w-md px-4 py-12 sm/py-16">
         <Card className="text-center">
           <CardHeader>
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
@@ -192,20 +267,23 @@ function SignUpForm() {
             </div>
             <CardTitle className="text-2xl">Check your inbox</CardTitle>
             <CardDescription className="pt-2 text-base">
-              We sent a confirmation link to <span className="font-medium text-foreground">{form.getValues('email')}</span>
+              If an account exists for <span className="font-medium text-foreground">{form.getValues('email')}</span>, we sent a confirmation link.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Click the link in the email to activate your account. You can close this page.
             </p>
-            <div className="pt-2">
+            <div className="pt-2 space-y-2">
               <Button asChild variant="outline" className="w-full">
                 <Link href="/auth/sign-in">Back to sign in</Link>
               </Button>
+              <p className="text-xs text-muted-foreground">
+                Already have an account? Sign in instead — no new confirmation will be sent.
+              </p>
             </div>
             <p className="text-xs text-muted-foreground">
-              Didn&apos;t receive it? Check spam or try signing up again in a few minutes.
+              Didn\'t receive it? Check spam. If you already have an account, use &quot;Back to sign in&quot; above.
             </p>
           </CardContent>
         </Card>
@@ -214,7 +292,7 @@ function SignUpForm() {
   }
 
   return (
-    <div className="mx-auto max-w-md px-4 py-12 sm:py-16">
+    <div className="mx-auto max-w-md px-4 py-12 sm/py-16">
       <div className="text-center mb-8">
         <h1 className="text-3xl font-semibold tracking-tight">Create your account</h1>
         <p className="mt-2 text-muted-foreground">
@@ -272,16 +350,16 @@ function SignUpForm() {
           {/* Email signup form */}
           <form onSubmit={form.handleSubmit(handleEmailSignUp)} className="space-y-4" noValidate>
             <div className="space-y-2">
-              <Label htmlFor="fullName">Full name</Label>
+              <Label htmlFor="username">Username / Nickname</Label>
               <Input
-                id="fullName"
-                placeholder="Alex Rivera"
-                autoComplete="name"
-                {...form.register('fullName')}
+                id="username"
+                placeholder="ShadowGamer42"
+                autoComplete="username"
+                {...form.register('username')}
                 disabled={isLoading}
               />
-              {form.formState.errors.fullName && (
-                <p className="text-xs text-destructive">{form.formState.errors.fullName.message}</p>
+              {form.formState.errors.username && (
+                <p className="text-xs text-destructive">{form.formState.errors.username.message}</p>
               )}
             </div>
 
@@ -368,9 +446,9 @@ function SignUpForm() {
                 <a href="#" className="text-foreground hover:underline">Privacy Policy</a>.
               </Label>
             </div>
-            {form.formState.errors.acceptTerms && (
-              <p className="text-xs text-destructive -mt-3">{form.formState.errors.acceptTerms.message}</p>
-            )}
+              {form.formState.errors.acceptTerms && (
+                <p className="text-xs text-destructive -mt-3">{form.formState.errors.acceptTerms.message}</p>
+              )}
 
             <Button 
               type="submit" 
@@ -427,4 +505,3 @@ export default function SignUpPage() {
     </Suspense>
   );
 }
-
