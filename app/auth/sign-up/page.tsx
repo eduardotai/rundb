@@ -283,7 +283,7 @@ function SignUpForm() {
               </p>
             </div>
             <p className="text-xs text-muted-foreground">
-              Didn\'t receive it? Check spam. If you already have an account, use &quot;Back to sign in&quot; above.
+              Didn&apos;t receive it? Check spam. If you already have an account, use &quot;Back to sign in&quot; above.
             </p>
           </CardContent>
         </Card>
