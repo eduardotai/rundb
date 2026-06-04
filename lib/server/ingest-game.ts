@@ -7,7 +7,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { ensureGameMediaBucket, optimizeAndUploadToGameMedia } from '@/lib/server/game-media'
 import { normalizeSlug } from '@/lib/utils'
 import { getCatalogCover } from '@/lib/game-cover-catalog'
-import { igdbGameMatchesSeed } from '@/lib/igdb-game-match'
+import { igdbGameMatchesSeed, igdbHasSteamAppId } from '@/lib/igdb-game-match'
 import { steamLibraryCoverUrl } from '@/lib/cover-image-url'
 
 const RATE_LIMIT_MS = 300
@@ -162,7 +162,7 @@ export async function ingestGame(
       `
         search "${seed.name.replace(/"/g, '\\"')}";
         fields id,name,slug,genres.name,release_dates.y,first_release_date,involved_companies.developer,involved_companies.publisher,involved_companies.company.name,cover.image_id,cover.url,screenshots.image_id,screenshots.url,external_games.uid,external_games.category,external_games.external_game_source;
-        limit 1;
+        limit 8;
       `
     )
 
@@ -170,7 +170,14 @@ export async function ingestGame(
       return { ok: false, error: 'No IGDB match' }
     }
 
-    const igdbGame = igdbGames[0]
+    // A known Steam AppID is authoritative. IGDB search can rank DLC/editions above the
+    // base game (e.g. a "... Weapon Pack" crossover), so prefer the result that actually
+    // links to the seed's Steam AppID rather than blindly taking the top hit.
+    let igdbGame = igdbGames[0]
+    if (steamAppId) {
+      const byAppId = igdbGames.find((g: any) => igdbHasSteamAppId(g, steamAppId))
+      if (byAppId) igdbGame = byAppId
+    }
     const igdbMatches = igdbGameMatchesSeed(seed.name, igdbGame, steamAppId)
     if (steamAppId && !igdbMatches) {
       return {
