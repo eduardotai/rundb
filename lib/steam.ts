@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 /**
  * Steam integration helpers (server-only).
  * Used for "Link Steam" (verification + profile enrichment), NOT for direct hardware data.
@@ -10,6 +12,8 @@
 
 const STEAM_OPENID_ENDPOINT = 'https://steamcommunity.com/openid/login';
 const STEAM_API_BASE = 'https://api.steampowered.com';
+export const STEAM_LINK_STATE_COOKIE = 'rundb_steam_link_state';
+export const STEAM_LINK_STATE_TTL_MS = 10 * 60 * 1000;
 
 export interface SteamProfile {
   steamid: string;
@@ -22,6 +26,53 @@ export interface SteamProfile {
 export interface SteamOwnedGamesSummary {
   game_count: number;
   appids_sample?: number[]; // opt-in, small list of popular titles only for suggestions
+}
+
+export type SteamLinkStateValidation =
+  | { ok: true; userId: string; createdAt: number; nonce: string }
+  | { ok: false; reason: 'missing_state' | 'state_mismatch' | 'invalid_state' | 'state_expired' };
+
+export function createSteamLinkState(
+  userId: string,
+  now = Date.now(),
+  nonce = randomUUID()
+): string {
+  return `${userId}:${now}:${nonce}`;
+}
+
+export function validateSteamLinkState({
+  state,
+  cookieValue,
+  now = Date.now(),
+}: {
+  state: string | null;
+  cookieValue?: string;
+  now?: number;
+}): SteamLinkStateValidation {
+  if (!state) {
+    return { ok: false, reason: 'missing_state' };
+  }
+
+  if (!cookieValue || cookieValue !== state) {
+    return { ok: false, reason: 'state_mismatch' };
+  }
+
+  const parts = state.split(':');
+  if (parts.length !== 3) {
+    return { ok: false, reason: 'invalid_state' };
+  }
+
+  const [userId, tsStr, nonce] = parts;
+  const createdAt = Number(tsStr);
+  if (!userId || !nonce || !Number.isFinite(createdAt)) {
+    return { ok: false, reason: 'invalid_state' };
+  }
+
+  if (now - createdAt > STEAM_LINK_STATE_TTL_MS || createdAt > now + 60_000) {
+    return { ok: false, reason: 'state_expired' };
+  }
+
+  return { ok: true, userId, createdAt, nonce };
 }
 
 /**
