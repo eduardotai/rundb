@@ -68,3 +68,92 @@ export function appDetailsToSeed(
 
   return { name, slug: normalizeSlug(name), steamAppId: appId }
 }
+
+// ============================================
+// NETWORK LAYER (resilient — mirrors lib/game-id-resolver.ts patterns)
+// ============================================
+const STEAM_RATE_MS = 200
+const FETCH_TIMEOUT_MS = 8000
+const FEATURED_URL = 'https://store.steampowered.com/api/featuredcategories?cc=us&l=en'
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+async function fetchJson(url: string, retries = 1): Promise<any | null> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+    try {
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'RunDB-LatestImporter/1.0 (+https://store.steampowered.com/)' },
+      })
+      if (res.status === 429 || res.status >= 500) {
+        if (attempt < retries) {
+          await sleep(400 * (attempt + 1))
+          continue
+        }
+        return null
+      }
+      if (!res.ok) return null
+      return await res.json().catch(() => null)
+    } catch (err) {
+      if (attempt < retries) {
+        await sleep(300)
+        continue
+      }
+      console.warn('[discover] fetch failed:', url, err instanceof Error ? err.message : err)
+      return null
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+  return null
+}
+
+/**
+ * Discover recent game releases from Steam's new-releases + top-sellers charts.
+ * Returns a slug-deduped SeedGame[]. Throws only if the featured endpoint is unreachable.
+ */
+export async function discoverLatestSteamGames(opts: DiscoverOptions = {}): Promise<SeedGame[]> {
+  const sinceYear = opts.sinceYear ?? new Date().getFullYear() - 1
+  const includeUnreleased = opts.includeUnreleased ?? false
+
+  const featured = await fetchJson(FEATURED_URL)
+  if (!featured) {
+    throw new Error('Steam featuredcategories endpoint unreachable')
+  }
+
+  const sections = ['new_releases', 'top_sellers']
+  if (includeUnreleased) sections.push('coming_soon')
+
+  const appIds = new Set<string>()
+  for (const key of sections) {
+    const items = featured?.[key]?.items
+    if (Array.isArray(items)) {
+      for (const it of items) {
+        if (it?.id != null) appIds.add(String(it.id))
+      }
+    }
+  }
+
+  const seeds: SeedGame[] = []
+  const seenSlugs = new Set<string>()
+
+  for (const appId of appIds) {
+    if (opts.limit && seeds.length >= opts.limit) break
+    await sleep(STEAM_RATE_MS)
+    const detail = await fetchJson(
+      `https://store.steampowered.com/api/appdetails?appids=${appId}&cc=us&l=en`
+    )
+    const res = detail?.[appId] as SteamAppDetailsResponse | undefined
+    const seed = appDetailsToSeed(appId, res, { sinceYear, includeUnreleased })
+    if (seed && !seenSlugs.has(seed.slug)) {
+      seeds.push(seed)
+      seenSlugs.add(seed.slug)
+    }
+  }
+
+  return seeds
+}
