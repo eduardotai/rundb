@@ -1,13 +1,15 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Report, UserPC } from '@/lib/types';
+import { Game, Report, UserPC } from '@/lib/types';
 import type { MatchBreakdown } from '@/lib/similarity';
 import { PerformanceBadge } from './performance-badge';
 import { formatRelativeTime, calculateHardwareAwareSimilarity as calculateSimilarity } from '@/lib/data';
 import { normalizeHardwareSync } from '@/lib/normalize-hardware';
-import { cn } from '@/lib/utils';
+import { cn, gameMediaLoader } from '@/lib/utils';
+import { upgradeCoverImageSrc } from '@/lib/cover-image-url';
 import {
   ArrowBigDown,
   ArrowBigUp,
@@ -138,7 +140,9 @@ export function ReportCard({
       onClick={() => onViewFull?.(report)}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          {showGame && report.game?.coverImage && <GameCoverThumb game={report.game} />}
+          <div className="min-w-0 flex-1">
           {showGame && (report.gameName || report.game?.name) && (
             <div className="mb-1 truncate text-xs font-semibold uppercase text-primary">
               {report.gameName || report.game?.name}
@@ -172,6 +176,7 @@ export function ReportCard({
               {report.settingsPreset}
               {report.customSettingsNotes && <span className="ml-1 text-[10px] text-muted-foreground">(custom)</span>}
             </span>
+          </div>
           </div>
         </div>
 
@@ -369,6 +374,35 @@ export function ReportCard({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// Small portrait box-art thumbnail shown beside the game name when `showGame` is set
+// (e.g. the "Will It Run?" match feed). Falls back to a name chip if the cover fails to load.
+function GameCoverThumb({ game }: { game: Game }) {
+  const [imgError, setImgError] = useState(false);
+  const coverSrc = upgradeCoverImageSrc(game.coverImage, game.steamAppId);
+
+  if (imgError || !game.coverImage) {
+    return (
+      <div className="grid h-24 w-16 shrink-0 place-items-center overflow-hidden rounded-md border border-border bg-muted px-1 text-center text-[9px] font-mono font-medium uppercase leading-tight tracking-wide text-muted-foreground/70">
+        {game.name}
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative h-24 w-16 shrink-0 overflow-hidden rounded-md border border-border bg-muted">
+      <Image
+        loader={gameMediaLoader}
+        src={coverSrc}
+        alt={game.name}
+        fill
+        sizes="64px"
+        className="object-cover object-top"
+        onError={() => setImgError(true)}
+      />
     </div>
   );
 }
