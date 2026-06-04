@@ -37,8 +37,11 @@ function parseArgs(): Flags {
       if (!isNaN(n) && n > 0) flags.limit = n
     } else if (arg.startsWith('--since-year=')) {
       const n = parseInt(arg.split('=')[1] || '', 10)
-      if (!isNaN(n)) flags.sinceYear = n
+      if (!isNaN(n) && n > 0) flags.sinceYear = n
     } else if (arg.startsWith('--months=')) {
+      // Coarse: discovery filters by release YEAR only, so --months is rounded to the
+      // calendar year of the cutoff date (e.g. --months=6 in 2026 => sinceYear 2026, which
+      // excludes earlier 2026 releases). Use --since-year for explicit control.
       const m = parseInt(arg.split('=')[1] || '', 10)
       if (!isNaN(m) && m > 0) {
         const cutoff = new Date(Date.now() - m * 30 * 86400000)
@@ -51,6 +54,7 @@ function parseArgs(): Flags {
 
 async function main() {
   const flags = parseArgs()
+  const start = Date.now()
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -109,7 +113,7 @@ async function main() {
   for (let i = 0; i < fresh.length; i++) {
     const s = fresh[i]!
     console.log(`\n[${i + 1}/${fresh.length}] ${s.name} (${s.slug})`)
-    const result = await ingestGame(client, s, { onLog: (msg) => console.log(`  ${msg}`) })
+    const result = await ingestGame(client, s, { dryRun: flags.dryRun, onLog: (msg) => console.log(`  ${msg}`) })
     if (result.ok) {
       stats.success++
       console.log(`  SUCCESS (media=${result.mediaUploaded ?? 0})`)
@@ -121,8 +125,11 @@ async function main() {
   }
 
   console.log('\n' + '='.repeat(50))
-  console.log(`Ingested: ${stats.success}  Failed: ${stats.failed}`)
-  stats.errors.slice(0, 5).forEach((e) => console.log(`  - ${e.slug}: ${e.error}`))
+  console.log(`Success: ${stats.success}  Failed: ${stats.failed}`)
+  console.log(`Duration: ${((Date.now() - start) / 1000).toFixed(1)}s`)
+  if (stats.errors.length) {
+    stats.errors.slice(0, 5).forEach((e) => console.log(`  - ${e.slug}: ${e.error}`))
+  }
   process.exit(stats.failed > 0 ? 1 : 0)
 }
 
