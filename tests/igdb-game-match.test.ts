@@ -7,8 +7,8 @@ import {
   igdbTitleMatchesSeed,
 } from '../lib/igdb-game-match'
 
-test('title matching alone can accept a sequel substring', () => {
-  assert.equal(igdbTitleMatchesSeed('Dead Space', 'Dead Space 2'), true)
+test('title matching alone rejects sequel substrings', () => {
+  assert.equal(igdbTitleMatchesSeed('Dead Space', 'Dead Space 2'), false)
 })
 
 test('known Steam AppIDs must match before an IGDB result can enrich a seed', () => {
