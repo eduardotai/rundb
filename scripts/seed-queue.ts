@@ -81,16 +81,33 @@ async function main() {
         continue
       }
 
-      const { data: game, error: gameErr } = await client
+      const { data: insertedGame, error: gameErr } = await client
         .from('games')
-        .upsert(gameRow, { onConflict: 'slug' })
+        .upsert(gameRow, { onConflict: 'slug', ignoreDuplicates: true })
         .select('id')
-        .single()
+        .maybeSingle()
 
       if (gameErr) {
         console.warn(`  skip ${seed.slug}: ${gameErr.message}`)
         skipped++
         continue
+      }
+
+      let game = insertedGame as { id: string } | null
+      if (!game) {
+        const { data: existingGame, error: existingGameErr } = await client
+          .from('games')
+          .select('id')
+          .eq('slug', seed.slug)
+          .single()
+
+        if (existingGameErr) {
+          console.warn(`  skip ${seed.slug}: ${existingGameErr.message}`)
+          skipped++
+          continue
+        }
+
+        game = existingGame as { id: string }
       }
 
       gamesUpserted++
@@ -107,7 +124,7 @@ async function main() {
 
       const { error: queueErr } = await client
         .from('game_ingest_queue')
-        .upsert(queueRow, { onConflict: 'slug' })
+        .upsert(queueRow, { onConflict: 'slug', ignoreDuplicates: true })
 
       if (queueErr) {
         console.warn(`  queue skip ${seed.slug}: ${queueErr.message}`)

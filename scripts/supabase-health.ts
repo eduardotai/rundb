@@ -28,9 +28,9 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 const service = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
-async function probe(label: string, key: string, table: string) {
+async function probe(label: string, key: string, table: string, selectCol: string = 'id') {
   const client = createClient(url, key)
-  const { data, error } = await client.from(table).select('id').limit(1)
+  const { data, error } = await client.from(table).select(selectCol).limit(1)
   console.log(`${label} ${table}:`, error?.message ?? `ok (${data?.length ?? 0} rows sampled)`)
 }
 
@@ -39,6 +39,14 @@ async function main() {
   await probe('service', service, 'games')
   await probe('anon', anon, 'game_media')
   await probe('service', service, 'game_media')
+  // Hardware catalog (text PK, so select canonical; also tests aliases table)
+  await probe('anon', anon, 'hardware_catalog', 'canonical')
+  await probe('service', service, 'hardware_catalog', 'canonical')
+  await probe('anon', anon, 'hardware_aliases', 'raw_string')
+  await probe('service', service, 'hardware_aliases', 'raw_string')
 }
 
-main()
+main().catch((e) => {
+  console.error(e)
+  process.exit(1)
+})

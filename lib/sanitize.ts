@@ -5,7 +5,7 @@
  *
  * 1. Forms using Zod + react-hook-form:
  *    - Add .max() limits
- *    - Use .transform(v => sanitizeFullName(v)) for names/hardware strings
+ *    - Use .transform(v => sanitizeFullName(v)) for usernames/nicks + hardware strings
  *    - Use sanitizeEmail / sanitizePassword where appropriate
  *
  * 2. Manual forms / onClick saves (no Zod):
@@ -47,9 +47,9 @@ export function sanitizePassword(raw: string): string {
 }
 
 /**
- * Sanitize full name (most important to control because it can be displayed later):
+ * Sanitize display names / usernames / nicks / hardware model strings (most important to control because they can be displayed later):
  * - Trim + collapse whitespace
- * - Allow apostrophes and common punctuation needed for real names (Baldur's Gate, etc.)
+ * - Allow apostrophes, common punctuation, letters, marks, digits, spaces, -_. (friendly for gamer nicks + hardware like "Ryzen 7 7800X3D")
  * - Hard cap at 80 chars
  * - Strip dangerous characters + neutralize links to prevent malicious injection
  */
@@ -59,7 +59,7 @@ export function sanitizeFullName(raw: string): string {
     .replace(/[\x00-\x1F\x7F-\x9F]/g, '')           // remove control chars
     .replace(/[<>"`]/g, '')                         // strip dangerous XSS chars (keep ' for names like Baldur's Gate)
     .replace(/https?:\/\/|www\.|javascript:|data:|vbscript:/gi, '') // neutralize links / protocols
-    .replace(/[^\p{L}\p{M}\s\-'.]/gu, '')           // allow only safe name chars
+    .replace(/[^\p{L}\p{M}\p{N}\s\-'.]/gu, '')      // allow safe name chars + digits for hardware/driver strings
     .replace(/\s+/g, ' ');                          // collapse spaces
 
   if (name.length > 80) name = name.slice(0, 80);

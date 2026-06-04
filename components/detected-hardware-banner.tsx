@@ -33,13 +33,15 @@ export function DetectedHardwareBanner({
 }: DetectedHardwareBannerProps) {
   if (!detected) return null;
 
-  const { method, confidence, cpu, gpu, ram, resolution, limitations = [] } = detected;
+  const { method, confidence, cpu, gpu, ram, resolution, refreshRate, limitations = [] } = detected;
   const pct = Math.round(confidence * 100);
 
   const methodLabel =
     method === 'browser' ? 'Browser scan' :
     method === 'paste' ? 'Pasted from system' :
     method === 'steam' ? 'Steam' : 'Manual';
+
+  const isBrowserHint = method === 'browser' && (cpu?.includes('(browser hint)') || ram == null);
 
   return (
     <div
@@ -59,7 +61,14 @@ export function DetectedHardwareBanner({
 
         <span className="text-xs text-muted-foreground truncate">
           {gpu || cpu || 'Hardware detected'}
+          {ram ? ` • ${ram} GB` : ''}
+          {resolution ? ` • ${resolution}` : ''}
+          {refreshRate ? ` @ ${refreshRate}Hz` : ''}
         </span>
+
+        {isBrowserHint && (
+          <span className="text-[10px] text-amber-400/90">CPU/RAM are estimates — paste for accurate values</span>
+        )}
 
         <div className="ml-auto flex items-center gap-1.5">
           {!applied && (

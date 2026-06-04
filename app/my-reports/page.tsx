@@ -18,7 +18,7 @@ export default async function MyReportsPage() {
 
       <div className="mt-8 rounded-xl border border-dashed border-border p-12 text-center text-muted-foreground">
         <p>You haven&apos;t submitted any reports yet. Real submissions (Phase 2) are stored in Supabase and will appear here after full read migration + My Reports query impl.</p>
-        <p className="mt-2 text-xs">See /admin/reports for moderation of pending reports (moderator role required).</p>
+        <p className="mt-2 text-xs">Reports publish immediately; community votes and automatic flags drive credibility.</p>
       </div>
     </div>
   );

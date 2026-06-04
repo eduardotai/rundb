@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { X } from 'lucide-react';
 import {
   loadMyRigAsync,
-  upvoteReport,
+  voteReport,
   getReportsForGameAsync,
   computeGameStatsAsync,
   useGame,
@@ -158,36 +158,16 @@ function GameDetailInner({ game }: { game: Game }) {
 
   const clearFilters = () => setFilters({});
 
-  // Optimistic upvote handler using RQ cache update (keeps UI instant + works for both flag modes).
-  // The ReportCard still manages its local "voted" state for +1 display and disables.
-  // On real mode, the DB trigger will have incremented helpful_votes; optimistic for instant + invalidate for authoritative sync from DB.
-  const handleHelpfulOptimistic = async (reportId: string) => {
-    // Phase 2/3: real upvote path (report_votes + trigger) when USE_REAL.
-    // Errors (dup, auth, rate limit) swallowed gracefully (ReportCard logs + no UI change).
+  // Signed-vote handler. ReportCard owns the optimistic display (and undo); here we
+  // just persist the vote (value 0 = remove) and invalidate so DB-recomputed counters
+  // (score/reputation/badges) are pulled back in as the authoritative source of truth.
+  const handleVoteOptimistic = async (reportId: string, value: 1 | -1 | 0) => {
+    // Errors (auth/backend) are swallowed gracefully; ReportCard reverts + logs.
     try {
-      await upvoteReport(reportId);
-
-      // Optimistic update ONLY on success (prevents bump on rate-limit/dup errors).
-      // Then invalidate to pull real data (triggered helpful_votes + any concurrent changes).
-      const updater = (old: Report[] | undefined) => {
-        if (!old) return old;
-        return old.map((r) =>
-          r.id === reportId
-            ? { ...r, helpfulVotes: (r.helpfulVotes ?? 0) + 1 }
-            : r
-        );
-      };
-      queryClient.setQueryData(['game-reports', game.id, 'unfiltered'], updater);
-      queryClient.setQueryData(
-        ['game-reports', game.id, 'filtered', filters.resolution || '', filters.gpuSeries || ''],
-        updater
-      );
-
-      // Proper invalidation after optimistic: ensures real data (post-trigger) is fetched.
-      // Matches Phase 3 requirement for optimistic + invalidation on actions.
+      await voteReport(reportId, value);
       queryClient.invalidateQueries({ queryKey: ['game-reports', game.id] });
     } catch {
-      // ignore — ReportCard already handles user feedback (no optimistic bump)
+      // ignore — ReportCard already handles user feedback (reverts optimistic state)
     }
   };
 
@@ -359,6 +339,9 @@ function GameDetailInner({ game }: { game: Game }) {
         <div className="lg:col-span-7">
           {/* Report Filters */}
           <div className="mb-4 space-y-2">
+            <div className="text-xs text-muted-foreground mb-2">
+              These reports from real players power the community stats, tier distributions, and similarity highlights on the left.
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <div className="text-sm font-medium text-muted-foreground mr-1">Filter reports:</div>
 
@@ -473,7 +456,7 @@ function GameDetailInner({ game }: { game: Game }) {
                   key={report.id}
                   report={report}
                   userRig={myRig}
-                  onHelpful={handleHelpfulOptimistic}
+                  onVote={handleVoteOptimistic}
                 />
               ))
             ) : (
