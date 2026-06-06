@@ -15,8 +15,8 @@ interface FpsResolutionBarsProps {
 const bucketVar: Record<FpsBucket, string> = {
   low: 'var(--tier-struggling)',
   ok: 'var(--tier-playable)',
-  good: 'var(--tier-excellent)',
-  high: 'var(--tier-good)',
+  good: 'var(--tier-good)',
+  high: 'var(--tier-excellent)',
 };
 
 export function FpsResolutionBars({ avgFpsByResolution }: FpsResolutionBarsProps) {
@@ -34,7 +34,7 @@ export function FpsResolutionBars({ avgFpsByResolution }: FpsResolutionBarsProps
       {keys.map((res) => {
         const fps = avgFpsByResolution[res];
         return (
-          <div key={res} className="flex items-center gap-3 text-sm">
+          <div key={res} className="flex items-center gap-3 text-sm" role="img" aria-label={`${res}: ${fps} FPS`}>
             <span className="w-20 shrink-0 font-mono tabular-nums text-muted-foreground">
               {res}
             </span>
