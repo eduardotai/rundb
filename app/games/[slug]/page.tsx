@@ -18,7 +18,7 @@ import {
   voteReport,
   getReportsForGameAsync,
   computeGameStatsAsync,
-  predictForUserRigAsync,
+  usePrediction,
   useGame,
 } from '@/lib/data';
 import { Report, ReportFilters, Game, UserPC } from '@/lib/types';
@@ -147,13 +147,9 @@ function GameDetailInner({ game }: { game: Game }) {
   });
 
   // Rig prediction for the "your rig lands here" marker on the tier bar.
-  // Keyed by a hardware signature so switching rigs (or sign-in/out) refetches.
-  const rigSignature = myRig ? `${myRig.cpu}|${myRig.gpu}|${myRig.ram}` : 'none';
-  const predictionQuery = useQuery({
-    queryKey: ['game-prediction', game.id, rigSignature],
-    enabled: !!myRig,
-    queryFn: () => predictForUserRigAsync(myRig!, game.id),
-  });
+  // Canonical hook (lib/data.ts): keyed by the rig object, gated on a complete rig,
+  // and shared with any other surface that predicts for the same rig+game.
+  const predictionQuery = usePrediction((myRig ?? undefined) as UserPC, game.id);
 
   const queryClient = useQueryClient();
 
