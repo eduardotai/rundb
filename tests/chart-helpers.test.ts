@@ -5,6 +5,7 @@ import {
   TIER_ORDER,
   tierSegments,
   sortResolutions,
+  resolutionArea,
   fpsBarPct,
   fpsBucket,
 } from '../lib/chart-helpers'
@@ -35,6 +36,8 @@ test('sortResolutions orders by pixel area, most demanding first', () => {
   assert.deepEqual(out, ['3840x2160', '2560x1440', '1920x1080'])
 })
 
+// '1440p' and '2560×1440' have equal pixel area (2560*1440), so their relative
+// order after '4K' verifies stable tie-breaking by original input index.
 test('sortResolutions understands shorthand and unicode multiplier', () => {
   const out = sortResolutions(['1080p', '4K', '1440p', '2560×1440'])
   assert.deepEqual(out, ['4K', '1440p', '2560×1440', '1080p'])
@@ -59,4 +62,19 @@ test('fpsBucket boundaries', () => {
   assert.equal(fpsBucket(60), 'good')
   assert.equal(fpsBucket(119), 'good')
   assert.equal(fpsBucket(120), 'high')
+})
+
+test('fpsBucket and fpsBarPct guard non-finite input', () => {
+  assert.equal(fpsBucket(NaN), 'low')
+  assert.equal(fpsBucket(-1), 'low')
+  assert.equal(fpsBarPct(NaN, 120), 0)
+  assert.equal(fpsBarPct(60, NaN), 0)
+})
+
+test('resolutionArea parses formats and returns null for junk', () => {
+  assert.equal(resolutionArea('2560×1440'), 2560 * 1440)
+  assert.equal(resolutionArea('1080p'), 1920 * 1080)
+  assert.equal(resolutionArea('4K'), 3840 * 2160)
+  assert.equal(resolutionArea('garbage'), null)
+  assert.equal(resolutionArea(''), null)
 })

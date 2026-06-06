@@ -42,6 +42,7 @@ export function resolutionArea(key: string): number | null {
     return w * h;
   }
 
+  // Note: consumer-display approximation — '2K' is treated as QHD 2560x1440 (not DCI 2K 2048x1080).
   if (s === '2k') return 2560 * 1440;
   if (s === '4k') return 3840 * 2160;
   if (s === '8k') return 7680 * 4320;
@@ -55,14 +56,12 @@ export function sortResolutions(keys: string[]): string[] {
   return keys
     .map((key, i) => ({ key, i, area: resolutionArea(key) }))
     .sort((a, b) => {
-      const aKnown = a.area !== null;
-      const bKnown = b.area !== null;
-      if (aKnown && bKnown) {
-        if (b.area! !== a.area!) return b.area! - a.area!;
+      if (a.area !== null && b.area !== null) {
+        if (b.area !== a.area) return b.area - a.area;
         return a.i - b.i;
       }
-      if (aKnown) return -1;
-      if (bKnown) return 1;
+      if (a.area !== null) return -1;
+      if (b.area !== null) return 1;
       return a.i - b.i;
     })
     .map((o) => o.key);
@@ -70,18 +69,15 @@ export function sortResolutions(keys: string[]): string[] {
 
 // Bar fill percentage (0-100) for an FPS value relative to the max across rows.
 export function fpsBarPct(fps: number, maxFps: number): number {
-  if (maxFps <= 0) return 0;
-  const pct = (fps / maxFps) * 100;
-  if (pct < 0) return 0;
-  if (pct > 100) return 100;
-  return pct;
+  if (maxFps <= 0 || !Number.isFinite(fps) || !Number.isFinite(maxFps)) return 0;
+  return Math.min(100, Math.max(0, (fps / maxFps) * 100));
 }
 
 export type FpsBucket = 'low' | 'ok' | 'good' | 'high';
 
 // Semantic FPS bucket used to pick a bar color. No Tailwind/CSS here on purpose.
 export function fpsBucket(fps: number): FpsBucket {
-  if (fps < 30) return 'low';
+  if (!Number.isFinite(fps) || fps < 30) return 'low';
   if (fps < 60) return 'ok';
   if (fps < 120) return 'good';
   return 'high';
