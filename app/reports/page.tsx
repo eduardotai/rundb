@@ -473,15 +473,30 @@ export default function ReportsBrowser() {
               >
                 <div className="relative aspect-[2/3] w-40 flex-shrink-0 overflow-hidden bg-muted">
                   {!bannerErrors[game.id] ? (
-                    <Image
-                      loader={gameMediaLoader}
-                      src={game.coverImage}
-                      alt={game.name}
-                      fill
-                      className="object-cover object-top transition-transform duration-300 group-hover:scale-[1.035]"
-                      sizes="160px"
-                      onError={() => setBannerErrors((prev) => ({ ...prev, [game.id]: true }))}
-                    />
+                    <>
+                      {/* Blurred, zoomed fill behind the cover so non-portrait art (e.g. landscape
+                          IGDB/RAWG covers like League of Legends or Resident Evil Requiem) is shown
+                          in full via object-contain instead of being hard-cropped. True 2:3 box art
+                          fills the frame edge-to-edge and hides this backdrop entirely. */}
+                      <Image
+                        loader={gameMediaLoader}
+                        src={game.coverImage}
+                        alt=""
+                        aria-hidden
+                        fill
+                        className="scale-125 object-cover blur-xl"
+                        sizes="160px"
+                      />
+                      <Image
+                        loader={gameMediaLoader}
+                        src={game.coverImage}
+                        alt={game.name}
+                        fill
+                        className="object-contain transition-transform duration-300 group-hover:scale-[1.035]"
+                        sizes="160px"
+                        onError={() => setBannerErrors((prev) => ({ ...prev, [game.id]: true }))}
+                      />
+                    </>
                   ) : (
                     <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted to-muted/70">
                       <div className="px-2 text-center">
