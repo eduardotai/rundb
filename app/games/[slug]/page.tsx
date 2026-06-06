@@ -18,6 +18,7 @@ import {
   getReportsForGameAsync,
   computeGameStatsAsync,
   useGame,
+  usePrediction,
 } from '@/lib/data';
 import { Report, ReportFilters, PerformanceTier, Game, UserPC } from '@/lib/types';
 import { cn, gameMediaLoader } from '@/lib/utils';
@@ -143,6 +144,10 @@ function GameDetailInner({ game }: { game: Game }) {
     queryKey: ['game-stats', game.id],
     queryFn: () => computeGameStatsAsync(game.id),
   });
+
+  // Rig prediction for the "your rig lands here" marker on the tier bar.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const predictionQuery = usePrediction((myRig ?? undefined) as UserPC, game.id);
 
   const queryClient = useQueryClient();
 
