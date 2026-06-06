@@ -5,7 +5,8 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { PerformanceBadge } from '@/components/performance-badge';
+import { TierDistributionBar } from '@/components/charts/tier-distribution-bar';
+import { FpsResolutionBars } from '@/components/charts/fps-resolution-bars';
 import { ReportCard } from '@/components/report-card';
 import { SubmitReportDialog } from '@/components/submit-report-dialog';
 import { CompatibilityChecker } from '@/components/compatibility-checker';
@@ -17,9 +18,10 @@ import {
   voteReport,
   getReportsForGameAsync,
   computeGameStatsAsync,
+  predictForUserRigAsync,
   useGame,
 } from '@/lib/data';
-import { Report, ReportFilters, PerformanceTier, Game, UserPC } from '@/lib/types';
+import { Report, ReportFilters, Game, UserPC } from '@/lib/types';
 import { cn, gameMediaLoader } from '@/lib/utils';
 import { upgradeCoverImageSrc } from '@/lib/cover-image-url';
 import Image from 'next/image';
@@ -142,6 +144,15 @@ function GameDetailInner({ game }: { game: Game }) {
   const statsQuery = useQuery({
     queryKey: ['game-stats', game.id],
     queryFn: () => computeGameStatsAsync(game.id),
+  });
+
+  // Rig prediction for the "your rig lands here" marker on the tier bar.
+  // Keyed by a hardware signature so switching rigs (or sign-in/out) refetches.
+  const rigSignature = myRig ? `${myRig.cpu}|${myRig.gpu}|${myRig.ram}` : 'none';
+  const predictionQuery = useQuery({
+    queryKey: ['game-prediction', game.id, rigSignature],
+    enabled: !!myRig,
+    queryFn: () => predictForUserRigAsync(myRig!, game.id),
   });
 
   const queryClient = useQueryClient();
@@ -308,54 +319,31 @@ function GameDetailInner({ game }: { game: Game }) {
             {statsQuery.isLoading ? (
               // Dense ProtonDB-style loading skeletons for stats (Phase 3 polish)
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                <Skeleton className="h-4 w-full rounded-full" />
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 sm:grid-cols-3">
                   {Array.from({ length: 5 }).map((_, i) => (
-                    <div key={i} className="flex items-center justify-between text-sm">
-                      <Skeleton className="h-5 w-20 rounded-full" />
-                      <Skeleton className="h-4 w-8" />
-                    </div>
+                    <Skeleton key={i} className="h-3.5 w-full" />
                   ))}
                 </div>
-                <div className="mt-3 border-t border-border pt-4 text-sm">
-                  <div className="font-medium mb-1">Average FPS by Resolution</div>
-                  <div className="space-y-1.5">
-                    {Array.from({ length: 3 }).map((_, i) => (
-                      <div key={i} className="flex justify-between tabular-nums">
-                        <Skeleton className="h-3.5 w-16" />
-                        <Skeleton className="h-3.5 w-12" />
-                      </div>
-                    ))}
-                  </div>
+                <div className="mt-3 border-t border-border pt-4 space-y-2">
+                  <Skeleton className="h-3.5 w-40" />
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <Skeleton key={i} className="h-3 w-full" />
+                  ))}
                 </div>
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-                  {Object.entries(stats.tierDistribution).map(([tier, count]) => {
-                    const pct = stats.totalReports ? Math.round((count / stats.totalReports) * 100) : 0;
-                    return (
-                      <div key={tier} className="flex items-center justify-between text-sm">
-                        <PerformanceBadge tier={tier as PerformanceTier} size="sm" />
-                        <span className="tabular-nums font-mono text-muted-foreground">{pct}%</span>
-                      </div>
-                    );
-                  })}
-                </div>
+                <TierDistributionBar
+                  distribution={stats.tierDistribution}
+                  total={stats.totalReports}
+                  predictedTier={predictionQuery.data?.predictedTier ?? null}
+                  confidence={predictionQuery.data?.confidence}
+                />
 
                 <div className="mt-5 border-t border-border pt-4 text-sm">
-                  <div className="font-medium mb-1">Average FPS by Resolution</div>
-                  {Object.keys(stats.avgFpsByResolution).length > 0 ? (
-                    <div className="space-y-1 text-muted-foreground">
-                      {Object.entries(stats.avgFpsByResolution).map(([res, fps]) => (
-                        <div key={res} className="flex justify-between tabular-nums">
-                          <span>{res}</span>
-                          <span className="font-medium text-foreground">{fps} FPS</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-muted-foreground">Not enough data yet.</div>
-                  )}
+                  <div className="font-medium mb-2">Average FPS by Resolution</div>
+                  <FpsResolutionBars avgFpsByResolution={stats.avgFpsByResolution} />
                 </div>
 
                 {stats.mostCommonPreset && (
