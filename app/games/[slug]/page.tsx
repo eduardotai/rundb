@@ -22,9 +22,8 @@ import {
   useGame,
 } from '@/lib/data';
 import { Report, ReportFilters, Game, UserPC } from '@/lib/types';
-import { cn, gameMediaLoader } from '@/lib/utils';
-import { upgradeCoverImageSrc } from '@/lib/cover-image-url';
-import Image from 'next/image';
+import { GameCoverFrame } from '@/components/game-cover-frame';
+import { cn } from '@/lib/utils';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
@@ -76,7 +75,6 @@ function GameDetailInner({ game }: { game: Game }) {
   const [canVote, setCanVote] = useState(false);
   // Error state for real hero cover (robustness for external real banner URLs)
   const [heroImgError, setHeroImgError] = useState(false);
-  const heroCoverSrc = upgradeCoverImageSrc(game.coverImage, game.steamAppId);
 
   const supabase = useMemo(() => createClient(), []);
 
@@ -241,14 +239,13 @@ function GameDetailInner({ game }: { game: Game }) {
             {/* Phase 1/3: Next Image + gameMediaLoader for real covers (IGDB/Steam/Supabase).
                Priority for LCP. Error state + improved sizes + optional attribution polish.
                Now uses portrait aspect-[2/3] to match actual cover sources (library_600x900 etc) for consistent fit with GameCard + report sections. */}
-            <div className="relative aspect-[2/3] w-full overflow-hidden bg-muted">
+            <div className="relative aspect-[2/3] w-full overflow-hidden">
               {!heroImgError ? (
-                <Image
-                  loader={gameMediaLoader}
-                  src={heroCoverSrc}
+                <GameCoverFrame
+                  src={game.coverImage}
                   alt={game.name}
-                  fill
-                  className="object-cover object-top"
+                  steamAppId={game.steamAppId}
+                  className="h-full w-full"
                   sizes="(max-width: 768px) 100vw, (max-width: 1200px) 60vw, 720px"
                   quality={92}
                   priority

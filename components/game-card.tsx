@@ -6,8 +6,8 @@ import Image from 'next/image';
 import { Game, GameStats, PerformanceTier } from '@/lib/types';
 import { computeGameStats } from '@/lib/data';
 import { PerformanceBadge } from './performance-badge';
-import { cn, gameMediaLoader } from '@/lib/utils';
-import { upgradeCoverImageSrc } from '@/lib/cover-image-url';
+import { GameCoverFrame } from '@/components/game-cover-frame';
+import { cn } from '@/lib/utils';
 import { ShieldCheck, Sparkles } from 'lucide-react';
 
 // Phase 3: GameCard now supports optional precomputed `stats` (from adapter + computeGameStatsFromReports in parent RQ data).
@@ -55,7 +55,6 @@ export function GameCard({
 
   // Error state for real covers (IGDB/Steam/Supabase etc can transiently fail; graceful fallback, no layout shift)
   const [imgError, setImgError] = useState(false);
-  const coverSrc = upgradeCoverImageSrc(game.coverImage, game.steamAppId);
 
   return (
     <Link
@@ -66,19 +65,17 @@ export function GameCard({
         className
       )}
     >
-      <div className="relative aspect-[2/3] w-full overflow-hidden bg-muted">
+      <div className="relative aspect-[2/3] w-full overflow-hidden">
         {!imgError ? (
-          /* Phase 1/3 image strategy: Next Image + gameMediaLoader for real covers.
-             Improved responsive sizes + priority control per surface. onError for robustness. */
-          <Image
-            loader={gameMediaLoader}
-            src={coverSrc}
+          <GameCoverFrame
+            src={game.coverImage}
             alt={game.name}
-            fill
-            className="object-cover object-top transition-transform duration-300 group-hover:scale-[1.03]"
+            steamAppId={game.steamAppId}
+            className="h-full w-full"
             sizes={imageSizes || "(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1280px) 25vw, 360px"}
             quality={90}
             priority={priority}
+            hoverZoom
             onError={() => setImgError(true)}
           />
         ) : (

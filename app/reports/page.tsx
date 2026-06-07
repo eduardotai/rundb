@@ -15,8 +15,7 @@ import { FilterCombobox, FilterOption } from '@/components/reports/filter-combob
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import Image from 'next/image';
-import { gameMediaLoader } from '@/lib/utils';
+import { GameCoverFrame } from '@/components/game-cover-frame';
 import { createClient } from '@/lib/supabase/client';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { X, LayoutGrid, Rows3, Loader2 } from 'lucide-react';
@@ -471,37 +470,24 @@ export default function ReportsBrowser() {
                 href={`/games/${game.slug}`}
                 className="group flex overflow-hidden rounded-2xl border border-border bg-card transition-all hover:border-slate-600/70 hover:shadow-xl focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
               >
-                <div className="relative aspect-[2/3] w-40 flex-shrink-0 overflow-hidden bg-muted">
+                <div className="relative w-40 flex-shrink-0">
                   {!bannerErrors[game.id] ? (
-                    <>
-                      {/* Blurred, zoomed fill behind the cover so non-portrait art (e.g. landscape
-                          IGDB/RAWG covers like League of Legends or Resident Evil Requiem) is shown
-                          in full via object-contain instead of being hard-cropped. True 2:3 box art
-                          fills the frame edge-to-edge and hides this backdrop entirely. */}
-                      <Image
-                        loader={gameMediaLoader}
-                        src={game.coverImage}
-                        alt=""
-                        aria-hidden
-                        fill
-                        className="scale-125 object-cover blur-xl"
-                        sizes="160px"
-                      />
-                      <Image
-                        loader={gameMediaLoader}
-                        src={game.coverImage}
-                        alt={game.name}
-                        fill
-                        className="object-contain transition-transform duration-300 group-hover:scale-[1.035]"
-                        sizes="160px"
-                        onError={() => setBannerErrors((prev) => ({ ...prev, [game.id]: true }))}
-                      />
-                    </>
+                    <GameCoverFrame
+                      src={game.coverImage}
+                      alt={game.name}
+                      steamAppId={game.steamAppId}
+                      className="aspect-[2/3] w-full"
+                      sizes="160px"
+                      hoverZoom
+                      onError={() => setBannerErrors((prev) => ({ ...prev, [game.id]: true }))}
+                    />
                   ) : (
-                    <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted to-muted/70">
-                      <div className="px-2 text-center">
-                        <div className="text-[9px] uppercase tracking-widest text-muted-foreground/60">COVER</div>
-                        <div className="mt-0.5 line-clamp-2 text-[11px] font-semibold leading-tight text-foreground/85">{game.name}</div>
+                    <div className="relative aspect-[2/3] w-full overflow-hidden bg-muted">
+                      <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted to-muted/70">
+                        <div className="px-2 text-center">
+                          <div className="text-[9px] uppercase tracking-widest text-muted-foreground/60">COVER</div>
+                          <div className="mt-0.5 line-clamp-2 text-[11px] font-semibold leading-tight text-foreground/85">{game.name}</div>
+                        </div>
                       </div>
                     </div>
                   )}

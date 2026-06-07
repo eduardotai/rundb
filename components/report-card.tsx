@@ -1,15 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Game, Report, UserPC } from '@/lib/types';
 import type { MatchBreakdown } from '@/lib/similarity';
 import { PerformanceBadge } from './performance-badge';
 import { formatRelativeTime, calculateHardwareAwareSimilarity as calculateSimilarity } from '@/lib/data';
 import { normalizeHardwareSync } from '@/lib/normalize-hardware';
-import { cn, gameMediaLoader } from '@/lib/utils';
-import { upgradeCoverImageSrc } from '@/lib/cover-image-url';
+import { GameCoverFrame } from '@/components/game-cover-frame';
+import { cn } from '@/lib/utils';
 import {
   ArrowBigDown,
   ArrowBigUp,
@@ -382,7 +381,6 @@ export function ReportCard({
 // (e.g. the "Will It Run?" match feed). Falls back to a name chip if the cover fails to load.
 function GameCoverThumb({ game }: { game: Game }) {
   const [imgError, setImgError] = useState(false);
-  const coverSrc = upgradeCoverImageSrc(game.coverImage, game.steamAppId);
 
   if (imgError || !game.coverImage) {
     return (
@@ -393,17 +391,15 @@ function GameCoverThumb({ game }: { game: Game }) {
   }
 
   return (
-    <div className="relative h-24 w-16 shrink-0 overflow-hidden rounded-md border border-border bg-muted">
-      <Image
-        loader={gameMediaLoader}
-        src={coverSrc}
-        alt={game.name}
-        fill
-        sizes="64px"
-        className="object-cover object-top"
-        onError={() => setImgError(true)}
-      />
-    </div>
+    <GameCoverFrame
+      src={game.coverImage}
+      alt={game.name}
+      steamAppId={game.steamAppId}
+      className="h-24 w-16 shrink-0 rounded-md border border-border"
+      sizes="64px"
+      blurBackdrop={false}
+      onError={() => setImgError(true)}
+    />
   );
 }
 

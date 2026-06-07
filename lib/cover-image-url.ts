@@ -83,6 +83,8 @@ export function buildCoverLoaderUrl(
   if (!src) return src
   const w = Math.min(Math.max(Math.round(width), 200), 1920)
   const q = Math.min(Math.max(quality, 60), 95)
+  // Portrait cover bounding box — `resize=contain` preserves source aspect ratio.
+  const h = Math.round((w * 4) / 3)
 
   try {
     const url = new URL(upgradeCoverImageSrc(src))
@@ -94,6 +96,8 @@ export function buildCoverLoaderUrl(
         '/storage/v1/render/image/public/'
       )
       url.searchParams.set('width', String(w))
+      url.searchParams.set('height', String(h))
+      url.searchParams.set('resize', 'contain')
       url.searchParams.set('quality', String(q))
       return url.href
     }
