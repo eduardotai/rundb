@@ -140,9 +140,6 @@ async function section(title: string) {
   console.log(`\n=== ${title} ===`);
 }
 
-async function delay(ms: number) {
-  return new Promise(r => setTimeout(r, ms));
-}
 
 // ============================================
 // CORE FLOW TESTS (use the real adapter where possible)

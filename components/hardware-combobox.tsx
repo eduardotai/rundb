@@ -21,7 +21,6 @@ import {
 } from '@/components/ui/popover';
 import { useQuery } from '@tanstack/react-query';
 import { getAllHardwareCatalogAsync, findHardwareByQuery } from '@/lib/data';
-import type { HardwareCatalogEntry } from '@/lib/types';
 
 interface HardwareComboboxProps {
   value: string;

@@ -11,9 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
 import { showUserSuccess, showUserError } from '@/lib/toast';
-import { sanitizeFullName } from '@/lib/sanitize';
 import { ClipboardCopy } from 'lucide-react';
 import type { DetectedHardware } from '@/lib/types';
 import { parsePaste } from '@/lib/hardware-detector';

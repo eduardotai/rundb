@@ -63,7 +63,7 @@ export function SteamLinkButton({ status, onLinked, onUnlinked, size = 'default'
       } else {
         showUserError('Failed to unlink. Please try again.');
       }
-    } catch (e) {
+    } catch {
       showUserError('Error unlinking Steam account.');
     } finally {
       setLoading(false);

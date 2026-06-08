@@ -12,7 +12,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-import { toast } from 'sonner';
 import { showUserError, showUserSuccess } from '@/lib/toast';
 import { Eye, EyeOff, Loader2, CheckCircle2 } from 'lucide-react';
 import { sanitizeEmail, sanitizePassword, sanitizeFullName } from '@/lib/sanitize';
@@ -124,7 +123,7 @@ function SignUpForm() {
         },
       });
       if (error) throw error;
-    } catch (error) {
+    } catch {
       showUserError('Could not sign up with Google. Please try again.');
       setOauthLoading(null);
     }
@@ -236,7 +235,7 @@ function SignUpForm() {
         setSignupSuccess(true);
         showUserSuccess('Check your email', 'If an account exists for this email, we sent a confirmation link.');
       }
-    } catch (error) {
+    } catch {
       showUserError('Sign up failed. Please try again in a moment.');
     } finally {
       setEmailLoading(false);
@@ -251,7 +250,7 @@ function SignUpForm() {
       showUserSuccess('Signed in as guest');
       router.push(next);
       router.refresh();
-    } catch (error) {
+    } catch {
       showUserError('Guest sign in failed. Please try again.');
     } finally {
       setGuestLoading(false);

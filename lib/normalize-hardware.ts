@@ -16,7 +16,7 @@
  * - Unknown hardware → graceful "none" result with original input preserved
  */
 
-import type { HardwareNormalizationResult, HardwareCatalogEntry } from './types';
+import type { HardwareNormalizationResult } from './types';
 import { sanitizeFullName } from './sanitize';
 import {
   getHardwareEntry,

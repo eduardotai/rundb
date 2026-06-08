@@ -3,10 +3,7 @@
  * (e.g. my-rig-indicator) never pull in next/headers via the Supabase server client.
  */
 
-import {
-  dbRowToHardwareCatalogEntry,
-  mergeDbRowsIntoStatic,
-} from './hardware-catalog-mapper'
+import { mergeDbRowsIntoStatic } from './hardware-catalog-mapper'
 import type { HardwareCatalogEntry } from './types'
 
 const USE_REAL = process.env.NEXT_PUBLIC_USE_REAL_DATA === 'true'

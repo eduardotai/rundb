@@ -2,11 +2,12 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { getUserWithTimeout } from '@/lib/supabase/auth-timeout'
 
 /**
- * Middleware with the same defensive logic as lib/supabase/server.ts.
+ * Proxy with the same defensive logic as lib/supabase/server.ts.
+ * (Renamed from `middleware` per the Next.js 16 file-convention change.)
  * This was the main source of "app won't load at all" when a stale .env.local
  * pointed at a dead or unreachable Supabase project.
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL

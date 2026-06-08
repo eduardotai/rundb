@@ -9,10 +9,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import type { HardwareCatalogEntry } from '@/lib/types'
-import {
-  hardwareCatalogEntryToDbRow,
-  dbRowToHardwareCatalogEntry,
-} from '@/lib/hardware-catalog-mapper'
+import { hardwareCatalogEntryToDbRow } from '@/lib/hardware-catalog-mapper'
 
 export async function upsertHardwareCatalogEntry(entry: Partial<HardwareCatalogEntry> & { canonical: string }) {
   const supabase = await createClient()
