@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import { bulkImportGames, parseCSV } from '@/lib/data';
 import type { BulkImportResult } from '@/lib/types';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { 
   Dialog, 
@@ -59,7 +58,7 @@ export function AdminBulkImportDialog({ open, onOpenChange, onImportComplete }: 
         rows = parseCSV(text);
       }
       setParsedPreview(rows.slice(0, 12));
-    } catch (err: any) {
+    } catch {
       showUserError('Could not read that file. Make sure it is valid JSON.');
       setParsedPreview([]);
     }
@@ -82,7 +81,7 @@ export function AdminBulkImportDialog({ open, onOpenChange, onImportComplete }: 
       } else {
         showUserError('Import had some errors.');
       }
-    } catch (err: any) {
+    } catch {
       showUserError('Import failed. Please try again.');
     } finally {
       setIsImporting(false);

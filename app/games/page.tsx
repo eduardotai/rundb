@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import Link from 'next/link';
 import { GameCard } from '@/components/game-card';
 import {
   getAllGames,

@@ -1285,7 +1285,7 @@ export function mergeDetected(
 // Steam: NO hardware. Companion: future only.
 // ============================================
 
-export async function steamEnrichmentStub(steamId?: string): Promise<Partial<DetectedHardware>> {
+export async function steamEnrichmentStub(_steamId?: string): Promise<Partial<DetectedHardware>> {
   return {
     method: 'steam',
     confidence: 0.15,

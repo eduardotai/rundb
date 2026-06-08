@@ -22,8 +22,6 @@ import type {
   GraphicsPreset,
   PerformanceTier,
   HardwareAlias,
-  AdminReport,
-  ReportImage,
   BulkImportResult,
   GamesPageResult,
   CredibilityBadge,
@@ -296,7 +294,7 @@ export async function getGameMediaForGames(gameIds: string[]): Promise<Map<strin
 }
 
 /** Sync variant (warns in real mode; for legacy compat only). */
-export function getGameMediaSync(gameId: string): any[] {
+export function getGameMediaSync(_gameId: string): any[] {
   if (USE_REAL) {
     console.warn('[data] getGameMediaSync using empty (real mode — use async getGameMedia + RQ)')
   }
@@ -1281,23 +1279,6 @@ export function loadUserReports() {
   return ALLOW_MOCK_DATA ? mock.loadUserReports() : []
 }
 
-/**
- * Phase 2 upvoting helper.
- * Real path: inserts to report_votes (unique + RLS + trigger maintains helpful_votes).
- * Mock: no-op (existing UI demo mutate in game page continues to work for seed data).
- */
-async function legacyUpvoteReport(reportId: string): Promise<void> {
-  if (USE_REAL && isSupabaseConfigured()) {
-    const { upvoteReportAction } = await import('@/app/actions/reports')
-    return upvoteReportAction(reportId)
-  }
-  if (USE_REAL) {
-    console.warn('[data] USE_REAL=true but Supabase not configured — upvote is a no-op.')
-  }
-  // Demo mode: caller (e.g. game detail) handles local optimistic bump
-  return Promise.resolve()
-}
-
 export async function voteReport(reportId: string, value: 1 | -1 | 0): Promise<void> {
   if (USE_REAL && isSupabaseConfigured()) {
     const { voteReportAction } = await import('@/app/actions/reports')
@@ -2137,7 +2118,7 @@ export async function getAllHardwareCatalogAsync(): Promise<HardwareCatalogEntry
         // mergeDbRowsIntoStatic maps + merges (DB wins for same canonical)
         return mergeDbRowsIntoStatic(staticEntries, data)
       }
-    } catch (e) {
+    } catch {
       console.warn('[data] hardware_catalog DB read failed, falling back to static')
     }
   }

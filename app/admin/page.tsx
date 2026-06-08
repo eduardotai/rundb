@@ -18,7 +18,7 @@ import {
   updateImageStatus,
   deleteReportImage,
 } from '@/lib/data';
-import type { AdminReport, HardwareAlias, ReportImage, ReportStatus, Game, BulkImportResult } from '@/lib/types';
+import type { AdminReport, HardwareAlias, ReportStatus, BulkImportResult } from '@/lib/types';
 import {
   getModerationQueueAction,
   moderateReportAction,
@@ -32,7 +32,6 @@ import {
 } from '@/app/actions/ingest-queue';
 import type { IngestQueueStats } from '@/lib/types';
 import { USE_REAL } from '@/lib/data';
-import { normalizeSlug } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -49,7 +48,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PerformanceBadge } from '@/components/performance-badge';
 import { toast } from 'sonner';
-import { showUserError, showUserSuccess } from '@/lib/toast';
+import { showUserError } from '@/lib/toast';
 import { 
   Shield, 
   Database, 
@@ -68,8 +67,7 @@ import {
 } from 'lucide-react';
 import { gameMediaLoader } from '@/lib/utils';
 import { sanitizeFullName } from '@/lib/sanitize';
-import { getCatalogVersionInfo, HARDWARE_CATALOG_VERSION, HARDWARE_CATALOG_LAST_UPDATED, getHardwareCatalogStats } from '@/lib/hardware-catalog';
-import { getAllHardwareCatalogAsync } from '@/lib/data';
+import { getHardwareCatalogStats } from '@/lib/hardware-catalog';
 
 type DemoRole = 'user' | 'moderator' | 'admin';
 
@@ -184,7 +182,7 @@ export default function AdminPage() {
         rows = parseCSV(text);
       }
       setParsedPreview(rows.slice(0, 12)); // preview first 12
-    } catch (err: any) {
+    } catch {
       showUserError('Could not parse the data. Check the format.');
       setParsedPreview([]);
     }
@@ -209,7 +207,7 @@ export default function AdminPage() {
       } else {
         showUserError('Import finished with some issues. Check the list.');
       }
-    } catch (err: any) {
+    } catch {
       showUserError('Import failed. Please try again.');
     } finally {
       setIsImporting(false);

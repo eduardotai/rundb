@@ -11,7 +11,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { toast } from 'sonner';
 import { showUserError, showUserSuccess } from '@/lib/toast';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { sanitizeEmail, sanitizePassword } from '@/lib/sanitize';
@@ -91,7 +90,7 @@ function SignInForm() {
       });
       if (error) throw error;
       // OAuth will redirect; no further action needed here
-    } catch (error) {
+    } catch {
       showUserError('Could not sign in with Google. Please try again.');
       setOauthLoading(null);
     }
@@ -121,7 +120,7 @@ function SignInForm() {
       // cookie so the logged-in state shows immediately, without a manual reload.
       router.push(next);
       router.refresh();
-    } catch (error) {
+    } catch {
       showUserError('Sign in failed. Please check your email and password.');
     } finally {
       setEmailLoading(false);
@@ -136,7 +135,7 @@ function SignInForm() {
       showUserSuccess('Signed in as guest');
       router.push(next);
       router.refresh();
-    } catch (error) {
+    } catch {
       showUserError('Guest sign in failed. Please try again.');
     } finally {
       setGuestLoading(false);

@@ -92,7 +92,6 @@ export function ProfileView({ user, data, steamLinked }: ProfileViewProps) {
   );
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState(username);
-  const [draftAvatar, setDraftAvatar] = useState(avatarUrl);
   const [selectedAvatarFile, setSelectedAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState('');
   const [removeAvatar, setRemoveAvatar] = useState(false);

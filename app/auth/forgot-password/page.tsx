@@ -49,7 +49,7 @@ export default function ForgotPasswordPage() {
       setSubmittedEmail(values.email);
       setSubmitted(true);
       showUserSuccess('Reset link sent', 'Check your inbox for password reset instructions.');
-    } catch (error) {
+    } catch {
       showUserError('Could not send reset link. Please try again in a moment.');
     } finally {
       setLoading(false);

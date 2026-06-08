@@ -66,7 +66,7 @@ export default function ResetPasswordPage() {
             // Small delay + retry in case of race
             await new Promise((r) => setTimeout(r, 300));
           }
-        } catch (e) {
+        } catch {
           // Non-fatal — user will see error on submit if context is missing
         }
       }

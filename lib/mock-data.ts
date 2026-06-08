@@ -475,7 +475,6 @@ const SAMPLE_CPUS = [
 ];
 const RESOLUTIONS: readonly MainResolution[] = MAIN_RESOLUTIONS;
 const PRESETS: GraphicsPreset[] = ['Low', 'Medium', 'High', 'Ultra', 'Custom'];
-const TIERS: PerformanceTier[] = ['Excellent', 'Good', 'Playable', 'Struggling', 'Unplayable'];
 
 function generateSeedReports(): Report[] {
   const reports: Report[] = [];
