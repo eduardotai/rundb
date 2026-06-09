@@ -42,8 +42,58 @@
 /* Dense, scannable typography + data-heavy feel */
 body {
   font-family: var(--font-geist-sans);
-  background: var(--background);
+  /* Layered atmosphere: cyan glow falling from the top + deep navy base */
+  background:
+    radial-gradient(ellipse 90% 42% at 50% -12%, rgb(34 211 238 / 0.07), transparent 70%),
+    var(--background);
   color: var(--foreground);
+}
+
+/* Faint blueprint grid behind content — fades out down the page */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgb(148 163 184 / 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(148 163 184 / 0.045) 1px, transparent 1px);
+  background-size: 56px 56px;
+  -webkit-mask-image: linear-gradient(to bottom, black, transparent 65%);
+  mask-image: linear-gradient(to bottom, black, transparent 65%);
+}
+
+::selection {
+  background: rgb(103 232 249 / 0.28);
+  color: #f8fafc;
+}
+
+/* Staggered hero entrance (CSS-only) */
+@keyframes rise-fade {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-rise {
+  animation: rise-fade 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.rise-delay-1 { animation-delay: 0.07s; }
+.rise-delay-2 { animation-delay: 0.14s; }
+.rise-delay-3 { animation-delay: 0.22s; }
+.rise-delay-4 { animation-delay: 0.3s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise {
+    animation: none;
+  }
 }
 
 /* Premium data-dense component polish */
@@ -62,8 +112,19 @@ body {
 .report-card:hover {
   transform: translateY(-1px);
   border-color: #475569;
-  box-shadow: 0 4px 12px -2px rgb(0 0 0 / 0.3);
+  box-shadow: 0 4px 16px -2px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(103 232 249 / 0.06);
 }
+
+/* Tier accent stripe — instant scannability without reading the badge */
+.tier-accent {
+  border-left-width: 3px;
+}
+
+.tier-accent-excellent { border-left-color: var(--tier-excellent); }
+.tier-accent-good { border-left-color: var(--tier-good); }
+.tier-accent-playable { border-left-color: var(--tier-playable); }
+.tier-accent-struggling { border-left-color: var(--tier-struggling); }
+.tier-accent-unplayable { border-left-color: var(--tier-unplayable); }
 
 /* Tabular numbers for all FPS, RAM, counts */
 .tabular-nums {

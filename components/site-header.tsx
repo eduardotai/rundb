@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { AuthButton } from '@/components/auth-button';
 import { MyRigIndicator } from '@/components/my-rig-indicator';
+import { SiteNav } from '@/components/site-nav';
 import { getStaffAccess } from '@/lib/admin-access';
 
 export async function SiteHeader() {
@@ -15,22 +16,12 @@ export async function SiteHeader() {
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-5">
           <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
             <span className="text-primary">Run</span>DB
           </Link>
 
-          <nav className="hidden items-center gap-5 text-sm md:flex">
-            <Link href="/games" className="text-muted-foreground hover:text-foreground transition">Browse Games</Link>
-            <Link href="/reports" className="text-muted-foreground hover:text-foreground transition">Reports</Link>
-            <Link href="/compatibility" className="text-muted-foreground hover:text-foreground transition">Will It Run?</Link>
-            {isAdmin && (
-              <>
-                <Link href="/admin" className="text-amber-400 hover:text-amber-300 transition font-medium">Admin</Link>
-                <Link href="/dashboard" className="text-amber-400 hover:text-amber-300 transition font-medium">Dashboard</Link>
-              </>
-            )}
-          </nav>
+          <SiteNav isAdmin={isAdmin} />
         </div>
 
         <div className="flex items-center gap-3">

@@ -134,6 +134,8 @@ export function ReportCard({
       className={cn(
         'report-card group cursor-pointer rounded-2xl border border-border bg-card p-4 md:p-5',
         'hover:border-slate-600/70',
+        'tier-accent',
+        `tier-accent-${report.performanceTier.toLowerCase()}`,
         compact && 'p-3 md:p-4'
       )}
       onClick={() => onViewFull?.(report)}

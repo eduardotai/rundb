@@ -44,12 +44,13 @@ export function PerformanceBadge({ tier, size = 'md', className }: PerformanceBa
   return (
     <span
       className={cn(
-        'inline-flex items-center justify-center rounded-full font-medium tracking-tight tabular-nums',
+        'inline-flex items-center justify-center gap-1.5 rounded-full font-medium tracking-tight tabular-nums',
         config.className,
         sizeClasses[size],
         className
       )}
     >
+      <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
       {config.label}
     </span>
   );
