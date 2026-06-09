@@ -52,10 +52,6 @@ next-env.d.ts
 # superpowers visual brainstorming (local mockups, auto-generated)
 .superpowers/
 
-# AI / session context (temporary files from planning/implementation sessions)
-CONTEXT.md
-context/
-
 # worktrees for isolated execution
 .worktrees/
 

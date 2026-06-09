@@ -8,7 +8,7 @@ Read these files first:
 
 - `AGENTS.md`
 - `CONTEXT.md`
-- The relevant topic file in `context/`
+- The relevant folder-level `context.md`
 - `README.md`
 
 If you are changing Next.js-specific behavior, also read the relevant guide in `node_modules/next/dist/docs/` because this project uses a newer Next.js version with breaking changes.
@@ -48,4 +48,4 @@ Use `.github/pull_request_template.md` and include:
 
 ## Documentation
 
-Update `README.md`, `CHANGELOG.md`, or `context/` whenever a change affects setup, architecture, scripts, deployment, schema, data flow, or contributor expectations.
+Update `README.md`, `CHANGELOG.md`, root `CONTEXT.md`, or the relevant folder-level `context.md` whenever a change affects setup, architecture, scripts, deployment, schema, data flow, or contributor expectations.
