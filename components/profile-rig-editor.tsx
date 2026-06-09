@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,6 +13,7 @@ import { PasteHardwareModal } from '@/components/paste-hardware-modal';
 import { HardwareCombobox } from '@/components/hardware-combobox';
 import { SteamLinkButton } from '@/components/steam-link-button';
 import { MAIN_RESOLUTIONS } from '@/lib/types';
+import { loadMyRigAsync, saveMyRigAsync } from '@/lib/data';
 import type { SteamLinkStatus } from '@/lib/data';
 import type { DetectedHardware } from '@/lib/types';
 import { mergeDetected } from '@/lib/hardware-detector';
@@ -43,33 +43,21 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
   const [lastBrowserDetect, setLastBrowserDetect] = useState<DetectedHardware | null>(null);
   const [steamStatus, setSteamStatus] = useState<SteamLinkStatus | null>(null);
 
-  const supabase = createClient();
-
-  // Load existing My Rig fields from the profiles table.
+  // Load the saved My Rig through the data adapter (user_rigs preferred, profiles fallback).
   useEffect(() => {
     async function loadProfile() {
       setIsLoading(true);
       try {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('main_cpu, main_gpu, main_ram, preferred_resolution')
-          .eq('id', user.id)
-          .single();
-
-        if (error && error.code !== 'PGRST116') {
-          // PGRST116 = no rows found (new anon or edge case) — ignore, start blank
-          console.warn('[profile] Could not load profile rig:', error.message);
-        }
-
-        if (data) {
-          const loadedRes = data.preferred_resolution || '2560x1440';
+        const saved = await loadMyRigAsync();
+        if (saved) {
+          const loadedRes = saved.resolution || '2560x1440';
           const safeRes = (MAIN_RESOLUTIONS as readonly string[]).includes(loadedRes)
             ? loadedRes
             : '2560x1440';
           setRig({
-            cpu: data.main_cpu || '',
-            gpu: data.main_gpu || '',
-            ram: data.main_ram ?? '',
+            cpu: saved.cpu || '',
+            gpu: saved.gpu || '',
+            ram: saved.ram ?? '',
             resolution: safeRes,
           });
         }
@@ -81,7 +69,7 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
     }
 
     loadProfile();
-  }, [user.id, supabase]);
+  }, [user.id]);
 
   // Load Steam link status (additive, for verified + easier device management)
   useEffect(() => {
@@ -115,15 +103,14 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
 
     setIsSaving(true);
     try {
-      const { error } = await supabase.from('profiles').upsert({
-        id: user.id,
-        main_cpu: safeCpu,
-        main_gpu: safeGpu,
-        main_ram: ramNum,
-        preferred_resolution: safeResolution,
+      // Adapter saves to user_rigs (authoritative for the compatibility checker)
+      // and mirrors main_* fields to profiles, keeping both surfaces in sync.
+      await saveMyRigAsync({
+        cpu: safeCpu,
+        gpu: safeGpu,
+        ram: ramNum,
+        resolution: safeResolution,
       });
-
-      if (error) throw error;
 
       showUserSuccess('Rig saved!');
     } catch {
@@ -152,8 +139,8 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
       <CardHeader>
         <CardTitle>My Rig</CardTitle>
         <CardDescription>
-          Your primary hardware configuration. Stored in the <code>profiles</code> table and used to
-          power personalized compatibility predictions and report filtering.
+          Your primary hardware configuration. Saved as your primary rig (and mirrored to your
+          profile) to power personalized compatibility predictions and report filtering.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">

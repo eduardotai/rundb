@@ -138,13 +138,15 @@ export default function AdminPage() {
     toast.success(`Switched to ${ROLE_LABELS[role]} (demo only)`);
   };
 
-  // Reactive data via useMemo (avoids setState inside effects)
-  const stats = useMemo(() => getAdminOverviewStats(), [refreshKey]);
-  const mockReports = useMemo(() => getModerationQueue(reportFilter), [reportFilter, refreshKey]);
+  // Reactive data via useMemo (avoids setState inside effects).
+  // The getters read mutable mock-admin state, so each memo reads refreshKey to
+  // recompute after mutations bump it.
+  const stats = useMemo(() => { void refreshKey; return getAdminOverviewStats(); }, [refreshKey]);
+  const mockReports = useMemo(() => { void refreshKey; return getModerationQueue(reportFilter); }, [reportFilter, refreshKey]);
   const reports = USE_REAL ? realReports : mockReports;
-  const aliases = useMemo(() => getHardwareAliases(aliasSearch), [aliasSearch, refreshKey]);
-  const games = useMemo(() => getAllGamesForAdmin(), [refreshKey]);
-  const images = useMemo(() => getReportImages(imageFilter), [imageFilter, refreshKey]);
+  const aliases = useMemo(() => { void refreshKey; return getHardwareAliases(aliasSearch); }, [aliasSearch, refreshKey]);
+  const games = useMemo(() => { void refreshKey; return getAllGamesForAdmin(); }, [refreshKey]);
+  const images = useMemo(() => { void refreshKey; return getReportImages(imageFilter); }, [imageFilter, refreshKey]);
 
   // Filtered games
   const filteredGames = useMemo(() => {
