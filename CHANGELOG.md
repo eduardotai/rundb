@@ -8,12 +8,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Animated repository banner (`.github/assets/banner.svg`) styled as an in-game FPS benchmark overlay.
 - Professional repository documentation in `README.md`, including product overview, setup, architecture, environment variables, deployment prep, scripts, security notes, and contribution guidance.
 - Root changelog to track future product, infrastructure, schema, and documentation changes.
 
 ### Changed
 
 - Reframed the project description around RunDB's core value: real PC hardware, measured FPS reports, compatibility predictions, and community moderation.
+- Revamped `README.md` with a visual GitHub-first layout: status badges, Mermaid diagrams for the product loop and data-adapter architecture, alert callouts for critical rules (Next.js 16 docs, service-role key safety, adapter boundary), and collapsible sections for repository structure, data model, and script catalogs.
 
 ## [0.1.0] - 2026-06-04
 
