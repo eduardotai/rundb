@@ -41,7 +41,6 @@ RunDB works as a feedback loop between a player's saved hardware profile and the
 ```text
 app/                 Next.js App Router pages, layouts, route handlers, and server actions
 components/          Product UI, report cards, hardware inputs, admin tools, and shadcn/ui primitives
-context/             Architecture notes and onboarding docs for humans and AI agents
 docs/                Historical phase notes and supporting documentation
 lib/                 Data adapter, Supabase clients, domain logic, hardware/catalog helpers, and server utilities
 public/              Static assets and public catalog metadata
@@ -141,14 +140,17 @@ The most important architectural rule is that app surfaces should go through the
 
 Supabase clients are defensive by design. Missing keys, slow auth calls, or unreachable services should not break the local demo path. Real deploys still rely on RLS, server actions, and SECURITY DEFINER RPCs for protected writes.
 
-For deeper onboarding, start with:
+For deeper onboarding, start with the root guide and then the relevant folder-level context file:
 
 - `CONTEXT.md`
-- `context/project-overview.md`
-- `context/lib-data-and-types.md`
-- `context/ingestion-pipeline.md`
-- `context/auth-user-data.md`
-- `context/admin-and-moderation.md`
+- `app/context.md`
+- `components/context.md`
+- `lib/context.md`
+- `scripts/context.md`
+- `supabase/context.md`
+- `tests/context.md`
+- `seeds/context.md`
+- `public/context.md`
 
 ## Game Ingestion Pipeline
 
@@ -169,11 +171,11 @@ This keeps the public app usable while large catalogs are being processed. Faile
 
 ## Current Migration Notes
 
-RunDB is in active migration from a polished mock/localStorage prototype to a production real-data platform. The public game, report, profile, rig, hardware, and ingestion paths are designed for real Supabase operation. Some admin moderation and bulk-management helpers are still documented as migration areas in `context/admin-and-moderation.md`.
+RunDB is in active migration from a polished mock/localStorage prototype to a production real-data platform. The public game, report, profile, rig, hardware, and ingestion paths are designed for real Supabase operation. Some admin moderation and bulk-management helpers are still migration areas; start with `app/context.md`, `lib/context.md`, and `supabase/context.md` for the current notes.
 
 ## Contributing
 
-1. Read `AGENTS.md`, `CONTEXT.md`, and the relevant file in `context/`.
+1. Read `AGENTS.md`, `CONTEXT.md`, and the relevant folder's `context.md`.
 2. Keep changes scoped and route data access through `lib/data.ts` or server-only helpers.
 3. Update schema, types, mappers, RPCs, actions, forms, and docs together when adding fields.
 4. Prefer focused tests for pure logic and risky data transformations.

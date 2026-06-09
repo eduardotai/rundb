@@ -30,4 +30,4 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Notes
 
 - This baseline documents the repository's current active-development state rather than a tagged public release.
-- Some admin moderation and bulk-management paths are still part of the ongoing real-data migration; see `context/admin-and-moderation.md` for details.
+- Some admin moderation and bulk-management paths are still part of the ongoing real-data migration; see `app/context.md`, `lib/context.md`, and `supabase/context.md` for current details.
