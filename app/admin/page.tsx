@@ -4,12 +4,12 @@ import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
-  getAdminOverviewStats, 
-  getModerationQueue, 
+  getAdminOverviewStats,
+  getModerationQueue,
   updateReportStatus,
-  getHardwareAliases, 
-  addHardwareAlias, 
-  updateHardwareAlias, 
+  getHardwareAliases,
+  addHardwareAlias,
+  updateHardwareAlias,
   deleteHardwareAlias,
   getAllGamesForAdmin,
   bulkImportGames,
@@ -17,7 +17,7 @@ import {
   getReportImages,
   updateImageStatus,
   deleteReportImage,
-} from '@/lib/data';
+} from '@/lib/admin-demo';
 import type { AdminReport, HardwareAlias, ReportStatus, BulkImportResult } from '@/lib/types';
 import {
   getModerationQueueAction,

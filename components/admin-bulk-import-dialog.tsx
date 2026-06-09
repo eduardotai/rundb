@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { bulkImportGames, parseCSV } from '@/lib/data';
+import { bulkImportGames, parseCSV } from '@/lib/admin-demo';
 import type { BulkImportResult } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';

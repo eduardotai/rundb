@@ -23,7 +23,8 @@ import { HardwareDetectButton } from '@/components/hardware-detect-button';
 import { DetectedHardwareBanner } from '@/components/detected-hardware-banner';
 import { PasteHardwareModal } from '@/components/paste-hardware-modal';
 import type { DetectedHardware } from '@/lib/types';
-import { mergeDetected } from '@/lib/hardware-detector';
+import { applicableHardwareFields } from '@/lib/hardware-detector';
+import { useHardwareDetection } from '@/components/use-hardware-detection';
 import { sanitizeFullName } from '@/lib/sanitize';
 import { HardwareCombobox } from '@/components/hardware-combobox';
 
@@ -50,10 +51,14 @@ export function CompatibilityChecker({ embedded = false }: CompatibilityCheckerP
   const [isLoadingGames, setIsLoadingGames] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Hardware Identification (Plan 4) — client-only state
-  const [detectedRig, setDetectedRig] = useState<DetectedHardware | null>(null);
-  const [detectionState, setDetectionState] = useState<'idle' | 'detecting' | 'detected' | 'applied'>('idle');
-  const [pasteModalOpen, setPasteModalOpen] = useState(false);
+  // Hardware Identification (Plan 4) — shared detect → review → apply state machine
+  const detection = useHardwareDetection((result: DetectedHardware) => {
+    const fields = applicableHardwareFields(result);
+    if (fields.cpu) setCpu(fields.cpu);
+    if (fields.gpu) setGpu(fields.gpu);
+    if (fields.ram != null) setRam(fields.ram);
+    if (fields.resolution) setResolution(fields.resolution);
+  });
 
   const supabase = createClient();
 
@@ -156,27 +161,6 @@ export function CompatibilityChecker({ embedded = false }: CompatibilityCheckerP
     }
   };
 
-  // Hardware Identification handlers (Plan 4 Hybrid)
-  const handleDetected = (result: DetectedHardware) => {
-    setDetectedRig(result);
-    setDetectionState('detected');
-  };
-
-  const openPasteModal = () => setPasteModalOpen(true);
-  const applyDetectedToForm = (result: DetectedHardware) => {
-    const isHint = (s?: string) => !!s && /browser hint/i.test(s);
-    if (result.cpu && !isHint(result.cpu)) setCpu(result.cpu);
-    if (result.gpu) setGpu(result.gpu);
-    if (result.ram != null && !isHint(result.cpu)) setRam(result.ram);
-    if (result.resolution) setResolution(result.resolution);
-    setDetectionState('applied');
-    setDetectedRig(null);
-  };
-  const handleClearDetection = () => {
-    setDetectedRig(null);
-    setDetectionState('idle');
-  };
-
   const clearRig = async () => {
     setMyRig(null);
     setCpu('');
@@ -235,9 +219,9 @@ export function CompatibilityChecker({ embedded = false }: CompatibilityCheckerP
                 <Label>CPU</Label>
                 <HardwareDetectButton
                   mode="browser"
-                  onDetect={handleDetected}
-                  state={detectionState}
-                  onRequestPaste={openPasteModal}
+                  onDetect={detection.handleDetected}
+                  state={detection.detectionState}
+                  onRequestPaste={detection.openPasteModal}
                 />
               </div>
               <HardwareCombobox
@@ -248,11 +232,11 @@ export function CompatibilityChecker({ embedded = false }: CompatibilityCheckerP
                 disabled={isSaving || isLoadingRig}
               />
               <DetectedHardwareBanner
-                detected={detectedRig}
-                onApply={applyDetectedToForm}
-                onRefine={() => setDetectedRig(null)}
-                onDismiss={handleClearDetection}
-                applied={detectionState === 'applied'}
+                detected={detection.detectedRig}
+                onApply={detection.applyDetected}
+                onRefine={detection.refineDetection}
+                onDismiss={detection.clearDetection}
+                applied={detection.detectionState === 'applied'}
               />
             </div>
             <div className="lg:col-span-2">
@@ -330,15 +314,11 @@ export function CompatibilityChecker({ embedded = false }: CompatibilityCheckerP
         </CardContent>
       </Card>
 
-      {/* Paste modal — was declared but not rendered; now wired with merge support */}
+      {/* Paste modal — merges with any prior browser detection, then applies */}
       <PasteHardwareModal
-        open={pasteModalOpen}
-        onOpenChange={setPasteModalOpen}
-        onApply={(pasteDetected) => {
-          const merged = mergeDetected(detectedRig, pasteDetected);
-          applyDetectedToForm(merged);
-          setPasteModalOpen(false);
-        }}
+        open={detection.pasteModalOpen}
+        onOpenChange={detection.setPasteModalOpen}
+        onApply={detection.handlePasteApply}
       />
     </div>
   );

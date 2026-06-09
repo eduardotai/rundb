@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { Game, GameStats, PerformanceTier } from '@/lib/types';
-import { computeGameStats } from '@/lib/data';
 import { PerformanceBadge } from './performance-badge';
 import { GameCoverFrame } from '@/components/game-cover-frame';
 import { cn } from '@/lib/utils';
@@ -11,8 +10,15 @@ import { ShieldCheck, Sparkles } from 'lucide-react';
 
 // Phase 3: GameCard now supports optional precomputed `stats` (from adapter + computeGameStatsFromReports in parent RQ data).
 // When provided (e.g. home trending, games list after wiring): uses real data for badges/counts/FPS.
-// When omitted: falls back to sync compute (via data adapter for flag compat + warnings).
-// Enables full real-data UI without N+1 calls or breaking existing call sites.
+// When omitted: renders the empty-stats state (parents are expected to precompute via batched adapters).
+
+const EMPTY_STATS: GameStats = {
+  totalReports: 0,
+  tierDistribution: { Excellent: 0, Good: 0, Playable: 0, Struggling: 0, Unplayable: 0 },
+  avgFpsByResolution: {},
+  mostCommonPreset: null,
+  avgFpsOverall: 0,
+};
 
 interface GameCardProps {
   game: Game;
@@ -39,8 +45,8 @@ export function GameCard({
   variant = 'default',
 }: GameCardProps) {
   const isCompact = variant === 'compact';
-  // Phase 3: prefer provided real stats (from parent RQ + adapter reports), else fallback (compat).
-  const stats = providedStats || computeGameStats(game.id);
+  // Phase 3: prefer provided real stats (from parent RQ + adapter reports), else empty-state.
+  const stats = providedStats || EMPTY_STATS;
   const reportCount = stats.totalReports;
 
   // Dominant tier only when there are real reports (avoid "Excellent" on empty games)

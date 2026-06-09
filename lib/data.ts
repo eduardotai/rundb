@@ -9,7 +9,6 @@
  * instead of directly from '@/lib/mock-data'.
  */
 
-import * as mock from './mock-data'
 import type {
   Game,
   Report,
@@ -21,11 +20,26 @@ import type {
   ReportStatus,
   GraphicsPreset,
   PerformanceTier,
-  HardwareAlias,
-  BulkImportResult,
   GamesPageResult,
   CredibilityBadge,
 } from './types'
+
+// Shared pure logic (no fixture/localStorage code — see lib/data-logic.ts)
+import {
+  filterReports,
+  computeGameStatsFromReports,
+  predictForUserRigFromReports,
+} from './data-logic'
+
+// Demo fixture + localStorage layer. Loaded lazily so public real-mode pages
+// only download it when a fallback path actually needs it (Supabase missing,
+// errored, or dev mock mode). Do NOT import it statically here.
+type MockModule = typeof import('./mock-data')
+let mockModulePromise: Promise<MockModule> | null = null
+function loadMockModule(): Promise<MockModule> {
+  mockModulePromise ??= import('./mock-data')
+  return mockModulePromise
+}
 
 // Hardware catalog live mapper (for Phase 6+ large 2015+ DB-backed catalog)
 import {
@@ -74,11 +88,13 @@ function unavailablePrediction(): PredictionResult {
   }
 }
 
-function publicStarterGames(): Game[] {
+async function publicStarterGames(): Promise<Game[]> {
+  const mock = await loadMockModule()
   return enrichGamesWithCoversSync(mock.getAllGames())
 }
 
-function getStarterGamesPage(params: Required<Pick<GetGamesPageParams, 'page' | 'pageSize' | 'sort'>> & Pick<GetGamesPageParams, 'search' | 'genre'>): GamesPageResult {
+async function getStarterGamesPage(params: Required<Pick<GetGamesPageParams, 'page' | 'pageSize' | 'sort'>> & Pick<GetGamesPageParams, 'search' | 'genre'>): Promise<GamesPageResult> {
+  const mock = await loadMockModule()
   let games = mock.getAllGames()
   const search = params.search?.trim()
   const genre = params.genre?.trim()
@@ -109,7 +125,8 @@ function getStarterGamesPage(params: Required<Pick<GetGamesPageParams, 'page' | 
   }
 }
 
-function searchStarterGames(query: string, limit: number): Game[] {
+async function searchStarterGames(query: string, limit: number): Promise<Game[]> {
+  const mock = await loadMockModule()
   const q = query.trim().toLowerCase()
   const games = q
     ? mock.getAllGames().filter(
@@ -222,13 +239,24 @@ function mapDbReportToReport(row: any): Report {
 // AGENT 2 / PR 2: GAME MEDIA + COVER ENRICHMENT LAYER
 // ============================================
 
+/** Raw game_media row (snake_case, as stored in Supabase). */
+export interface GameMediaRow {
+  id: string
+  game_id: string
+  media_type: string
+  url: string
+  attribution?: string | null
+  sort_order?: number | null
+  created_at?: string
+}
+
 /**
  * Fetch game_media rows for a game (covers, screenshots, artworks etc).
  * - When USE_REAL: queries public RLS policy on game_media (no key needed for SELECT).
  * - When !USE_REAL or error: returns [] (enrichment will use resolver instead).
  * Used by enrich + future UI galleries.
  */
-export async function getGameMedia(gameId: string): Promise<any[]> {
+export async function getGameMedia(gameId: string): Promise<GameMediaRow[]> {
   if (!USE_REAL || !gameId) return []
   try {
     const { createClient } = await import('@/lib/supabase/client')
@@ -259,8 +287,8 @@ export async function getGameMedia(gameId: string): Promise<any[]> {
  * enrichGamesWithCovers, which fired N parallel Supabase requests per grid and
  * saturated the browser connection pool (the main site-wide lag source).
  */
-export async function getGameMediaForGames(gameIds: string[]): Promise<Map<string, any[]>> {
-  const byGame = new Map<string, any[]>()
+export async function getGameMediaForGames(gameIds: string[]): Promise<Map<string, GameMediaRow[]>> {
+  const byGame = new Map<string, GameMediaRow[]>()
   if (!USE_REAL || gameIds.length === 0) return byGame
 
   try {
@@ -291,14 +319,6 @@ export async function getGameMediaForGames(gameIds: string[]): Promise<Map<strin
     console.warn('[data] getGameMediaForGames unexpected error:', err?.message || err)
   }
   return byGame
-}
-
-/** Sync variant (warns in real mode; for legacy compat only). */
-export function getGameMediaSync(_gameId: string): any[] {
-  if (USE_REAL) {
-    console.warn('[data] getGameMediaSync using empty (real mode — use async getGameMedia + RQ)')
-  }
-  return []
 }
 
 /**
@@ -333,7 +353,7 @@ export async function enrichGamesWithCovers(games: Game[]): Promise<Game[]> {
   return base.map((g) => {
     const rows = mediaByGame.get(g.id)
     if (!rows?.length) return g
-    const coverRow = rows.find((m: any) => m.media_type === 'cover' && m.url)
+    const coverRow = rows.find((m) => m.media_type === 'cover' && m.url)
     if (coverRow?.url) {
       return {
         ...g,
@@ -611,15 +631,13 @@ export async function getAvailableGenresAsync(limit = 40): Promise<string[]> {
     }
   }
 
+  const mock = await loadMockModule()
   return rankGenres(mock.getAllGames().flatMap((g) => g.genres || []), limit)
 }
 
-// Keep synchronous version for components that haven't migrated yet (will be removed)
-export function getAllGamesSync(): Game[] {
-  return publicStarterGames()
-}
-
-export function getGameBySlug(slug: string): Game | undefined {
+/** Starter-catalog lookup used as the fallback for getGameBySlugAsync. */
+async function getStarterGameBySlug(slug: string): Promise<Game | undefined> {
+  const mock = await loadMockModule()
   const game = mock.getGameBySlug(slug)
   if (!game) return undefined
   const [enriched] = enrichGamesWithCoversSync([game])
@@ -652,7 +670,7 @@ export async function getGameBySlugAsync(slug: string): Promise<Game | undefined
           return undefined
         }
         console.error('[data] getGameBySlugAsync Supabase error:', error)
-        return getGameBySlug(slug)
+        return getStarterGameBySlug(slug)
       }
 
       if (!data) return undefined
@@ -661,10 +679,10 @@ export async function getGameBySlugAsync(slug: string): Promise<Game | undefined
       return enriched
     } catch (err: any) {
       console.error('[data] getGameBySlugAsync unexpected error:', err)
-      return getGameBySlug(slug)
+      return getStarterGameBySlug(slug)
     }
   }
-  return Promise.resolve(getGameBySlug(slug))
+  return getStarterGameBySlug(slug)
 }
 
 // ============================================
@@ -683,12 +701,18 @@ export async function getGameBySlugAsync(slug: string): Promise<Game | undefined
  */
 export const REPORTS_FETCH_HARD_CAP = 500
 
-export function getAllReports(): Report[] {
-  return ALLOW_MOCK_DATA ? mock.getAllReports() : []
+/** Dev-mock fallback for getAllReportsAsync (empty outside ALLOW_MOCK_DATA). */
+async function getMockReports(): Promise<Report[]> {
+  if (!ALLOW_MOCK_DATA) return []
+  const mock = await loadMockModule()
+  return mock.getAllReports()
 }
 
-export function getReportsForGame(gameId: string, filters?: ReportFilters): Report[] {
-  return ALLOW_MOCK_DATA ? mock.getReportsForGame(gameId, filters) : []
+/** Dev-mock fallback for getReportsForGameAsync (empty outside ALLOW_MOCK_DATA). */
+async function getMockReportsForGame(gameId: string, filters?: ReportFilters): Promise<Report[]> {
+  if (!ALLOW_MOCK_DATA) return []
+  const mock = await loadMockModule()
+  return mock.getReportsForGame(gameId, filters)
 }
 
 /**
@@ -720,7 +744,7 @@ export async function getReportsForGameAsync(
 
       if (error) {
         console.error('[data] getReportsForGameAsync Supabase error:', error)
-        return getReportsForGame(gameId, filters)
+        return getMockReportsForGame(gameId, filters)
       }
 
       let reports = (data || []).map(mapDbReportToReport)
@@ -736,16 +760,14 @@ export async function getReportsForGameAsync(
       return reports
     } catch (err: any) {
       console.error('[data] getReportsForGameAsync unexpected error:', err)
-      return getReportsForGame(gameId, filters)
+      return getMockReportsForGame(gameId, filters)
     }
   }
-  return Promise.resolve(getReportsForGame(gameId, filters))
+  return getMockReportsForGame(gameId, filters)
 }
 
-export function filterReports(reports: Report[], filters: ReportFilters): Report[] {
-  // This is a pure function — no need to switch, always use mock version
-  return mock.filterReports(reports, filters)
-}
+// Pure report filtering — shared by real and mock paths (lib/data-logic.ts).
+export { filterReports } from './data-logic'
 
 /**
  * Enrich reports with public reporter profile info (username, avatar, their credibility badge).
@@ -835,6 +857,7 @@ export async function getReportsForGamesAsync(
 
   if (!ALLOW_MOCK_DATA) return byGame
 
+  const mock = await loadMockModule()
   const idSet = new Set(ids)
   for (const r of mock.getAllReports()) {
     if (!idSet.has(r.gameId)) continue
@@ -869,8 +892,8 @@ export interface TrendingResult {
 export async function getTrendingGamesAsync(limit: number = 6, windowDays: number = 7): Promise<TrendingResult> {
   const safeLimit = Math.min(48, Math.max(1, limit))
   const safeDays = Math.min(365, Math.max(1, windowDays))
-  const starterFallback = (): TrendingResult => ({
-    games: publicStarterGames().slice(0, safeLimit),
+  const starterFallback = async (): Promise<TrendingResult> => ({
+    games: (await publicStarterGames()).slice(0, safeLimit),
     recentCounts: {},
   })
 
@@ -981,19 +1004,23 @@ export async function getGlobalCountsAsync(): Promise<{ totalGames: number; tota
     return { totalGames: 0, totalReports: 0 }
   }
 
+  const mock = await loadMockModule()
   return {
     totalGames: mock.getAllGames().length,
     totalReports: mock.getAllReports().length,
   }
 }
 
-export function getFilteredGlobalReports(filters: {
+/** Dev-mock fallback for getFilteredGlobalReportsAsync (empty outside ALLOW_MOCK_DATA). */
+async function getMockFilteredGlobalReports(filters: {
   gameSlug?: string
   gpuSeries?: string
   minFps?: number
   tier?: import('./types').PerformanceTier
-}): Report[] {
-  return ALLOW_MOCK_DATA ? mock.getFilteredGlobalReports(filters) : []
+}): Promise<Report[]> {
+  if (!ALLOW_MOCK_DATA) return []
+  const mock = await loadMockModule()
+  return attachMockGames(mock.getFilteredGlobalReports(filters), mock)
 }
 
 /**
@@ -1021,7 +1048,7 @@ export async function getAllReportsAsync(): Promise<Report[]> {
 
       if (error) {
         console.error('[data] getAllReportsAsync Supabase error:', error)
-        return getAllReports()
+        return getMockReports()
       }
 
       const base = (data || []).map((row: any) => {
@@ -1034,10 +1061,10 @@ export async function getAllReportsAsync(): Promise<Report[]> {
       return await enrichReportsWithReporters(base)
     } catch (err: any) {
       console.error('[data] getAllReportsAsync unexpected error:', err)
-      return getAllReports()
+      return getMockReports()
     }
   }
-  return Promise.resolve(getAllReports())
+  return getMockReports()
 }
 
 export async function getMatchesForRigAsync(
@@ -1093,7 +1120,7 @@ export async function getFilteredGlobalReportsAsync(filters: {
 
       if (error) {
         console.error('[data] getFilteredGlobalReportsAsync Supabase error:', error)
-        return attachMockGames(getFilteredGlobalReports(filters))
+        return getMockFilteredGlobalReports(filters)
       }
 
       let reports = (data || []).map((row: any) => {
@@ -1116,18 +1143,18 @@ export async function getFilteredGlobalReportsAsync(filters: {
       return reports
     } catch (err: any) {
       console.error('[data] getFilteredGlobalReportsAsync unexpected error:', err)
-      return attachMockGames(getFilteredGlobalReports(filters))
+      return getMockFilteredGlobalReports(filters)
     }
   }
-  return Promise.resolve(attachMockGames(getFilteredGlobalReports(filters)))
+  return getMockFilteredGlobalReports(filters)
 }
 
 /**
  * Attach embedded game metadata to mock reports so the /reports "By game" view renders
  * banners identically in mock and real modes (mock catalog is in-memory — no overload).
  */
-function attachMockGames(reports: Report[]): Report[] {
-  if (!ALLOW_MOCK_DATA || reports.length === 0) return reports
+function attachMockGames(reports: Report[], mock: MockModule): Report[] {
+  if (reports.length === 0) return reports
   const byId = new Map<string, Game>()
   for (const g of enrichGamesWithCoversSync(mock.getAllGames())) byId.set(g.id, g)
   return reports.map((r) => (r.game ? r : { ...r, game: byId.get(r.gameId) }))
@@ -1137,21 +1164,19 @@ function attachMockGames(reports: Report[]): Report[] {
 // STATS & PREDICTIONS
 // ============================================
 
-// Sync versions: ALWAYS use mock for full backward compatibility with existing
-// sync call sites (game cards, lists, etc.). When USE_REAL=true these still
-// delegate to mock + warn to encourage migration to *Async or RQ hooks.
-// (Phase 3: real paths live in the async variants below.)
+// Dev-mock fallbacks for the async stats/prediction paths below. Real paths
+// fetch rows then run the same pure helpers from lib/data-logic.ts.
 
-export function computeGameStats(gameId: string): GameStats {
-  return ALLOW_MOCK_DATA ? mock.computeGameStats(gameId) : EMPTY_GAME_STATS
+async function getMockGameStats(gameId: string): Promise<GameStats> {
+  if (!ALLOW_MOCK_DATA) return EMPTY_GAME_STATS
+  const mock = await loadMockModule()
+  return mock.computeGameStats(gameId)
 }
 
-export function predictForUserRig(userPC: UserPC, gameId: string): PredictionResult {
-  return ALLOW_MOCK_DATA ? mock.predictForUserRig(userPC, gameId) : unavailablePrediction()
-}
-
-export function getTrendingGames(limit = 6): Game[] {
-  return publicStarterGames().slice(0, limit)
+async function getMockPrediction(userPC: UserPC, gameId: string): Promise<PredictionResult> {
+  if (!ALLOW_MOCK_DATA) return unavailablePrediction()
+  const mock = await loadMockModule()
+  return mock.predictForUserRig(userPC, gameId)
 }
 
 /**
@@ -1175,17 +1200,17 @@ export async function computeGameStatsAsync(gameId: string): Promise<GameStats> 
 
       if (error) {
         console.error('[data] computeGameStatsAsync Supabase error:', error)
-        return computeGameStats(gameId)
+        return getMockGameStats(gameId)
       }
 
       const reports = (data || []).map(mapDbReportToReport)
-      return mock.computeGameStatsFromReports(reports)
+      return computeGameStatsFromReports(reports)
     } catch (err: any) {
       console.error('[data] computeGameStatsAsync unexpected error:', err)
-      return computeGameStats(gameId)
+      return getMockGameStats(gameId)
     }
   }
-  return Promise.resolve(computeGameStats(gameId))
+  return getMockGameStats(gameId)
 }
 
 /**
@@ -1213,17 +1238,17 @@ export async function predictForUserRigAsync(
 
       if (error) {
         console.error('[data] predictForUserRigAsync Supabase error:', error)
-        return predictForUserRig(userPC, gameId)
+        return getMockPrediction(userPC, gameId)
       }
 
       const gameReports = (data || []).map(mapDbReportToReport)
-      return mock.predictForUserRigFromReports(userPC, gameReports)
+      return predictForUserRigFromReports(userPC, gameReports)
     } catch (err: any) {
       console.error('[data] predictForUserRigAsync unexpected error:', err)
-      return predictForUserRig(userPC, gameId)
+      return getMockPrediction(userPC, gameId)
     }
   }
-  return Promise.resolve(predictForUserRig(userPC, gameId))
+  return getMockPrediction(userPC, gameId)
 }
 
 // ============================================
@@ -1235,7 +1260,7 @@ export async function predictForUserRigAsync(
 // ============================================
 
 export async function addUserReport(
-  report: SubmitReportInput | Parameters<typeof mock.addUserReport>[0]
+  report: SubmitReportInput | Parameters<MockModule['addUserReport']>[0]
 ): Promise<Report> {
   if (USE_REAL && isSupabaseConfigured()) {
     // Dynamic import keeps server-only code out of client bundles
@@ -1271,12 +1296,8 @@ export async function addUserReport(
     throw new Error('Report submission requires a configured Supabase backend.')
   }
   // Mock path remains synchronous in behavior for demo continuity (data adapter returns Promise for consistency)
-  const result = mock.addUserReport(report as any)
-  return Promise.resolve(result)
-}
-
-export function loadUserReports() {
-  return ALLOW_MOCK_DATA ? mock.loadUserReports() : []
+  const mock = await loadMockModule()
+  return mock.addUserReport(report as any)
 }
 
 export async function voteReport(reportId: string, value: 1 | -1 | 0): Promise<void> {
@@ -1306,30 +1327,8 @@ export async function downvoteReport(reportId: string): Promise<void> {
 //   - saveMyRigAsync: upserts user_rigs (and mirrors to profiles for consistency with ProfileRigEditor)
 //   - clearMyRigAsync: removes from user_rigs
 // Guests / !USE_REAL: fallback to localStorage (mock) exactly as before.
-// Sync wrappers kept for backward compat (warn when real; prefer *Async in new code).
 // Similarity scoring + predictions continue to work via existing predictForUserRigAsync etc.
 // ============================================
-
-export function loadMyRig(): UserPC | null {
-  if (USE_REAL) {
-    console.warn('[data] loadMyRig using MOCK/localStorage (real mode — use loadMyRigAsync for profiles/user_rigs per Phase 2 plan)')
-  }
-  return mock.loadMyRig()
-}
-
-export function saveMyRig(rig: UserPC) {
-  if (USE_REAL) {
-    console.warn('[data] saveMyRig using MOCK/localStorage (real mode — use saveMyRigAsync for profiles/user_rigs per Phase 2 plan)')
-  }
-  mock.saveMyRig(rig)
-}
-
-export function clearMyRig() {
-  if (USE_REAL) {
-    console.warn('[data] clearMyRig using MOCK/localStorage (real mode — use clearMyRigAsync for profiles/user_rigs per Phase 2 plan)')
-  }
-  mock.clearMyRig()
-}
 
 function mapUserRigRowToUserPC(row: any): UserPC | null {
   if (!row?.cpu || !row?.gpu) return null
@@ -1403,7 +1402,7 @@ export async function loadMyRigAsync(): Promise<UserPC | null> {
       console.warn('[data] loadMyRigAsync Supabase error, falling back to localStorage:', msg)
     }
   }
-  return mock.loadMyRig()
+  return (await loadMockModule()).loadMyRig()
 }
 
 /**
@@ -1472,7 +1471,7 @@ export async function saveMyRigAsync(rig: UserPC): Promise<void> {
       console.warn('[data] saveMyRigAsync Supabase error, falling back to localStorage save:', msg)
     }
   }
-  mock.saveMyRig(rig)
+  ;(await loadMockModule()).saveMyRig(rig)
 }
 
 /**
@@ -1509,7 +1508,7 @@ export async function clearMyRigAsync(): Promise<void> {
       console.warn('[data] clearMyRigAsync Supabase error, falling back to localStorage clear:', msg)
     }
   }
-  mock.clearMyRig()
+  ;(await loadMockModule()).clearMyRig()
 }
 
 // ============================================
@@ -1566,7 +1565,8 @@ export async function loadUserDevices(): Promise<import('./types').UserDevice[]>
       console.warn('[data] loadUserDevices error, falling back to empty list', err)
     }
   }
-  return ALLOW_MOCK_DATA ? mock.loadUserDevices?.() || [] : []
+  if (!ALLOW_MOCK_DATA) return []
+  return (await loadMockModule()).loadUserDevices?.() || []
 }
 
 export async function saveUserDevice(device: UserDeviceInput & { id?: string }): Promise<void> {
@@ -1606,7 +1606,7 @@ export async function saveUserDevice(device: UserDeviceInput & { id?: string }):
       console.warn('[data] saveUserDevice Supabase error', err)
     }
   }
-  if (ALLOW_MOCK_DATA) mock.saveUserDevice?.(device as any)
+  if (ALLOW_MOCK_DATA) (await loadMockModule()).saveUserDevice?.(device as any)
 }
 
 export async function deleteUserDevice(id: string): Promise<void> {
@@ -1622,7 +1622,7 @@ export async function deleteUserDevice(id: string): Promise<void> {
       console.warn('[data] deleteUserDevice error', err)
     }
   }
-  if (ALLOW_MOCK_DATA) mock.deleteUserDevice?.(id)
+  if (ALLOW_MOCK_DATA) (await loadMockModule()).deleteUserDevice?.(id)
 }
 
 // ============================================
@@ -1761,83 +1761,9 @@ export async function unlinkSteamAccount(): Promise<boolean> {
 }
 
 // ============================================
-// PHASE 4: ADMIN TOOLS (adapter for migration)
+// PHASE 4: ADMIN TOOLS — moved to lib/admin-demo.ts (mock/localStorage-backed,
+// only bundled into the /admin route). Import from '@/lib/admin-demo'.
 // ============================================
-
-export function getAdminOverviewStats() {
-  return ALLOW_MOCK_DATA ? mock.getAdminOverviewStats() : {
-    totalReports: 0,
-    pendingReports: 0,
-    totalGames: 0,
-    pendingImages: 0,
-    hardwareAliases: 0,
-    importedGames: 0,
-  }
-}
-
-export function getModerationQueue(filterStatus?: ReportStatus | 'all') {
-  return ALLOW_MOCK_DATA ? mock.getModerationQueue(filterStatus) : []
-}
-
-export function updateReportStatus(
-  reportId: string,
-  status: ReportStatus,
-  moderatorNotes?: string,
-  moderatorName?: string
-) {
-  if (!ALLOW_MOCK_DATA) return undefined
-  return mock.updateReportStatus(reportId, status, moderatorNotes, moderatorName)
-}
-
-export function getHardwareAliases(search?: string) {
-  return ALLOW_MOCK_DATA ? mock.getHardwareAliases(search) : []
-}
-
-export function addHardwareAlias(rawString: string, canonical: string, vendor?: string, series?: string) {
-  if (!ALLOW_MOCK_DATA) return undefined
-  return mock.addHardwareAlias(rawString, canonical, vendor, series)
-}
-
-export function updateHardwareAlias(id: string, updates: Partial<Omit<HardwareAlias, 'id' | 'createdAt'>>) {
-  if (!ALLOW_MOCK_DATA) return undefined
-  return mock.updateHardwareAlias(id, updates)
-}
-
-export function deleteHardwareAlias(id: string) {
-  if (!ALLOW_MOCK_DATA) return undefined
-  return mock.deleteHardwareAlias(id)
-}
-
-export function getAllGamesForAdmin() {
-  return publicStarterGames()
-}
-
-export function bulkImportGames(rows: any[]): BulkImportResult {
-  if (!ALLOW_MOCK_DATA) {
-    return {
-      success: 0,
-      errors: [{ row: 0, message: 'Mock bulk import is disabled for public deploy.' }],
-      imported: [],
-    }
-  }
-  return mock.bulkImportGames(rows)
-}
-
-export const parseCSV = mock.parseCSV
-
-export function getReportImages(filterStatus?: 'pending' | 'approved' | 'rejected' | 'all') {
-  return ALLOW_MOCK_DATA ? mock.getReportImages(filterStatus) : []
-}
-
-export function updateImageStatus(imageId: string, status: 'pending' | 'approved' | 'rejected') {
-  if (!ALLOW_MOCK_DATA) return undefined
-  return mock.updateImageStatus(imageId, status)
-}
-
-export function deleteReportImage(imageId: string) {
-  if (!ALLOW_MOCK_DATA) return undefined
-  return mock.deleteReportImage(imageId)
-}
 
 // ============================================
 // REACT QUERY HOOKS FOR COMPONENTS (Phase 3 Master Plan)
@@ -2065,20 +1991,20 @@ export type {
 // HELPERS (pure, no data source change needed)
 // ============================================
 
-export const formatRelativeTime = mock.formatRelativeTime
+export { formatRelativeTime } from './data-logic'
 
 // Hardware-aware similarity (new catalog-powered engine). The old name is aliased
 // to the improved version for maximum quality with zero breaking changes.
-export const calculateSimilarity = mock.calculateHardwareAwareSimilarity || mock.calculateSimilarity
-export const calculateHardwareAwareSimilarity = mock.calculateHardwareAwareSimilarity || mock.calculateSimilarity
-
-export const extractGpuSeries = mock.extractGpuSeries
-export const getCpuTier = mock.getCpuTier
+export {
+  calculateHardwareAwareSimilarity,
+  calculateHardwareAwareSimilarity as calculateSimilarity,
+  extractGpuSeries,
+  getCpuTier,
+} from './similarity'
 
 // Pure aggregation/prediction helpers (extracted for Phase 3 real-data list pages + GameCard stats derivation).
 // Use with reports fetched via *Async adapters (e.g. getAllReportsAsync) to compute without N+1 calls or direct mock imports.
-export const computeGameStatsFromReports = mock.computeGameStatsFromReports
-export const predictForUserRigFromReports = mock.predictForUserRigFromReports
+export { computeGameStatsFromReports, predictForUserRigFromReports } from './data-logic'
 
 // ============================================
 // HARDWARE CATALOG (Phase 6+ full database)
@@ -2145,12 +2071,6 @@ export async function getHardwareCatalogEntry(canonical: string): Promise<Hardwa
   }
   const { getHardwareEntry } = await import('./hardware-catalog')
   return getHardwareEntry(canonical)
-}
-
-// Also expose a typed static getter for convenience
-export async function getAllHardwareCatalogStaticTyped(): Promise<HardwareCatalogEntry[]> {
-  const { getAllHardwareCatalog } = await import('./hardware-catalog')
-  return getAllHardwareCatalog()
 }
 
 // Server-only hardware catalog: import from '@/lib/data-server' in Server Actions / RSC.

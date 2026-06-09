@@ -16,7 +16,7 @@ import { MAIN_RESOLUTIONS } from '@/lib/types';
 import { loadMyRigAsync, saveMyRigAsync } from '@/lib/data';
 import type { SteamLinkStatus } from '@/lib/data';
 import type { DetectedHardware } from '@/lib/types';
-import { mergeDetected } from '@/lib/hardware-detector';
+import { mergeDetected, applicableHardwareFields } from '@/lib/hardware-detector';
 
 interface ProfileRigEditorProps {
   /** Only the id is required — identity (name/avatar) is managed in the profile hero. */
@@ -152,14 +152,13 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
                 mode="browser"
                 onDetect={(r) => {
                   setLastBrowserDetect(r);
-                  const isHint = (s?: string) => !!s && /browser hint/i.test(s);
-                  // Browser hints for CPU/RAM are shown conceptually via the detect result,
-                  // but we don't auto-fill the editable fields with "8-core (browser hint)".
-                  // Paste (or type real model) for actual CPU + RAM.
-                  if (r.cpu && !isHint(r.cpu)) updateField('cpu', r.cpu);
-                  if (r.gpu) updateField('gpu', r.gpu);
-                  if (r.ram != null && !isHint(r.cpu)) updateField('ram', r.ram);
-                  if (r.resolution) updateField('resolution', r.resolution);
+                  // Browser hints for CPU/RAM are never auto-filled into editable fields;
+                  // paste (or type the real model) for actual CPU + RAM.
+                  const fields = applicableHardwareFields(r);
+                  if (fields.cpu) updateField('cpu', fields.cpu);
+                  if (fields.gpu) updateField('gpu', fields.gpu);
+                  if (fields.ram != null) updateField('ram', fields.ram);
+                  if (fields.resolution) updateField('resolution', fields.resolution);
                 }}
                 onRequestPaste={() => setPasteModalOpen(true)}
               />

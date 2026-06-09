@@ -31,10 +31,19 @@ import {
 } from './types';
 import { normalizeSlug } from './utils';
 
-// Hardware-aware similarity engine (catalog-powered, Phase 6+)
+// Shared pure helpers (also used by lib/data.ts real paths) — moved to data-logic.ts
 import {
-  calculateHardwareAwareSimilarity,
-} from './similarity';
+  filterReports,
+  predictForUserRigFromReports,
+  computeGameStatsFromReports,
+} from './data-logic';
+export {
+  filterReports,
+  predictForUserRigFromReports,
+  computeGameStatsFromReports,
+  formatRelativeTime,
+  parseCSV,
+} from './data-logic';
 
 // Agent 5 / PR 5 Public API Resilience Layer integration note (demo seeds):
 // The cached resolver (lib/game-id-resolver) is the single source for Steam AppID + fallbacks.
@@ -46,413 +55,11 @@ import {
 // This keeps mock-data pure/sync while enabling full resolver usage for seeds + runtime.
 
 // ============================================
-// GAMES (18 titles — good coverage of genres + difficulty)
+// GAMES — canonical starter catalog (moved to starter-games.ts; re-exported for compat)
 // ============================================
-// REAL BANNERS (Agent 1 / PR 1): All 18 coverImage values modernized from picsum.photos
-// to distinct official high-quality public CDN art (no duplicates).
-// Sources: Steam library_600x900_2x.jpg (vertical covers) + IGDB t_cover_big.
-// See public-game-covers.json (root) for the reusable machine-readable map + full
-// attributions/Steam AppIDs/IGDB hashes for Agents 2/4/5 + future resolver/ingest.
-// These domains are whitelisted in next.config.ts. Hotlink for demo only; prefer
-// the Supabase ingest pipeline (game_media) for production/real-data mode.
-// © respective rights holders — informational/demo use.
 
-export const GAMES: Game[] = [
-  {
-    id: 'g1',
-    slug: 'cyberpunk-2077',
-    name: 'Cyberpunk 2077',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1091500/library_600x900_2x.jpg',
-    genres: ['Action', 'RPG', 'Open World'],
-    releaseYear: 2020,
-    developer: 'CD Projekt RED',
-    publisher: 'CD Projekt',
-    officialMinReqs: { cpu: 'Intel i5-3570K / AMD FX-8310', gpu: 'GTX 780 / RX 470', ram: 8 },
-    officialRecReqs: { cpu: 'Intel i7-4790 / AMD Ryzen 3 3200G', gpu: 'GTX 1060 / RX 580', ram: 12 },
-  },
-  {
-    id: 'g2',
-    slug: 'elden-ring',
-    name: 'Elden Ring',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1245620/library_600x900_2x.jpg',
-    genres: ['Action', 'RPG'],
-    releaseYear: 2022,
-    developer: 'FromSoftware',
-    publisher: 'Bandai Namco',
-    officialMinReqs: { cpu: 'Intel i5-8400 / AMD Ryzen 3 3300X', gpu: 'GTX 1060 6GB / RX 580', ram: 12 },
-    officialRecReqs: { cpu: 'Intel i7-8700K / AMD Ryzen 5 3600X', gpu: 'GTX 1070 / RX Vega 56', ram: 16 },
-  },
-  {
-    id: 'g3',
-    slug: 'black-myth-wukong',
-    name: 'Black Myth: Wukong',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2358720/library_600x900_2x.jpg',
-    genres: ['Action', 'Adventure'],
-    releaseYear: 2024,
-    developer: 'Game Science',
-    publisher: 'Game Science',
-    officialMinReqs: { cpu: 'Intel i5-8400 / AMD Ryzen 5 1600', gpu: 'GTX 1060 6GB', ram: 16 },
-    officialRecReqs: { cpu: 'Intel i7-9700 / AMD Ryzen 5 5500', gpu: 'RTX 2060 / RX 5700 XT', ram: 16 },
-  },
-  {
-    id: 'g4',
-    slug: 'starfield',
-    name: 'Starfield',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1716740/library_600x900_2x.jpg',
-    genres: ['RPG', 'Sci-Fi', 'Open World'],
-    releaseYear: 2023,
-    developer: 'Bethesda Game Studios',
-    publisher: 'Bethesda Softworks',
-    officialMinReqs: { cpu: 'Intel i7-6800K / AMD Ryzen 5 2600X', gpu: 'RTX 2080 / RX 6800 XT', ram: 16 },
-  },
-  {
-    id: 'g5',
-    slug: 'baldurs-gate-3',
-    name: "Baldur's Gate 3",
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1086940/library_600x900_2x.jpg',
-    genres: ['RPG', 'Strategy'],
-    releaseYear: 2023,
-    developer: 'Larian Studios',
-    publisher: 'Larian Studios',
-    officialMinReqs: { cpu: 'Intel i5-4690 / AMD FX-8350', gpu: 'GTX 970 / RX 480', ram: 8 },
-    officialRecReqs: { cpu: 'Intel i7-8700K / AMD Ryzen 5 3600', gpu: 'RTX 2060 Super / RX 5700 XT', ram: 16 },
-  },
-  {
-    id: 'g6',
-    slug: 'helldivers-2',
-    name: 'Helldivers 2',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/553850/library_600x900_2x.jpg',
-    genres: ['Action', 'Shooter', 'Co-op'],
-    releaseYear: 2024,
-    developer: 'Arrowhead Game Studios',
-    publisher: 'Sony',
-    officialMinReqs: { cpu: 'Intel i7-4790K / AMD Ryzen 5 1500X', gpu: 'GTX 1050 Ti / RX 470', ram: 8 },
-  },
-  {
-    id: 'g7',
-    slug: 'alan-wake-2',
-    name: 'Alan Wake 2',
-    coverImage: 'https://images.igdb.com/igdb/image/upload/t_cover_big/co6jar.jpg',
-    genres: ['Action', 'Horror', 'Story'],
-    releaseYear: 2023,
-    developer: 'Remedy Entertainment',
-    publisher: 'Epic Games Publishing',
-    officialMinReqs: { cpu: 'Intel i5-9600K / AMD Ryzen 5 3600X', gpu: 'RTX 2070 Super / RX 6700 XT', ram: 16 },
-    officialRecReqs: { cpu: 'Intel i7-10700K / AMD Ryzen 7 3700X', gpu: 'RTX 3070 / RX 6800', ram: 16 },
-  },
-  {
-    id: 'g8',
-    slug: 'hogwarts-legacy',
-    name: 'Hogwarts Legacy',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/990080/library_600x900_2x.jpg',
-    genres: ['Action', 'RPG', 'Open World'],
-    releaseYear: 2023,
-    developer: 'Avalanche Software',
-    publisher: 'Warner Bros. Games',
-    officialMinReqs: { cpu: 'Intel i5-6600K / AMD Ryzen 5 1400', gpu: 'GTX 960 / RX 470', ram: 16 },
-    officialRecReqs: { cpu: 'Intel i7-8700 / AMD Ryzen 5 3600', gpu: 'RTX 2060 / RX 5700', ram: 16 },
-  },
-  {
-    id: 'g9',
-    slug: 'the-witcher-3',
-    name: 'The Witcher 3: Wild Hunt',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/292030/library_600x900_2x.jpg',
-    genres: ['Action', 'RPG', 'Open World'],
-    releaseYear: 2015,
-    developer: 'CD Projekt RED',
-    publisher: 'CD Projekt',
-    officialMinReqs: { cpu: 'Intel i5-2500K / AMD Phenom II X4 940', gpu: 'GTX 660 / HD 7870', ram: 6 },
-    officialRecReqs: { cpu: 'Intel i7-3770 / AMD FX-8350', gpu: 'GTX 770 / R9 290', ram: 8 },
-  },
-  {
-    id: 'g10',
-    slug: 'counter-strike-2',
-    name: 'Counter-Strike 2',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/730/library_600x900_2x.jpg',
-    genres: ['FPS', 'Competitive'],
-    releaseYear: 2023,
-    developer: 'Valve',
-    publisher: 'Valve',
-    officialMinReqs: { cpu: 'Intel Core 2 Duo E6600', gpu: 'GTX 670 / HD 7970', ram: 4 },
-  },
-  {
-    id: 'g11',
-    slug: 'valorant',
-    name: 'VALORANT',
-    coverImage: 'https://images.igdb.com/igdb/image/upload/t_cover_big/cobtjo.jpg',
-    genres: ['FPS', 'Competitive'],
-    releaseYear: 2020,
-    developer: 'Riot Games',
-    publisher: 'Riot Games',
-  },
-  {
-    id: 'g12',
-    slug: 'league-of-legends',
-    name: 'League of Legends',
-    coverImage: 'https://images.igdb.com/igdb/image/upload/t_cover_big/cobpn7.jpg',
-    genres: ['MOBA', 'Competitive'],
-    releaseYear: 2009,
-    developer: 'Riot Games',
-    publisher: 'Riot Games',
-  },
-  {
-    id: 'g13',
-    slug: 'dragon-age-veilguard',
-    name: 'Dragon Age: The Veilguard',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1845910/library_600x900_2x.jpg',
-    genres: ['RPG', 'Action'],
-    releaseYear: 2024,
-    developer: 'BioWare',
-    publisher: 'Electronic Arts',
-    officialRecReqs: { cpu: 'Intel i7-9700 / AMD Ryzen 7 3700X', gpu: 'RTX 2070 / RX 6700 XT', ram: 16 },
-  },
-  {
-    id: 'g14',
-    slug: 'monster-hunter-wilds',
-    name: 'Monster Hunter Wilds',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2246340/library_600x900_2x.jpg',
-    genres: ['Action', 'Hunting'],
-    releaseYear: 2025,
-    developer: 'Capcom',
-    publisher: 'Capcom',
-  },
-  {
-    id: 'g15',
-    slug: 'palworld',
-    name: 'Palworld',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1623730/library_600x900_2x.jpg',
-    genres: ['Action', 'Survival', 'Open World'],
-    releaseYear: 2024,
-    developer: 'Pocketpair',
-    publisher: 'Pocketpair',
-  },
-  {
-    id: 'g16',
-    slug: 'hades-2',
-    name: 'Hades II',
-    coverImage: 'https://images.igdb.com/igdb/image/upload/t_cover_big/scka7e.jpg',
-    genres: ['Action', 'Roguelike'],
-    releaseYear: 2024,
-    developer: 'Supergiant Games',
-    publisher: 'Supergiant Games',
-  },
-  {
-    id: 'g17',
-    slug: 'warhammer-darktide',
-    name: 'Warhammer 40,000: Darktide',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1361210/library_600x900_2x.jpg',
-    genres: ['Action', 'Shooter', 'Co-op'],
-    releaseYear: 2022,
-    developer: 'Fatshark',
-    publisher: 'Fatshark',
-  },
-  {
-    id: 'g18',
-    slug: 'factorio',
-    name: 'Factorio',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/427520/library_600x900_2x.jpg',
-    genres: ['Strategy', 'Simulation'],
-    releaseYear: 2020,
-    developer: 'Wube Software',
-    publisher: 'Wube Software',
-  },
-
-  // === Medium-term catalog expansion (Steam CDN library_600x900 pattern) ===
-  // Added as immediate visible progress toward the Steam-enhanced vision while
-  // the full curation + ingest pipeline (Workstreams A/B) matures in production.
-  {
-    id: 'g19',
-    slug: 'red-dead-redemption-2',
-    name: 'Red Dead Redemption 2',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1174180/library_600x900_2x.jpg',
-    genres: ['Action', 'Adventure', 'Open World'],
-    releaseYear: 2019,
-    developer: 'Rockstar Games',
-    publisher: 'Rockstar Games',
-  },
-  {
-    id: 'g20',
-    slug: 'grand-theft-auto-v',
-    name: 'Grand Theft Auto V',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/271590/library_600x900_2x.jpg',
-    genres: ['Action', 'Adventure', 'Open World'],
-    releaseYear: 2015,
-    developer: 'Rockstar North',
-    publisher: 'Rockstar Games',
-  },
-  {
-    id: 'g21',
-    slug: 'god-of-war',
-    name: 'God of War',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1593500/library_600x900_2x.jpg',
-    genres: ['Action', 'Adventure'],
-    releaseYear: 2022,
-    developer: 'Santa Monica Studio',
-    publisher: 'Sony Interactive Entertainment',
-  },
-  {
-    id: 'g22',
-    slug: 'marvels-spider-man-remastered',
-    name: "Marvel's Spider-Man Remastered",
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1817190/library_600x900_2x.jpg',
-    genres: ['Action', 'Adventure'],
-    releaseYear: 2022,
-    developer: 'Insomniac Games',
-    publisher: 'Sony Interactive Entertainment',
-  },
-  {
-    id: 'g23',
-    slug: 'horizon-forbidden-west',
-    name: 'Horizon Forbidden West',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1656320/library_600x900_2x.jpg',
-    genres: ['Action', 'RPG', 'Open World'],
-    releaseYear: 2024,
-    developer: 'Guerrilla Games',
-    publisher: 'Sony Interactive Entertainment',
-  },
-  {
-    id: 'g24',
-    slug: 'star-wars-jedi-survivor',
-    name: 'Star Wars Jedi: Survivor',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1774580/library_600x900_2x.jpg',
-    genres: ['Action', 'Adventure'],
-    releaseYear: 2023,
-    developer: 'Respawn Entertainment',
-    publisher: 'Electronic Arts',
-  },
-  {
-    id: 'g25',
-    slug: 'resident-evil-4-remake',
-    name: 'Resident Evil 4',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2050650/library_600x900_2x.jpg',
-    genres: ['Action', 'Horror', 'Survival'],
-    releaseYear: 2023,
-    developer: 'Capcom',
-    publisher: 'Capcom',
-  },
-  {
-    id: 'g26',
-    slug: 'diablo-iv',
-    name: 'Diablo IV',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2344520/library_600x900_2x.jpg',
-    genres: ['Action', 'RPG'],
-    releaseYear: 2023,
-    developer: 'Blizzard Entertainment',
-    publisher: 'Blizzard Entertainment',
-  },
-  {
-    id: 'g27',
-    slug: 'forza-horizon-5',
-    name: 'Forza Horizon 5',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1551360/library_600x900_2x.jpg',
-    genres: ['Racing', 'Open World'],
-    releaseYear: 2021,
-    developer: 'Playground Games',
-    publisher: 'Xbox Game Studios',
-  },
-  {
-    id: 'g28',
-    slug: 'control',
-    name: 'Control',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/870780/library_600x900_2x.jpg',
-    genres: ['Action', 'Adventure'],
-    releaseYear: 2019,
-    developer: 'Remedy Entertainment',
-    publisher: '505 Games',
-  },
-  {
-    id: 'g29',
-    slug: 'death-stranding',
-    name: 'Death Stranding',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1190460/library_600x900_2x.jpg',
-    genres: ['Action', 'Adventure'],
-    releaseYear: 2020,
-    developer: 'Kojima Productions',
-    publisher: '505 Games',
-  },
-  {
-    id: 'g30',
-    slug: 'doom-eternal',
-    name: 'DOOM Eternal',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/782330/library_600x900_2x.jpg',
-    genres: ['Action', 'Shooter'],
-    releaseYear: 2020,
-    developer: 'id Software',
-    publisher: 'Bethesda Softworks',
-  },
-  {
-    id: 'g31',
-    slug: 'the-last-of-us-part-i',
-    name: 'The Last of Us Part I',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1888930/library_600x900_2x.jpg',
-    steamAppId: '1888930',
-    genres: ['Action', 'Adventure'],
-    releaseYear: 2023,
-    developer: 'Naughty Dog',
-    publisher: 'Sony Interactive Entertainment',
-  },
-  {
-    id: 'g32',
-    slug: 'assassins-creed-valhalla',
-    name: "Assassin's Creed Valhalla",
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2208920/library_600x900_2x.jpg',
-    steamAppId: '2208920',
-    genres: ['Action', 'RPG', 'Open World'],
-    releaseYear: 2020,
-    developer: 'Ubisoft Montreal',
-    publisher: 'Ubisoft',
-  },
-  {
-    id: 'g33',
-    slug: 'apex-legends',
-    name: 'Apex Legends',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1172470/library_600x900_2x.jpg',
-    genres: ['Action', 'Shooter', 'Battle Royale'],
-    releaseYear: 2019,
-    developer: 'Respawn Entertainment',
-    publisher: 'Electronic Arts',
-  },
-  {
-    id: 'g34',
-    slug: 'destiny-2',
-    name: 'Destiny 2',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1085660/library_600x900_2x.jpg',
-    genres: ['Action', 'Shooter', 'MMO'],
-    releaseYear: 2017,
-    developer: 'Bungie',
-    publisher: 'Bungie',
-  },
-  {
-    id: 'g35',
-    slug: 'warframe',
-    name: 'Warframe',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/230410/library_600x900_2x.jpg',
-    genres: ['Action', 'Shooter'],
-    releaseYear: 2013,
-    developer: 'Digital Extremes',
-    publisher: 'Digital Extremes',
-  },
-  {
-    id: 'g36',
-    slug: 'path-of-exile',
-    name: 'Path of Exile',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/238960/library_600x900_2x.jpg',
-    genres: ['Action', 'RPG'],
-    releaseYear: 2013,
-    developer: 'Grinding Gear Games',
-    publisher: 'Grinding Gear Games',
-  },
-  {
-    id: 'g37',
-    slug: 'last-epoch',
-    name: 'Last Epoch',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/899770/library_600x900_2x.jpg',
-    genres: ['Action', 'RPG'],
-    releaseYear: 2024,
-    developer: 'Eleventh Hour Games',
-    publisher: 'Eleventh Hour Games',
-  },
-];
+import { GAMES } from './starter-games';
+export { GAMES } from './starter-games';
 
 // ============================================
 // DEMO SEED REPORTS (for !USE_REAL / demo mode UX)
@@ -792,110 +399,8 @@ export function getReportsForGame(gameId: string, filters?: ReportFilters): Repo
   return reports.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
-export function filterReports(reports: Report[], filters: ReportFilters): Report[] {
-  return reports.filter((r) => {
-    if (filters.resolution && r.resolution !== filters.resolution) return false;
-    if (filters.gpuSeries && !r.gpu.toUpperCase().includes(filters.gpuSeries.toUpperCase())) return false;
-    if (filters.minFps && r.avgFps < filters.minFps) return false;
-    if (filters.maxFps && r.avgFps > filters.maxFps) return false;
-    if (filters.preset && filters.preset !== 'Any' && r.settingsPreset !== filters.preset) return false;
-    return true;
-  });
-}
-
-// ============================================
-// PURE HELPERS (extracted Phase 3 for real-data adapter reuse)
-// No globals, no fetches — take pre-filtered reports.
-// Used by mock wrappers + lib/data.ts real async paths (computeGameStatsAsync etc.)
-// ============================================
-
-export function predictForUserRigFromReports(userPC: UserPC, gameReports: Report[]): PredictionResult {
-  if (gameReports.length === 0) {
-    return {
-      predictedTier: 'Playable',
-      confidence: 0.3,
-      matchingReports: [],
-      explanation: 'Not enough data for this game yet.',
-      recommendedSettings: 'Start on Medium 1080p and adjust.',
-    };
-  }
-
-  // Prefer the new hardware-aware similarity (uses perfIndex from catalog)
-  const scored = gameReports
-    .map((r) => ({
-      report: r,
-      score: calculateHardwareAwareSimilarity(r, userPC),
-    }))
-    .sort((a, b) => b.score - a.score);
-
-  const topMatches = scored.slice(0, 5).map((s) => s.report);
-  const avgFpsTop = topMatches.reduce((sum, r) => sum + r.avgFps, 0) / topMatches.length;
-
-  let predicted: PerformanceTier = 'Playable';
-  if (avgFpsTop >= 90) predicted = 'Excellent';
-  else if (avgFpsTop >= 60) predicted = 'Good';
-  else if (avgFpsTop >= 40) predicted = 'Playable';
-  else if (avgFpsTop >= 25) predicted = 'Struggling';
-  else predicted = 'Unplayable';
-
-  const confidence = Math.min(0.92, Math.max(0.45, scored[0]?.score / 110));
-
-  const explanation = `Your ${userPC.gpu} + ${userPC.ram}GB rig matches ${Math.round(scored[0]?.score || 50)}% with the top similar reports (hardware-aware matching).`;
-
-  const recommendedSettings = avgFpsTop > 80
-    ? 'High/Ultra 1440p or 4K with upscaling likely comfortable.'
-    : avgFpsTop > 55
-    ? 'High 1440p or Medium-High 4K with DLSS/FSR Quality.'
-    : 'Medium 1080p or 1440p with upscaling recommended.';
-
-  return {
-    predictedTier: predicted,
-    confidence: Number(confidence.toFixed(2)),
-    matchingReports: topMatches,
-    explanation,
-    recommendedSettings,
-  };
-}
-
-export function computeGameStatsFromReports(reports: Report[]): GameStats {
-  const total = reports.length;
-
-  const tierDistribution: Record<PerformanceTier, number> = {
-    Excellent: 0, Good: 0, Playable: 0, Struggling: 0, Unplayable: 0,
-  };
-  reports.forEach((r) => {
-    tierDistribution[r.performanceTier] = (tierDistribution[r.performanceTier] || 0) + 1;
-  });
-
-  const avgFpsByResolution: Record<string, number> = {};
-  const resGroups: Record<string, number[]> = {};
-  reports.forEach((r) => {
-    if (!resGroups[r.resolution]) resGroups[r.resolution] = [];
-    resGroups[r.resolution].push(r.avgFps);
-  });
-  Object.keys(resGroups).forEach((res) => {
-    const arr = resGroups[res];
-    avgFpsByResolution[res] = Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
-  });
-
-  const presetCounts: Record<string, number> = {};
-  reports.forEach((r) => {
-    presetCounts[r.settingsPreset] = (presetCounts[r.settingsPreset] || 0) + 1;
-  });
-  const mostCommonPreset = (Object.entries(presetCounts).sort((a, b) => b[1] - a[1])[0]?.[0] as GraphicsPreset) || null;
-
-  const avgFpsOverall = total > 0
-    ? Math.round(reports.reduce((sum, r) => sum + r.avgFps, 0) / total)
-    : 0;
-
-  return {
-    totalReports: total,
-    tierDistribution,
-    avgFpsByResolution,
-    mostCommonPreset,
-    avgFpsOverall,
-  };
-}
+// filterReports / predictForUserRigFromReports / computeGameStatsFromReports /
+// formatRelativeTime / parseCSV moved to data-logic.ts (imported + re-exported above).
 
 // Thin wrappers for backward compat (used by sync callers + when flag=false)
 export function predictForUserRig(userPC: UserPC, gameId: string): PredictionResult {
@@ -916,12 +421,12 @@ export function computeGameStats(gameId: string): GameStats {
 
 // Convenience for home "trending"
 export function getTrendingGames(limit = 6): Game[] {
+  const counts = new Map<string, number>();
+  for (const r of getAllReports()) {
+    counts.set(r.gameId, (counts.get(r.gameId) ?? 0) + 1);
+  }
   return [...GAMES]
-    .sort((a, b) => {
-      const aReports = getAllReports().filter((r) => r.gameId === a.id).length;
-      const bReports = getAllReports().filter((r) => r.gameId === b.id).length;
-      return bReports - aReports;
-    })
+    .sort((a, b) => (counts.get(b.id) ?? 0) - (counts.get(a.id) ?? 0))
     .slice(0, limit);
 }
 
@@ -949,18 +454,6 @@ export function getFilteredGlobalReports(filters: {
   }
 
   return reports.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-}
-
-// Small helper for UI
-export function formatRelativeTime(iso: string): string {
-  const date = new Date(iso);
-  const now = new Date();
-  const diff = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-  if (diff < 1) return 'today';
-  if (diff === 1) return 'yesterday';
-  if (diff < 7) return `${diff}d ago`;
-  if (diff < 30) return `${Math.floor(diff / 7)}w ago`;
-  return `${Math.floor(diff / 30)}mo ago`;
 }
 
 // ============================================
@@ -1116,43 +609,6 @@ export function bulkImportGames(rows: any[]): BulkImportResult {
     saveImportedGames([...currentImported, ...toAdd]);
   }
   return result;
-}
-
-// Simple client-side CSV parser (no external deps)
-export function parseCSV(text: string): any[] {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) return [];
-  const headers = parseCSVLine(lines[0]).map((h) => h.trim());
-  const rows: any[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    if (!lines[i].trim()) continue;
-    const values = parseCSVLine(lines[i]);
-    const obj: any = {};
-    headers.forEach((h, j) => {
-      obj[h] = values[j] ?? '';
-    });
-    rows.push(obj);
-  }
-  return rows;
-}
-
-function parseCSVLine(line: string): string[] {
-  const result: string[] = [];
-  let current = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    if (char === '"' ) {
-      inQuotes = !inQuotes;
-    } else if (char === ',' && !inQuotes) {
-      result.push(current);
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-  result.push(current);
-  return result.map((s) => s.replace(/^"|"$/g, '').trim());
 }
 
 // ---- Image Management ----

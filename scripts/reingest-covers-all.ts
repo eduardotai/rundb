@@ -6,7 +6,7 @@
  * Usage: npm run reingest:covers
  */
 
-import { GAMES } from '../lib/mock-data'
+import { GAMES } from '../lib/starter-games'
 import { loadEnvLocal } from './load-env-local'
 import { execSync } from 'child_process'
 
