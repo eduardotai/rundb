@@ -4,9 +4,12 @@
 `lib/` owns RunDB's data adapter, domain types, pure logic, Supabase wrappers, hardware catalog and detection logic, cover/media helpers, server-only ingestion utilities, and shared utilities.
 
 ## Read This First
-- `data.ts`: the central adapter and public facade for app/components. It owns real-vs-mock behavior, mapping, React Query hooks, enrichment, saved rigs, reports, games, and admin delegation.
+- `data.ts`: the central adapter and public facade for app/components. It owns real-vs-mock behavior, mapping, React Query hooks, enrichment, saved rigs, reports, and games. It loads `mock-data.ts` lazily (dynamic import) so public real-mode bundles do not ship the demo/localStorage layer.
+- `data-logic.ts`: shared pure helpers (filterReports, computeGameStatsFromReports, predictForUserRigFromReports, formatRelativeTime, parseCSV) used by both real and mock paths. No fetches, no localStorage.
+- `starter-games.ts`: the canonical 18-game starter catalog (data only). Source for `game-cover-catalog.ts` and re-exported by `mock-data.ts` for scripts.
+- `admin-demo.ts`: mock/localStorage-backed admin tools (moderation queue, aliases, bulk import, image moderation) used only by `app/admin`; keeps mock state out of public bundles.
 - `types.ts`: source-of-truth TypeScript shapes that mirror Postgres concepts and UI payloads.
-- `mock-data.ts`: zero-config data, localStorage persistence, pure compute/filter/predict helpers, and mock admin state.
+- `mock-data.ts`: demo seed reports, localStorage persistence, and mock admin state (games fixture and pure helpers now live in `starter-games.ts` / `data-logic.ts` and are re-exported here for compat).
 - `supabase/client.ts`, `supabase/server.ts`, `supabase/service.ts`, `supabase/query-stub.ts`, `supabase/auth-timeout.ts`: defensive Supabase clients and auth timeout behavior.
 - `hardware-catalog*.ts`, `normalize-hardware.ts`, `hardware-detector.ts`, `hardware-similarity-heuristics.ts`, `similarity.ts`: hardware catalog, aliases, detection, normalization, and similarity.
 - `game-cover-*`, `game-id-resolver.ts`, `cover-image-url.ts`, `server/game-media.ts`: cover, media, and external ID resilience.

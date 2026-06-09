@@ -6,7 +6,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { GAME_COVER_CATALOG } from '../lib/game-cover-catalog'
-import { GAMES } from '../lib/mock-data'
+import { GAMES } from '../lib/starter-games'
 import { loadEnvLocal } from './load-env-local'
 
 loadEnvLocal()

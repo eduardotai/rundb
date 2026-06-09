@@ -21,7 +21,8 @@ import { DetectedHardwareBanner } from '@/components/detected-hardware-banner';
 import { PasteHardwareModal } from '@/components/paste-hardware-modal';
 import { PerformanceBadge } from '@/components/performance-badge';
 import type { DetectedHardware } from '@/lib/types';
-import { mergeDetected } from '@/lib/hardware-detector';
+import { applicableHardwareFields } from '@/lib/hardware-detector';
+import { useHardwareDetection } from '@/components/use-hardware-detection';
 import { loadMyRigAsync, loadUserDevices } from '@/lib/data';
 import { Cpu, Zap, Monitor } from 'lucide-react';
 import { upgradeCoverImageSrc } from '@/lib/cover-image-url';
@@ -118,10 +119,6 @@ function Section({ label, hint, children }: { label: string; hint?: string; chil
 export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: SubmitReportDialogProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Hardware Identification (Plan 4) — same pattern as compatibility-checker + profile editor
-  const [detectedRig, setDetectedRig] = useState<DetectedHardware | null>(null);
-  const [detectionState, setDetectionState] = useState<'idle' | 'detecting' | 'detected' | 'applied'>('idle');
-  const [pasteModalOpen, setPasteModalOpen] = useState(false);
   const [savedDevices, setSavedDevices] = useState<any[]>([]);
   const [coverError, setCoverError] = useState(false);
 
@@ -168,37 +165,17 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
     }
   }, [open, form]);
 
-  // Detection handlers (consistent with other surfaces)
-  const handleDetected = (result: DetectedHardware) => {
-    setDetectedRig(result);
-    setDetectionState('detected');
-  };
-
-  const openPasteModal = () => setPasteModalOpen(true);
-
-  const applyDetectedToForm = (detected: DetectedHardware) => {
-    const isHint = (s?: string) => !!s && /browser hint/i.test(s);
-
-    // Only prefill cpu/ram from detection if they are real values (not browser estimates).
-    // Browser "Detect" still shows the hints in the banner + tells you to Paste for actual CPU/RAM.
-    if (detected.cpu && !isHint(detected.cpu)) form.setValue('cpu', detected.cpu, { shouldValidate: true });
-    if (detected.gpu) form.setValue('gpu', detected.gpu, { shouldValidate: true });
-    if (detected.ram != null && !isHint(detected.cpu)) {
-      // Only auto-apply real RAM numbers (from paste). Browser hints are shown in banner but not forced into the form.
-      form.setValue('ram', detected.ram, { shouldValidate: true });
-    }
-    if (detected.resolution) form.setValue('resolution', detected.resolution, { shouldValidate: true });
-    if (detected.driverVersion) form.setValue('driverVersion', detected.driverVersion, { shouldValidate: true });
-    if (detected.refreshRate != null) form.setValue('refreshRate', detected.refreshRate, { shouldValidate: true });
-
-    setDetectionState('applied');
-    setDetectedRig(null);
-  };
-
-  const handleClearDetection = () => {
-    setDetectedRig(null);
-    setDetectionState('idle');
-  };
+  // Detect → review → apply state machine (shared with compatibility checker).
+  // Browser hints stay in the banner; only real values are written into the form.
+  const detection = useHardwareDetection((detected: DetectedHardware) => {
+    const fields = applicableHardwareFields(detected);
+    if (fields.cpu) form.setValue('cpu', fields.cpu, { shouldValidate: true });
+    if (fields.gpu) form.setValue('gpu', fields.gpu, { shouldValidate: true });
+    if (fields.ram != null) form.setValue('ram', fields.ram, { shouldValidate: true });
+    if (fields.resolution) form.setValue('resolution', fields.resolution, { shouldValidate: true });
+    if (fields.driverVersion) form.setValue('driverVersion', fields.driverVersion, { shouldValidate: true });
+    if (fields.refreshRate != null) form.setValue('refreshRate', fields.refreshRate, { shouldValidate: true });
+  });
 
   // Quick "Use my saved rig" prefill (very useful in submit flow)
   const useSavedRig = async () => {
@@ -378,14 +355,14 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
                 <div className="flex flex-wrap items-center gap-2">
                   <HardwareDetectButton
                     mode="browser"
-                    onDetect={handleDetected}
-                    state={detectionState}
-                    onRequestPaste={openPasteModal}
+                    onDetect={detection.handleDetected}
+                    state={detection.detectionState}
+                    onRequestPaste={detection.openPasteModal}
                   />
                   <Button type="button" variant="outline" size="sm" onClick={useSavedRig} className="h-7 text-xs">
                     Use my saved rig
                   </Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={openPasteModal} className="h-7 text-xs">
+                  <Button type="button" variant="ghost" size="sm" onClick={detection.openPasteModal} className="h-7 text-xs">
                     Paste system info
                   </Button>
 
@@ -415,12 +392,12 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
 
                 {/* Detection banner (educational + Apply button). Same component as checker/profile. */}
                 <DetectedHardwareBanner
-                  detected={detectedRig}
-                  onApply={applyDetectedToForm}
-                  onRefine={() => setDetectedRig(null)}
-                  onDismiss={handleClearDetection}
-                  onTryPaste={openPasteModal}
-                  applied={detectionState === 'applied'}
+                  detected={detection.detectedRig}
+                  onApply={detection.applyDetected}
+                  onRefine={detection.refineDetection}
+                  onDismiss={detection.clearDetection}
+                  onTryPaste={detection.openPasteModal}
+                  applied={detection.detectionState === 'applied'}
                 />
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -616,14 +593,9 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
 
         {/* Paste modal (inxi / dxdiag / Steam sysinfo — the ProtonDB precision path) */}
         <PasteHardwareModal
-          open={pasteModalOpen}
-          onOpenChange={setPasteModalOpen}
-          onApply={(pasteDetected) => {
-            // Merge any prior browser detection (res/refresh/UA-CH) with paste (exact cpu/gpu/ram) for richest signal.
-            const merged = mergeDetected(detectedRig, pasteDetected);
-            applyDetectedToForm(merged);
-            setPasteModalOpen(false);
-          }}
+          open={detection.pasteModalOpen}
+          onOpenChange={detection.setPasteModalOpen}
+          onApply={detection.handlePasteApply}
         />
       </DialogContent>
     </Dialog>

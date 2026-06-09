@@ -1,9 +1,9 @@
 /**
- * Canonical slug → cover / Steam AppID map derived from lib/mock-data.ts.
+ * Canonical slug → cover / Steam AppID map derived from lib/starter-games.ts.
  * Single source of truth for banner resolution — prevents IGDB ingest mismatches
  * from overriding correct Steam library art at display time.
  */
-import { GAMES } from './mock-data'
+import { GAMES } from './starter-games'
 import { extractSteamAppIdFromUrl, steamLibraryCoverUrl, upgradeCoverImageSrc } from './cover-image-url'
 
 export interface CatalogCover {

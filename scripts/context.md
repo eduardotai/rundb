@@ -8,8 +8,8 @@
 - `ingest-games.ts`: primary direct catalog enrichment script.
 - `ingest-games-worker.ts`: queue worker for background or batch enrichment.
 - `seed-queue.ts`, `build-protondb-seed.ts`, `inspect-protondb-dump.ts`, `import-latest-games.ts`: catalog growth and seed preparation.
-- `seed-games-mock.ts`, `seed-hardware-catalog.ts`, `import-hardware-catalog.ts`, `verify-hardware-catalog.ts`: starter data and hardware catalog tooling.
-- `reingest-covers-all.ts`, `repair-game-media-covers.ts`, `fix-game-covers.ts`: cover/media maintenance.
+- `seed-games-mock.ts`, `seed-hardware-catalog.ts`, `import-hardware-catalog.ts`, `verify-hardware-catalog.ts`: starter data and hardware catalog tooling. Note: `import-hardware-catalog.ts` is build-time codegen (seeds JSON -> `lib/hardware-catalog-generated.ts`), while `seed-hardware-catalog.ts` upserts the static catalog into Supabase — they are complementary, not duplicates.
+- `reingest-covers-all.ts`, `repair-game-media-covers.ts`, `fix-game-covers.ts`: cover/media maintenance at three layers — full ingest pipeline rerun, storage/`game_media` re-upload, and quick `games.cover_url` row fix respectively.
 - `setup-supabase-real.ts`, `supabase-health.ts`, `phase5-e2e-real-data.ts`: project setup and real-data verification.
 - `publish-feature-branch.ps1`: Windows/PowerShell helper for publishing work.
 

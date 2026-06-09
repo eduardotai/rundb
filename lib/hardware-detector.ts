@@ -1280,6 +1280,42 @@ export function mergeDetected(
   };
 }
 
+/**
+ * True for browser-estimate placeholder strings (e.g. "8-core CPU (browser hint)")
+ * that must be shown for review but never force-applied into editable fields.
+ * Shared by the submit dialog, compatibility checker, and profile rig editor so
+ * the apply-detected semantics stay identical across surfaces.
+ */
+export function isBrowserHint(value?: string): boolean {
+  return !!value && /browser hint/i.test(value);
+}
+
+/**
+ * The subset of a detection result that is safe to write into editable rig/report
+ * fields: real values only, browser hints filtered out (they stay visible in the
+ * review banner instead). Single source of truth for "what does Apply fill in".
+ */
+export function applicableHardwareFields(detected: DetectedHardware): {
+  cpu?: string;
+  gpu?: string;
+  ram?: number;
+  resolution?: string;
+  driverVersion?: string;
+  refreshRate?: number;
+} {
+  const cpuIsHint = isBrowserHint(detected.cpu);
+  return {
+    cpu: detected.cpu && !cpuIsHint ? detected.cpu : undefined,
+    gpu: detected.gpu || undefined,
+    // RAM from the browser path is a privacy-capped lower bound that travels with a
+    // hinted CPU; only paste/companion results (real CPU model) carry exact RAM.
+    ram: detected.ram != null && !cpuIsHint ? detected.ram : undefined,
+    resolution: detected.resolution || undefined,
+    driverVersion: detected.driverVersion || undefined,
+    refreshRate: detected.refreshRate ?? undefined,
+  };
+}
+
 // ============================================
 // STEAM + COMPANION STUBS (per Plan 2 + Plan 4 honesty)
 // Steam: NO hardware. Companion: future only.
