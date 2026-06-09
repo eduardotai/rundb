@@ -50,14 +50,23 @@ export function ValueLoopExplainer({ variant = 'prominent' }: ValueLoopExplainer
         {steps.map((step, index) => {
           const Icon = step.icon;
           return (
-            <div key={index} className="flex gap-3">
-              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-background">
+            <div key={index} className="relative flex gap-3">
+              <div className="relative mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary/5">
                 <Icon className="h-4 w-4 text-primary" />
+                <span className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-primary font-mono text-[9px] font-bold leading-none text-primary-foreground">
+                  {index + 1}
+                </span>
               </div>
               <div className="min-w-0 space-y-1">
                 <div className="text-sm font-semibold tracking-tight">{step.title}</div>
                 <p className="text-xs leading-snug text-muted-foreground">{step.desc}</p>
               </div>
+              {/* Connector arrow between steps on wide layout */}
+              {index < steps.length - 1 && (
+                <span aria-hidden="true" className="absolute -right-3 top-2 hidden text-muted-foreground/40 lg:block">
+                  →
+                </span>
+              )}
             </div>
           );
         })}

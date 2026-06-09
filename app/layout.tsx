@@ -39,6 +39,10 @@ export default function RootLayout({
           <main className="flex-1">{children}</main>
 
           <footer className="border-t border-border py-8 text-center text-xs text-muted-foreground">
+            <div className="mb-2 font-semibold tracking-tight text-sm">
+              <span className="text-primary">Run</span>
+              <span className="text-foreground">DB</span>
+            </div>
             Real community-driven PC performance data.
             <span className="mx-2">·</span>
             Inspired by ProtonDB, PCPartPicker, and HowLongToBeat.
