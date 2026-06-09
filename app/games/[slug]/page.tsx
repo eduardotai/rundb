@@ -151,7 +151,8 @@ function GameDetailInner({ game }: { game: Game }) {
 
   const queryClient = useQueryClient();
 
-  const allReports: Report[] = unfilteredReportsQuery.data || [];
+  const unfilteredReportsData = unfilteredReportsQuery.data;
+  const allReports: Report[] = useMemo(() => unfilteredReportsData || [], [unfilteredReportsData]);
   const stats = statsQuery.data || {
     totalReports: 0,
     tierDistribution: { Excellent: 0, Good: 0, Playable: 0, Struggling: 0, Unplayable: 0 },

@@ -166,7 +166,7 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
       }, 120);
       return () => clearTimeout(t);
     }
-  }, [open]);
+  }, [open, form]);
 
   // Detection handlers (consistent with other surfaces)
   const handleDetected = (result: DetectedHardware) => {

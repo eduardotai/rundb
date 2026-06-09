@@ -16,9 +16,8 @@ import { createClient } from '@/lib/supabase/client';
 export function MyRigIndicator() {
   const [myRig, setMyRig] = useState<UserPC | null>(null);
 
-  const supabase = createClient();
-
   useEffect(() => {
+    const supabase = createClient();
     let mounted = true;
 
     async function load() {

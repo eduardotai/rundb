@@ -299,7 +299,7 @@ CREATE POLICY "Approved reports are publicly readable" ON reports
 --   2. the rate-limit / duplicate-detection count queries in submitReportAction can
 --      actually see the user's own pending reports.
 CREATE POLICY "Users can read their own reports" ON reports
-  FOR SELECT USING (user_id = auth.uid());
+  FOR SELECT USING (user_id = (select auth.uid()));
 
 -- Anyone (including fully anonymous clients using the anon key, or authenticated users/guests via signInAnonymously)
 -- can insert reports. The row must claim user_id=NULL or exactly the current auth.uid().
@@ -310,31 +310,31 @@ CREATE POLICY "Anyone can insert reports (self or anonymous)" ON reports
   TO anon, authenticated
   WITH CHECK (
     status IN ('pending', 'approved')
-    AND ((user_id IS NULL) OR (user_id = auth.uid()))
+    AND ((user_id IS NULL) OR (user_id = (select auth.uid())))
   );
 
 -- Owners can update their own pending reports
 CREATE POLICY "Users can update own pending reports" ON reports
-  FOR UPDATE USING (user_id = auth.uid() AND status = 'pending');
+  FOR UPDATE USING (user_id = (select auth.uid()) AND status = 'pending');
 
 -- Votes
 CREATE POLICY "Users can vote on reports" ON report_votes
-  FOR INSERT WITH CHECK (user_id = auth.uid());
+  FOR INSERT WITH CHECK (user_id = (select auth.uid()));
 
 CREATE POLICY "Users can see their own votes" ON report_votes
-  FOR SELECT USING (user_id = auth.uid());
+  FOR SELECT USING (user_id = (select auth.uid()));
 
 -- Profiles: users manage their own non-privileged fields. Role changes are
 -- blocked by profiles_prevent_client_role_change even if clients send role.
 CREATE POLICY "Users can view own profile" ON profiles
-  FOR SELECT USING (auth.uid() = id);
+  FOR SELECT USING ((select auth.uid()) = id);
 
 CREATE POLICY "Users can insert own profile" ON profiles
-  FOR INSERT WITH CHECK (auth.uid() = id AND role = 'user');
+  FOR INSERT WITH CHECK ((select auth.uid()) = id AND role = 'user');
 
 CREATE POLICY "Users can update own profile" ON profiles
-  FOR UPDATE USING (auth.uid() = id)
-  WITH CHECK (auth.uid() = id);
+  FOR UPDATE USING ((select auth.uid()) = id)
+  WITH CHECK ((select auth.uid()) = id);
 
 -- Public read of basic profile fields (username, avatar, credibility/role) so approved reports can
 -- publicly attribute the reporting user and display their badges (e.g. "Trusted", Steam-verified intent).
@@ -344,12 +344,12 @@ CREATE POLICY "Public can view basic profile info for report authors" ON profile
 
 -- User rigs: owners only
 CREATE POLICY "Users can manage their own rig" ON user_rigs
-  FOR ALL USING (user_id = auth.uid());
+  FOR ALL USING (user_id = (select auth.uid()));
 
 -- Report images: owners can manage
 CREATE POLICY "Users can manage images on their reports" ON report_images
   FOR ALL USING (
-    EXISTS (SELECT 1 FROM reports WHERE reports.id = report_images.report_id AND reports.user_id = auth.uid())
+    EXISTS (SELECT 1 FROM reports WHERE reports.id = report_images.report_id AND reports.user_id = (select auth.uid()))
   );
 
 -- ============================================
@@ -397,30 +397,35 @@ CREATE POLICY "Game media are publicly readable" ON game_media FOR SELECT USING 
 -- ============================================
 
 -- 1. Moderator RLS policies (REQUIRED for /admin/reports UI to function)
+-- Helper: moderator/admin check. SECURITY DEFINER bypasses RLS on profiles and lets
+-- Postgres evaluate the role lookup once per query instead of per row (see
+-- supabase/incremental-rls-performance.sql for the migration applied to existing projects).
+CREATE OR REPLACE FUNCTION public.is_moderator_or_admin()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.profiles
+    WHERE id = (SELECT auth.uid())
+      AND role IN ('moderator', 'admin')
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION public.is_moderator_or_admin() TO authenticated;
+
 -- Moderators/admins can SELECT every report (pending/approved/rejected/flagged) for review
 CREATE POLICY "Moderators can read all reports for moderation" ON reports
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM public.profiles
-      WHERE id = auth.uid() AND role IN ('moderator', 'admin')
-    )
-  );
+  FOR SELECT USING ((select public.is_moderator_or_admin()));
 
 -- Moderators/admins can UPDATE any report (change status, add moderator_notes, set moderated_* fields)
 -- This complements the existing "Users can update own pending reports" policy
 CREATE POLICY "Moderators can moderate any report" ON reports
-  FOR UPDATE USING (
-    EXISTS (
-      SELECT 1 FROM public.profiles
-      WHERE id = auth.uid() AND role IN ('moderator', 'admin')
-    )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM public.profiles
-      WHERE id = auth.uid() AND role IN ('moderator', 'admin')
-    )
-  );
+  FOR UPDATE USING ((select public.is_moderator_or_admin()))
+  WITH CHECK ((select public.is_moderator_or_admin()));
 
 -- 2. Helper + RPCs for clean submission + upvoting (anti-abuse + tier calc in DB)
 -- These are OPTIONAL but recommended. Server Actions (below) may call rpc or mirror the logic.
@@ -594,40 +599,16 @@ CREATE POLICY "Hardware catalog is publicly readable"
 -- Only moderators and admins can modify the catalog
 CREATE POLICY "Moderators and admins can insert hardware catalog entries"
   ON hardware_catalog FOR INSERT
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM profiles 
-      WHERE profiles.id = auth.uid() 
-        AND profiles.role IN ('moderator', 'admin')
-    )
-  );
+  WITH CHECK ((select public.is_moderator_or_admin()));
 
 CREATE POLICY "Moderators and admins can update hardware catalog entries"
   ON hardware_catalog FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE profiles.id = auth.uid()
-        AND profiles.role IN ('moderator', 'admin')
-    )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE profiles.id = auth.uid()
-        AND profiles.role IN ('moderator', 'admin')
-    )
-  );
+  USING ((select public.is_moderator_or_admin()))
+  WITH CHECK ((select public.is_moderator_or_admin()));
 
 CREATE POLICY "Moderators and admins can delete hardware catalog entries"
   ON hardware_catalog FOR DELETE
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE profiles.id = auth.uid()
-        AND profiles.role IN ('moderator', 'admin')
-    )
-  );
+  USING ((select public.is_moderator_or_admin()));
 
 -- =============================================================================
 -- HARDWARE CATALOG EXPANSION - SAFE MIGRATION FOR EXISTING PROJECTS
@@ -667,42 +648,18 @@ CREATE POLICY "Hardware aliases are publicly readable"
 DROP POLICY IF EXISTS "Moderators and admins can insert hardware aliases" ON hardware_aliases;
 CREATE POLICY "Moderators and admins can insert hardware aliases"
   ON hardware_aliases FOR INSERT
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM profiles 
-      WHERE profiles.id = auth.uid() 
-        AND profiles.role IN ('moderator', 'admin')
-    )
-  );
+  WITH CHECK ((select public.is_moderator_or_admin()));
 
 DROP POLICY IF EXISTS "Moderators and admins can update hardware aliases" ON hardware_aliases;
 CREATE POLICY "Moderators and admins can update hardware aliases"
   ON hardware_aliases FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles 
-      WHERE profiles.id = auth.uid() 
-        AND profiles.role IN ('moderator', 'admin')
-    )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM profiles 
-      WHERE profiles.id = auth.uid() 
-        AND profiles.role IN ('moderator', 'admin')
-    )
-  );
+  USING ((select public.is_moderator_or_admin()))
+  WITH CHECK ((select public.is_moderator_or_admin()));
 
 DROP POLICY IF EXISTS "Moderators and admins can delete hardware aliases" ON hardware_aliases;
 CREATE POLICY "Moderators and admins can delete hardware aliases"
   ON hardware_aliases FOR DELETE
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles 
-      WHERE profiles.id = auth.uid() 
-        AND profiles.role IN ('moderator', 'admin')
-    )
-  );
+  USING ((select public.is_moderator_or_admin()));
 
 -- After running this, you can safely run: npm run seed:hardware
 -- =============================================================================
@@ -755,7 +712,7 @@ CREATE INDEX IF NOT EXISTS idx_linked_accounts_user ON linked_accounts(user_id);
 ALTER TABLE linked_accounts ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Users can manage own linked accounts" ON linked_accounts
-  FOR ALL USING (user_id = auth.uid());
+  FOR ALL USING (user_id = (select auth.uid()));
 
 CREATE POLICY "Public can see linked Steam for verification badges" ON linked_accounts
   FOR SELECT USING (provider = 'steam');
@@ -776,3 +733,32 @@ ALTER TABLE profiles ADD COLUMN IF NOT EXISTS steam_linked_at timestamptz;
 -- Recommended supporting indexes (uncomment when adding columns above)
 -- CREATE INDEX IF NOT EXISTS idx_reports_canonical_gpu ON reports (canonical_gpu);
 -- CREATE INDEX IF NOT EXISTS idx_reports_gpu_perf ON reports (gpu_perf_index DESC NULLS LAST);
+
+-- ============================================================
+-- RLS + FK index performance hardening
+-- Mirrors supabase/incremental-rls-performance.sql so fresh installs get the
+-- same indexes that existing projects receive from the incremental migration.
+-- ============================================================
+
+-- FK columns + submit_report hot paths (rate limiting, duplicate detection)
+CREATE INDEX IF NOT EXISTS idx_reports_user_created
+  ON reports (user_id, created_at DESC)
+  WHERE user_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_reports_user_game_created
+  ON reports (user_id, game_id, created_at DESC)
+  WHERE user_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_report_votes_report
+  ON report_votes (report_id);
+
+CREATE INDEX IF NOT EXISTS idx_report_images_report
+  ON report_images (report_id);
+
+CREATE INDEX IF NOT EXISTS idx_game_ingest_queue_game
+  ON game_ingest_queue (game_id)
+  WHERE game_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_profiles_role
+  ON profiles (id)
+  WHERE role IN ('moderator', 'admin');

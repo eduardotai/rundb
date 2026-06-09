@@ -69,10 +69,11 @@ export default function GamesPage() {
   });
 
   const pageData = gamesQuery.data;
-  const games = pageData?.games ?? [];
+  const games = useMemo(() => pageData?.games ?? [], [pageData]);
   const totalPages = pageData?.totalPages ?? 1;
   const totalGames = pageData?.total ?? games.length;
-  const allReports = reportsQuery.data || [];
+  const reportsData = reportsQuery.data;
+  const allReports = useMemo(() => reportsData || [], [reportsData]);
 
   const gameStatsMap = useMemo(() => {
     const map: Record<string, GameStats> = {};
