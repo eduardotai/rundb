@@ -259,6 +259,8 @@ Full guide: [`CONTRIBUTING.md`](./CONTRIBUTING.md) · PR template: [`.github/pul
 - ✅ You are **free to use, fork, and build on** this open-source project — no payment, no paywalls, no strings attached.
 - 💝 Donations are **completely optional** and exist purely for one reason: helping. If you want to support the project with real money, it's appreciated — but never required.
 
+[![Sponsor eduardotai on GitHub Sponsors](https://img.shields.io/badge/%F0%9F%92%96%20Sponsor%20this%20project-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/eduardotai)
+
 ## 📄 License
 
 This project is licensed under the **MIT License** — see the [`LICENSE`](./LICENSE) file for details.
