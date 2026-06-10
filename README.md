@@ -252,9 +252,16 @@ The catalog grows in two phases: **skeleton rows** are inserted fast (seeds, bul
 
 Full guide: [`CONTRIBUTING.md`](./CONTRIBUTING.md) · PR template: [`.github/pull_request_template.md`](./.github/pull_request_template.md) · Release notes: [`CHANGELOG.md`](./CHANGELOG.md)
 
+## 💚 Free Forever & Donations
+
+**RunDB is, and will mainly remain, free forever.** The project runs on a donation-based model to support its creator:
+
+- ✅ You are **free to use, fork, and build on** this open-source project — no payment, no paywalls, no strings attached.
+- 💝 Donations are **completely optional** and exist purely for one reason: helping. If you want to support the project with real money, it's appreciated — but never required.
+
 ## 📄 License
 
-No license file is currently included. Add one before distributing, forking, or accepting broad external contributions.
+This project is licensed under the **MIT License** — see the [`LICENSE`](./LICENSE) file for details.
 
 ---
 
