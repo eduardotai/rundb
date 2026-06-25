@@ -4,8 +4,10 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { ingestGame, type IngestGameSeed } from '@/lib/server/ingest-game'
+import { steamLibraryCoverUrl } from '@/lib/cover-image-url'
 
 import type { IngestQueueStats } from '@/lib/types'
+import { discoverLatestSteamGames, filterNewSeeds, type SeedGame } from '@/lib/server/discover-steam-games'
 
 export type QueueStatus = 'pending' | 'processing' | 'done' | 'failed'
 
@@ -235,3 +237,129 @@ export async function getFailedQueueRows(
 
   return (data ?? []) as QueueRow[]
 }
+
+/**
+ * Idempotent enqueue of discovered SeedGame[] into games (skeleton) + game_ingest_queue (pending).
+ * Modeled exactly on scripts/seed-queue.ts logic but reusable from server actions and CLI.
+ * Skips by slug for both games and queue. Sets ingest_status='skeleton' + Steam cover on new skeletons.
+ * Returns counts for observability. Does not perform enrichment.
+ */
+export async function enqueueSeeds(
+  client: SupabaseClient,
+  seeds: SeedGame[],
+  opts?: { onLog?: (msg: string) => void }
+): Promise<{ gamesUpserted: number; queueUpserted: number; skipped: number }> {
+  const log = opts?.onLog ?? (() => {})
+  let gamesUpserted = 0
+  let queueUpserted = 0
+  let skipped = 0
+
+  for (const seed of seeds) {
+    const coverUrl = steamLibraryCoverUrl(seed.steamAppId)
+    const gameRow = {
+      slug: seed.slug,
+      name: seed.name,
+      steam_app_id: seed.steamAppId,
+      cover_url: coverUrl,
+      genres: [] as string[],
+      ingest_status: 'skeleton' as const,
+      last_ingested_at: null,
+    }
+
+    const { data: existingGame, error: existingGameErr } = await client
+      .from('games')
+      .select('id')
+      .eq('slug', seed.slug)
+      .maybeSingle()
+
+    if (existingGameErr) {
+      log(`  skip ${seed.slug}: ${existingGameErr.message}`)
+      skipped++
+      continue
+    }
+
+    let game = existingGame
+    if (!game) {
+      const { data: insertedGame, error: gameErr } = await client
+        .from('games')
+        .insert(gameRow)
+        .select('id')
+        .single()
+
+      if (gameErr) {
+        log(`  skip ${seed.slug}: ${gameErr.message}`)
+        skipped++
+        continue
+      }
+
+      game = insertedGame
+      gamesUpserted++
+    }
+
+    const { data: existingQueue, error: existingQueueErr } = await client
+      .from('game_ingest_queue')
+      .select('id')
+      .eq('slug', seed.slug)
+      .maybeSingle()
+
+    if (existingQueueErr) {
+      log(`  queue skip ${seed.slug}: ${existingQueueErr.message}`)
+      skipped++
+      continue
+    }
+
+    if (existingQueue) {
+      continue
+    }
+
+    const queueRow = {
+      game_id: game!.id,
+      steam_app_id: seed.steamAppId,
+      name: seed.name,
+      slug: seed.slug,
+      priority: 0,
+      report_count: 0,
+      status: 'pending' as const,
+    }
+
+    const { error: queueErr } = await client
+      .from('game_ingest_queue')
+      .insert(queueRow)
+
+    if (queueErr) {
+      log(`  queue skip ${seed.slug}: ${queueErr.message}`)
+    } else {
+      queueUpserted++
+    }
+  }
+
+  return { gamesUpserted, queueUpserted, skipped }
+}
+
+/**
+ * Run discovery + DB dedup. Returns ONLY candidates not present by slug or steam_app_id.
+ * This is the automated discovery output that can be fed directly into enqueueSeeds (or direct ingest).
+ * Satisfies the "produces a list of candidate new games ... that can be fed directly".
+ */
+export async function discoverFreshCandidates(
+  client: SupabaseClient,
+  opts: { limit?: number; sinceYear?: number; includeUnreleased?: boolean } = {}
+): Promise<SeedGame[]> {
+  const discovered = await discoverLatestSteamGames({
+    limit: opts.limit,
+    sinceYear: opts.sinceYear,
+    includeUnreleased: opts.includeUnreleased,
+  })
+
+  const { data: existing, error } = await client
+    .from('games')
+    .select('slug, steam_app_id')
+
+  if (error) {
+    console.warn('[discoverFresh] existing games query failed:', error.message)
+    return []
+  }
+
+  return filterNewSeeds(discovered, (existing || []) as Array<{ slug: string; steam_app_id?: string | null }>)
+}
+

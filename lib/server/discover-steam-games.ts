@@ -69,6 +69,22 @@ export function appDetailsToSeed(
   return { name, slug: normalizeSlug(name), steamAppId: appId }
 }
 
+/**
+ * Pure dedup filter: given discovered + existing rows, return only those not present by slug or steam_app_id.
+ * This lets callers produce "list of candidate new games" for direct integration (AC1).
+ * Network-free; unit-testable.
+ */
+export function filterNewSeeds(
+  discovered: SeedGame[],
+  existing: Array<{ slug: string; steam_app_id?: string | null }>
+): SeedGame[] {
+  const slugs = new Set(existing.map((e) => e.slug))
+  const appIds = new Set(
+    existing.map((e) => e.steam_app_id).filter(Boolean).map(String)
+  )
+  return discovered.filter((s) => !slugs.has(s.slug) && !appIds.has(s.steamAppId))
+}
+
 // ============================================
 // NETWORK LAYER (resilient — mirrors lib/game-id-resolver.ts patterns)
 // ============================================

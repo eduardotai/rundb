@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import {
   parseSteamReleaseYear,
   appDetailsToSeed,
+  filterNewSeeds,
 } from '../lib/server/discover-steam-games'
 
 test('parseSteamReleaseYear extracts a 4-digit year from a Steam date string', () => {
@@ -65,4 +66,31 @@ test('appDetailsToSeed gates coming-soon titles behind includeUnreleased', () =>
 test('appDetailsToSeed returns null when the appdetails request was unsuccessful', () => {
   assert.equal(appDetailsToSeed('444', { success: false }, { sinceYear: 2025, includeUnreleased: false }), null)
   assert.equal(appDetailsToSeed('444', undefined, { sinceYear: 2025, includeUnreleased: false }), null)
+})
+
+test('filterNewSeeds returns only games absent by slug or steamAppId', () => {
+  const discovered = [
+    { name: 'New Game A', slug: 'new-game-a', steamAppId: '111' },
+    { name: 'Existing By Slug', slug: 'exists-slug', steamAppId: '222' },
+    { name: 'Existing By AppId', slug: 'new-app', steamAppId: '999' },
+    { name: 'Another New', slug: 'another-new', steamAppId: '333' },
+  ]
+  const existing = [
+    { slug: 'exists-slug', steam_app_id: '222' },
+    { slug: 'other', steam_app_id: '999' },
+  ]
+  const fresh = filterNewSeeds(discovered, existing)
+  assert.equal(fresh.length, 2)
+  assert.deepEqual(fresh.map((s) => s.slug), ['new-game-a', 'another-new'])
+})
+
+test('filterNewSeeds is a no-op when no existing', () => {
+  const discovered = [{ name: 'Only', slug: 'only', steamAppId: '1' }]
+  assert.deepEqual(filterNewSeeds(discovered, []), discovered)
+})
+
+test('filterNewSeeds treats missing steam_app_id as absent', () => {
+  const discovered = [{ name: 'X', slug: 'x', steamAppId: '42' }]
+  const existing = [{ slug: 'y', steam_app_id: null }]
+  assert.equal(filterNewSeeds(discovered, existing).length, 1)
 })

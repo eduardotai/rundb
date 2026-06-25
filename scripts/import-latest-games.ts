@@ -7,6 +7,8 @@
  *   npm run import:latest
  *   npm run import:latest -- --limit=10 --since-year=2025
  *   npm run import:latest -- --include-unreleased
+ *   npm run import:latest -- --enqueue            # populate queue skeletons instead of direct full enrich
+ *   npm run import:latest -- --enqueue --dry-run
  *
  * Requires in .env.local:
  *   NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
@@ -14,9 +16,10 @@
  */
 import { createClient } from '@supabase/supabase-js'
 import { loadEnvLocal } from './load-env-local'
-import { discoverLatestSteamGames } from '../lib/server/discover-steam-games'
+import { discoverLatestSteamGames, filterNewSeeds } from '../lib/server/discover-steam-games'
 import { ingestGame } from '../lib/server/ingest-game'
 import { ensureGameMediaBucket } from '../lib/server/game-media'
+import { enqueueSeeds } from '../lib/server/ingest-queue'
 
 loadEnvLocal()
 
@@ -25,13 +28,15 @@ interface Flags {
   limit?: number
   sinceYear?: number
   includeUnreleased: boolean
+  enqueue: boolean
 }
 
 function parseArgs(): Flags {
-  const flags: Flags = { dryRun: process.env.DRY_RUN === 'true', includeUnreleased: false }
+  const flags: Flags = { dryRun: process.env.DRY_RUN === 'true', includeUnreleased: false, enqueue: false }
   for (const arg of process.argv.slice(2)) {
     if (arg === '--dry-run' || arg === '-d') flags.dryRun = true
     else if (arg === '--include-unreleased') flags.includeUnreleased = true
+    else if (arg === '--enqueue' || arg === '-e') flags.enqueue = true
     else if (arg.startsWith('--limit=')) {
       const n = parseInt(arg.split('=')[1] || '', 10)
       if (!isNaN(n) && n > 0) flags.limit = n
@@ -62,13 +67,14 @@ async function main() {
     console.error('Missing NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY in .env.local')
     process.exit(1)
   }
-  if (!process.env.IGDB_CLIENT_ID || !process.env.IGDB_CLIENT_SECRET) {
-    console.error('Missing IGDB_CLIENT_ID / IGDB_CLIENT_SECRET in .env.local')
+  const hasIgdb = !!(process.env.IGDB_CLIENT_ID && process.env.IGDB_CLIENT_SECRET)
+  if (!flags.enqueue && !hasIgdb) {
+    console.error('Missing IGDB_CLIENT_ID / IGDB_CLIENT_SECRET in .env.local (required unless using --enqueue)')
     process.exit(1)
   }
 
   const client = createClient(url, key)
-  console.log(`\n=== Import Latest Games${flags.dryRun ? ' (DRY RUN)' : ''} ===`)
+  console.log(`\n=== Import Latest Games${flags.dryRun ? ' (DRY RUN)' : ''}${flags.enqueue ? ' [ENQUEUE MODE]' : ''} ===`)
 
   const discovered = await discoverLatestSteamGames({
     sinceYear: flags.sinceYear,
@@ -82,13 +88,7 @@ async function main() {
     console.error('Failed to read existing games:', error.message)
     process.exit(1)
   }
-  const existingSlugs = new Set((existing || []).map((g: any) => g.slug))
-  const existingAppIds = new Set(
-    (existing || []).map((g: any) => g.steam_app_id).filter(Boolean).map(String)
-  )
-  const fresh = discovered.filter(
-    (s) => !existingSlugs.has(s.slug) && !existingAppIds.has(s.steamAppId)
-  )
+  const fresh = filterNewSeeds(discovered, (existing || []) as any)
   console.log(`${fresh.length} new (after dedup against ${existing?.length ?? 0} existing).`)
   for (const s of fresh) {
     console.log(`  • ${s.name} (${s.slug}) [appid ${s.steamAppId}]`)
@@ -103,6 +103,20 @@ async function main() {
     return
   }
 
+  if (flags.enqueue) {
+    // Queue path: idempotent skeleton + pending queue rows (no IGDB/media here)
+    console.log(`\nEnqueueing ${fresh.length} fresh game(s) as skeletons + queue entries...`)
+    const enq = await enqueueSeeds(client, fresh, { onLog: (msg) => console.log(`  ${msg}`) })
+    console.log('\n' + '='.repeat(50))
+    console.log(`Games upserted (skeleton): ${enq.gamesUpserted}`)
+    console.log(`Queue rows added (pending): ${enq.queueUpserted}`)
+    console.log(`Skipped: ${enq.skipped}`)
+    console.log(`Duration: ${((Date.now() - start) / 1000).toFixed(1)}s`)
+    console.log('\nNext: npm run ingest:worker -- --batch=20   (or use admin UI batch)')
+    process.exit(0)
+  }
+
+  // Default: direct full enrichment path (preserved)
   try {
     await ensureGameMediaBucket(client as any)
   } catch (e: unknown) {
