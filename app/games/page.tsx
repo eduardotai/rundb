@@ -26,7 +26,7 @@ const PAGE_SIZE = 48;
 export default function GamesPage() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
+  const [selectedGenres, setSelectedGenres] = useState<string[]>();
   const [selectedTier, setSelectedTier] = useState<PerformanceTier | ''>('');
   const [sort, setSort] = useState<'reports' | 'name' | 'year'>('name');
   const [page, setPage] = useState(1);
@@ -86,46 +86,40 @@ export default function GamesPage() {
   }, [games, allReports]);
 
   const filtered = useMemo(() => {
-    if (paginatedMode) {
-      let result = [...games];
-      if (selectedTier && allReports.length > 0) {
-        result = result.filter((g) => {
-          const stats = gameStatsMap[g.id];
-          if (!stats) return false;
-          const dominant = (Object.entries(stats.tierDistribution) as [PerformanceTier, number][])
-            .sort((a, b) => b[1] - a[1])[0]?.[0];
-          return dominant === selectedTier;
-        });
-      }
-      return result;
-    }
-
     let result = [...games];
 
-    if (debouncedSearch) {
-      const q = debouncedSearch.toLowerCase();
-      result = result.filter(
-        (g) =>
-          g.name.toLowerCase().includes(q) ||
-          g.developer.toLowerCase().includes(q) ||
-          g.genres.some((gen) => gen.toLowerCase().includes(q))
-      );
+    // Client-side search + genre only needed in non-paginated (mock) mode.
+    // In paginated mode these are applied server-side (or starter fallback) before we receive the page slice.
+    if (!paginatedMode) {
+      if (debouncedSearch) {
+        const q = debouncedSearch.toLowerCase();
+        result = result.filter(
+          (g) =>
+            g.name.toLowerCase().includes(q) ||
+            g.developer.toLowerCase().includes(q) ||
+            g.genres.some((gen) => gen.toLowerCase().includes(q))
+        );
+      }
+
+      if (selectedGenres.length > 0) {
+        result = result.filter((g) => g.genres.some((gen) => selectedGenres.includes(gen)));
+      }
     }
 
-    if (selectedGenres.length > 0) {
-      result = result.filter((g) => g.genres.some((gen) => selectedGenres.includes(gen)));
-    }
-
+    // Dominant community tier filter (client-side on both modes).
+    // Only match games that have reports and whose most-reported tier equals the selection.
     if (selectedTier && allReports.length > 0) {
       result = result.filter((g) => {
         const stats = gameStatsMap[g.id];
-        if (!stats) return false;
+        if (!stats || stats.totalReports === 0) return false;
         const dominant = (Object.entries(stats.tierDistribution) as [PerformanceTier, number][])
           .sort((a, b) => b[1] - a[1])[0]?.[0];
         return dominant === selectedTier;
       });
     }
 
+    // Client-side sort. For paginated mode + 'reports' this re-sorts the current page slice by report volume.
+    // Name/year sorts will be no-op or consistent with server ordering for the slice.
     if (sort === 'reports') {
       result.sort((a, b) => {
         const aCount = gameStatsMap[a.id]?.totalReports ?? 0;
@@ -163,7 +157,13 @@ export default function GamesPage() {
           <p className="text-muted-foreground">Search and filter by community performance data.</p>
         </div>
         <div className="text-sm text-muted-foreground">
-          {isLoading ? 'Loading…' : paginatedMode ? `${totalGames} games · page ${page}/${totalPages}` : `${filtered.length} games shown`}
+          {isLoading
+            ? 'Loading…'
+            : paginatedMode
+              ? selectedTier
+                ? `${filtered.length} match tier on this page · ${totalGames} total · page ${page}/${totalPages}`
+                : `${totalGames} games · page ${page}/${totalPages}`
+              : `${filtered.length} games shown`}
         </div>
       </div>
 
@@ -175,7 +175,7 @@ export default function GamesPage() {
             onChange={(e) => setSearch(sanitizeSearchQuery(e.target.value))}
             className="md:w-80"
             disabled={isLoading}
-          />
+          );
 
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-muted-foreground">Sort:</span>
@@ -247,7 +247,10 @@ export default function GamesPage() {
             {TIERS.map((tier) => (
               <button
                 key={tier}
-                onClick={() => setSelectedTier(selectedTier === tier ? '' : tier)}
+                onClick={() => {
+                  setSelectedTier(selectedTier === tier ? '' : tier);
+                  setPage(1);
+                }}
                 disabled={isLoading || isStatsLoading || allReports.length === 0}
                 className={cn(
                   'rounded-full border px-3 py-1 text-sm transition',
