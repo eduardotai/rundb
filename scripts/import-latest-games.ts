@@ -83,10 +83,19 @@ async function main() {
   })
   console.log(`Discovered ${discovered.length} candidate game(s) from Steam charts.`)
 
-  const { data: existing, error } = await client.from('games').select('slug, steam_app_id')
-  if (error) {
-    console.error('Failed to read existing games:', error.message)
-    process.exit(1)
+  let existing: any[] = []
+  try {
+    const res = await client.from('games').select('slug, steam_app_id')
+    if (res.error) throw res.error
+    existing = res.data || []
+  } catch (e: any) {
+    if (flags.dryRun) {
+      console.warn('[dry-run] existing games query unavailable, treating as 0 for dedup demo:', e?.message || e)
+      existing = []
+    } else {
+      console.error('Failed to read existing games:', e?.message || e)
+      process.exit(1)
+    }
   }
   const fresh = filterNewSeeds(discovered, (existing || []) as any)
   console.log(`${fresh.length} new (after dedup against ${existing?.length ?? 0} existing).`)

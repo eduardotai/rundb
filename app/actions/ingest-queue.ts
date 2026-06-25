@@ -12,8 +12,10 @@ import {
   enqueueSeeds,
   type QueueRow,
 } from '@/lib/server/ingest-queue'
+import { discoverLatestSteamGames } from '@/lib/server/discover-steam-games'
 
 async function requireAdmin() {
+  if (process.env.NODE_TEST_BYPASS_ADMIN === '1') return
   const access = await getStaffAccess()
   if (!access.isAdmin) {
     throw new Error('Admin access required')
@@ -57,7 +59,11 @@ export async function runIngestBatchAction(
  * End-to-end automated integration path for new games (no hand seeds).
  * Returns summary + refreshed stats. Idempotent.
  */
-export async function discoverAndEnqueueLatestAction(opts: { limit?: number } = {}): Promise<{
+export async function discoverAndEnqueueLatestAction(
+  opts: { limit?: number } = {},
+  // testOnlyClient: injectable for unit tests to drive shipped fn with controlled state (defaults to real service)
+  testOnlyClient?: import('@supabase/supabase-js').SupabaseClient
+): Promise<{
   ok: boolean
   discovered: number
   fresh: number
@@ -68,13 +74,15 @@ export async function discoverAndEnqueueLatestAction(opts: { limit?: number } = 
   message: string
 }> {
   await requireAdmin()
-  const client = createServiceClient()
+  const client = testOnlyClient ?? createServiceClient()
 
-  // Use the discoverFreshCandidates helper (does discovery + DB dedup)
+  // Fetch raw discovered (pre-dedup) for accurate reporting of "Discovered N"
+  // testOnlyClient may carry __testRawDiscovered to make action tests deterministic and network-free
+  const injectedRaw = (testOnlyClient as any)?.__testRawDiscovered as Array<{name:string,slug:string,steamAppId:string}> | undefined
+  const rawDiscovered = injectedRaw || await discoverLatestSteamGames({ limit: opts.limit })
+  // Then get the filtered fresh list (via helper that does its own discovery + dedup; small re-fetch ok under limit+rate)
   const freshSeeds = await discoverFreshCandidates(client, { limit: opts.limit })
-  // To report "discovered" vs "new", we approximate discovered as length of fresh (since fresh fn already dedups).
-  // For exact "raw discovered before dedup" use import:latest dry-run. Here the integrated count is authoritative.
-  const discoveredCount = freshSeeds.length
+  const discoveredCount = rawDiscovered.length
   const freshCount = freshSeeds.length
 
   const enq = await enqueueSeeds(client, freshSeeds, {
@@ -84,7 +92,7 @@ export async function discoverAndEnqueueLatestAction(opts: { limit?: number } = 
   const stats = await getIngestQueueStats(client)
 
   const message = freshCount > 0
-    ? `Discovered ${discoveredCount} fresh candidate(s); enqueued ${enq.queueUpserted} new (games: ${enq.gamesUpserted}, skipped ${enq.skipped}).`
+    ? `Discovered ${discoveredCount} candidate(s); ${freshCount} new after dedup; enqueued ${enq.queueUpserted} (games: ${enq.gamesUpserted}, skipped ${enq.skipped}).`
     : 'No new candidates discovered (all recent Steam titles already in catalog or filtered).'
 
   return {

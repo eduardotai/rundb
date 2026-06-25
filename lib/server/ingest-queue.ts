@@ -266,16 +266,32 @@ export async function enqueueSeeds(
       last_ingested_at: null,
     }
 
-    const { data: existingGame, error: existingGameErr } = await client
+    // Check existence by slug OR steam_app_id to prevent dups (match AC1 + filterNewSeeds contract)
+    let existingGame: { id: string } | null = null
+    const { data: bySlugGame, error: bySlugErr } = await client
       .from('games')
       .select('id')
       .eq('slug', seed.slug)
       .maybeSingle()
-
-    if (existingGameErr) {
-      log(`  skip ${seed.slug}: ${existingGameErr.message}`)
+    if (bySlugErr) {
+      log(`  skip ${seed.slug}: ${bySlugErr.message}`)
       skipped++
       continue
+    }
+    existingGame = bySlugGame
+
+    if (!existingGame && seed.steamAppId) {
+      const { data: byAppGame, error: byAppErr } = await client
+        .from('games')
+        .select('id')
+        .eq('steam_app_id', seed.steamAppId)
+        .maybeSingle()
+      if (byAppErr) {
+        log(`  skip ${seed.slug}: ${byAppErr.message}`)
+        skipped++
+        continue
+      }
+      existingGame = byAppGame
     }
 
     let game = existingGame
@@ -296,16 +312,32 @@ export async function enqueueSeeds(
       gamesUpserted++
     }
 
-    const { data: existingQueue, error: existingQueueErr } = await client
+    // Queue dedup: by slug (UNIQUE) or by steam_app_id for safety
+    let existingQueue: { id: string } | null = null
+    const { data: bySlugQ, error: bySlugQErr } = await client
       .from('game_ingest_queue')
       .select('id')
       .eq('slug', seed.slug)
       .maybeSingle()
-
-    if (existingQueueErr) {
-      log(`  queue skip ${seed.slug}: ${existingQueueErr.message}`)
+    if (bySlugQErr) {
+      log(`  queue skip ${seed.slug}: ${bySlugQErr.message}`)
       skipped++
       continue
+    }
+    existingQueue = bySlugQ
+
+    if (!existingQueue && seed.steamAppId) {
+      const { data: byAppQ, error: byAppQErr } = await client
+        .from('game_ingest_queue')
+        .select('id')
+        .eq('steam_app_id', seed.steamAppId)
+        .maybeSingle()
+      if (byAppQErr) {
+        log(`  queue skip ${seed.slug}: ${byAppQErr.message}`)
+        skipped++
+        continue
+      }
+      existingQueue = byAppQ
     }
 
     if (existingQueue) {
@@ -356,8 +388,7 @@ export async function discoverFreshCandidates(
     .select('slug, steam_app_id')
 
   if (error) {
-    console.warn('[discoverFresh] existing games query failed:', error.message)
-    return []
+    throw new Error(`[discoverFreshCandidates] Failed to read existing games for dedup: ${error.message}`)
   }
 
   return filterNewSeeds(discovered, (existing || []) as Array<{ slug: string; steam_app_id?: string | null }>)
