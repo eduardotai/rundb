@@ -170,37 +170,43 @@ export default function Home() {
         {/* Hero content (constrained) */}
         <div className="mx-auto max-w-7xl px-4">
           <div className="mx-auto max-w-3xl relative z-10 text-center">
-            <div className="inline-flex items-center rounded-full border border-border bg-card px-3 py-1 text-xs font-medium tracking-[0.5px] text-muted-foreground mb-6">
-              COMMUNITY HARDWARE DATABASE
+          <div className="animate-rise inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-medium tracking-[1.5px] text-primary/90 mb-6">
+            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+            COMMUNITY HARDWARE DATABASE
+          </div>
+
+          <h1 className="animate-rise rise-delay-1 text-5xl md:text-6xl font-semibold tracking-tighter text-balance leading-[1.05]">
+            Can your PC run it?<br />
+            <span className="bg-gradient-to-r from-cyan-300 via-primary to-sky-400 bg-clip-text text-transparent">
+              What settings actually work?
+            </span>
+          </h1>
+
+          <p className="animate-rise rise-delay-2 mt-4 text-xl text-muted-foreground max-w-2xl mx-auto">
+            Real reports from real players with real hardware. The ProtonDB for actual PC performance.
+          </p>
+
+          <div className="animate-rise rise-delay-3 mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Button asChild size="lg" className="w-full sm:w-auto text-base px-8 bg-white text-black font-medium hover:bg-white/90 shadow-sm">
+              <Link href="/games">Browse Games</Link>
+            </Button>
+            <Button asChild size="lg" variant="outline" className="w-full sm:w-auto text-base px-8 border-white/40 text-white hover:bg-white/10 hover:text-white">
+              <Link href="/compatibility">Check My PC</Link>
+            </Button>
+          </div>
+
+          <div className="animate-rise rise-delay-4 mt-7 flex items-center justify-center divide-x divide-border text-sm text-muted-foreground">
+            <div className="flex items-center gap-2 px-5">
+              <BarChart3 className="h-4 w-4 text-primary/70" />
+              <span className="font-mono font-semibold tabular-nums text-foreground">{totalReports.toLocaleString()}</span> reports
             </div>
-
-            <h1 className="text-5xl md:text-6xl font-semibold tracking-tighter text-balance leading-[1.05]">
-              Can your PC run it?<br />What settings actually work?
-            </h1>
-
-            <p className="mt-4 text-xl text-muted-foreground max-w-2xl mx-auto">
-              Real reports from real players with real hardware. The ProtonDB for actual PC performance.
-            </p>
-
-            <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-              <Button asChild size="lg" className="w-full sm:w-auto text-base px-8 bg-white text-black font-medium hover:bg-white/90 shadow-sm">
-                <Link href="/games">Browse Games</Link>
-              </Button>
-              <Button asChild size="lg" variant="outline" className="w-full sm:w-auto text-base px-8 border-white/40 text-white hover:bg-white/10 hover:text-white">
-                <Link href="/compatibility">Check My PC</Link>
-              </Button>
+            <div className="flex items-center gap-2 px-5">
+              <Users className="h-4 w-4 text-primary/70" />
+              <span className="font-mono font-semibold tabular-nums text-foreground">{totalGames}</span> games
             </div>
-
-            <div className="mt-6 flex items-center justify-center gap-6 text-sm text-muted-foreground">
-              <div className="flex items-center gap-2">
-                <BarChart3 className="h-4 w-4" /> {totalReports.toLocaleString()} reports
-              </div>
-              <div className="flex items-center gap-2">
-                <Users className="h-4 w-4" /> {totalGames} games
-              </div>
-              <div className="flex items-center gap-2">
-                <Zap className="h-4 w-4" /> {avgReportsPerGame} reports / game
-              </div>
+            <div className="flex items-center gap-2 px-5">
+              <Zap className="h-4 w-4 text-primary/70" />
+              <span className="font-mono font-semibold tabular-nums text-foreground">{avgReportsPerGame}</span> reports / game
             </div>
           </div>
         </div>
@@ -209,9 +215,12 @@ export default function Home() {
       {/* Page content below hero — constrained like the rest of the site */}
       <div className="mx-auto max-w-7xl px-4 pb-20">
         {/* Trending Games — ranked by recent report activity (getTrendingGamesAsync) */}
-        <div className="mb-16">
-          <div className="mb-4 flex items-baseline justify-between">
-          <h2 className="text-2xl font-semibold tracking-tight">Trending right now</h2>
+      <div className="mb-16">
+        <div className="mb-4 flex items-baseline justify-between">
+          <h2 className="flex items-center gap-2.5 text-2xl font-semibold tracking-tight">
+            <span aria-hidden="true" className="h-5 w-1 rounded-full bg-gradient-to-b from-cyan-300 to-sky-500" />
+            Trending right now
+          </h2>
           <Link href="/games" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1">
             Browse all <ArrowRight className="h-3.5 w-3.5" />
           </Link>
@@ -272,7 +281,10 @@ export default function Home() {
       {/* How RunDB works — educational value loop (replaces previous trust bar) */}
       <div className="mb-12">
         <div className="mb-4 flex items-baseline justify-between">
-          <h2 className="text-2xl font-semibold tracking-tight">How RunDB works</h2>
+          <h2 className="flex items-center gap-2.5 text-2xl font-semibold tracking-tight">
+            <span aria-hidden="true" className="h-5 w-1 rounded-full bg-gradient-to-b from-cyan-300 to-sky-500" />
+            How RunDB works
+          </h2>
         </div>
         <ValueLoopExplainer variant="prominent" />
       </div>
