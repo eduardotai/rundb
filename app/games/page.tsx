@@ -26,7 +26,7 @@ const PAGE_SIZE = 48;
 export default function GamesPage() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [selectedGenres, setSelectedGenres] = useState<string[]>();
+  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [selectedTier, setSelectedTier] = useState<PerformanceTier | ''>('');
   const [sort, setSort] = useState<'reports' | 'name' | 'year'>('name');
   const [page, setPage] = useState(1);
