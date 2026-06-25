@@ -29,6 +29,7 @@ import {
   runIngestBatchAction,
   retryFailedIngestAction,
   getFailedIngestRowsAction,
+  discoverAndEnqueueLatestAction,
 } from '@/app/actions/ingest-queue';
 import type { IngestQueueStats } from '@/lib/types';
 import { USE_REAL } from '@/lib/data';
@@ -108,6 +109,10 @@ export default function AdminPage() {
   const [queueStats, setQueueStats] = useState<IngestQueueStats | null>(null);
   const [failedIngestRows, setFailedIngestRows] = useState<Array<{ slug: string; name: string; last_error: string | null }>>([]);
   const [isRunningIngestBatch, setIsRunningIngestBatch] = useState(false);
+
+  // New automated discover+enqueue (for latest Steam catalog integration)
+  const [isDiscoveringEnqueue, setIsDiscoveringEnqueue] = useState(false);
+  const [discoverEnqueueResult, setDiscoverEnqueueResult] = useState<string | null>(null);
 
   // Modals & forms
   const [showImportDialog, setShowImportDialog] = useState(false);
@@ -350,6 +355,32 @@ export default function AdminPage() {
       setRefreshKey((k) => k + 1);
     } catch (e: unknown) {
       showUserError(e instanceof Error ? e.message : 'Retry failed');
+    }
+  };
+
+  // Automated discovery + enqueue for new Steam catalog games (admin only, uses queue path)
+  const handleDiscoverAndEnqueueLatest = async (limit = 20) => {
+    if (!USE_REAL) {
+      toast('Discovery + enqueue is for real Supabase mode only');
+      return;
+    }
+    setIsDiscoveringEnqueue(true);
+    setDiscoverEnqueueResult(null);
+    try {
+      const res = await discoverAndEnqueueLatestAction({ limit });
+      const msg = `${res.message} Pending now: ${res.stats.pending} (total ${res.stats.total}).`;
+      setDiscoverEnqueueResult(msg);
+      setQueueStats(res.stats);
+      toast.success('Discover & Enqueue complete', {
+        description: `${res.fresh} fresh → ${res.queueUpserted} queued (games ${res.gamesUpserted})`,
+      });
+      setRefreshKey((k) => k + 1);
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : 'Discover/enqueue failed';
+      setDiscoverEnqueueResult(`ERROR: ${errMsg}`);
+      showUserError(errMsg);
+    } finally {
+      setIsDiscoveringEnqueue(false);
     }
   };
 
@@ -769,7 +800,7 @@ export default function AdminPage() {
                 <div>
                   <div className="font-semibold">Ingest Queue (ProtonDB → IGDB enrich)</div>
                   <div className="text-xs text-muted-foreground">
-                    Two-phase catalog: skeleton from <code className="text-[10px]">npm run seed:queue</code>, enrich via worker or batch below.
+                    Two-phase catalog: skeleton from <code className="text-[10px]">npm run seed:queue</code> or Discover button, enrich via worker or batch below. Automated latest via Steam discovery.
                   </div>
                 </div>
                 <Button variant="outline" size="sm" onClick={refreshIngestQueue} disabled={!canAdmin}>
@@ -807,6 +838,20 @@ export default function AdminPage() {
                       </Button>
                     )}
                   </div>
+
+                  {/* Automated discovery integration path (plan AC3) */}
+                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/50">
+                    <Button 
+                      size="sm" 
+                      onClick={() => handleDiscoverAndEnqueueLatest(15)} 
+                      disabled={!canAdmin || isDiscoveringEnqueue}
+                      className="gap-1.5"
+                      title="Admin-only: call discover + enqueueSeeds for Steam chart releases not yet present (idempotent; populates skeletons + pending queue)"
+                    >
+                      {isDiscoveringEnqueue ? 'Discovering & Enqueuing…' : 'Discover & Enqueue Latest Games'}
+                    </Button>
+                    <span className="text-[10px] text-muted-foreground">Steam charts → fresh candidates → game rows + queue (no manual seeds)</span>
+                  </div>
                   {failedIngestRows.length > 0 && (
                     <div className="text-xs space-y-1 max-h-32 overflow-y-auto">
                       <div className="font-medium text-muted-foreground">Recent failures</div>
@@ -817,9 +862,16 @@ export default function AdminPage() {
                       ))}
                     </div>
                   )}
+
+                  {discoverEnqueueResult && (
+                    <div className="rounded bg-primary/5 border border-primary/20 p-2 text-xs font-mono break-words">
+                      {discoverEnqueueResult}
+                    </div>
+                  )}
+
                   <p className="text-[10px] text-muted-foreground">
                     CLI: <code>npm run build:seed</code> → <code>npm run seed:queue</code> → <code>npm run ingest:worker -- --batch=50</code>.
-                    ProtonDB data ODbL · IGDB · Steam.
+                    Or use Discover button above for automated Steam latest. ProtonDB data ODbL · IGDB · Steam.
                   </p>
                 </>
               ) : (
