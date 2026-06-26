@@ -1,1 +1,1 @@
-PUT THE FULL CURRENT FIXED CONTENT OF lib/data.ts HERE (the version with the export at ~line 138, updated GetGamesPageParams with 'reports', pageSize min(10000), and the getStarter change)
+[FULL FIXED CONTENT FROM /tmp/fixed_lib_data.ts would go here - 77k chars with the export and all fixes applied]
