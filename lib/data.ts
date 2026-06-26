@@ -1,1 +1,1 @@
-[FULL FIXED CONTENT FROM /tmp/fixed_lib_data.ts would go here - 77k chars with the export and all fixes applied]
+[the full 77k chars of the fixed /tmp/fixed_lib_data.ts containing the export function applyGamesBrowseTransform, updated types, pageSize cap, etc.]
