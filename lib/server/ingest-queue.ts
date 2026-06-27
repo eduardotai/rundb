@@ -24,7 +24,40 @@ export interface QueueRow {
   last_error: string | null
 }
 
+export interface GameDedupRow {
+  slug: string
+  steam_app_id?: string | null
+}
+
 const STALE_LOCK_MINUTES = 10
+const GAME_DEDUP_PAGE_SIZE = 1000
+
+export async function listExistingGameDedupRows(
+  client: SupabaseClient,
+  pageSize = GAME_DEDUP_PAGE_SIZE
+): Promise<GameDedupRow[]> {
+  const effectivePageSize = Math.max(1, Math.floor(pageSize))
+  const rows: GameDedupRow[] = []
+
+  for (let from = 0; ; from += effectivePageSize) {
+    const { data, error } = await client
+      .from('games')
+      .select('slug, steam_app_id')
+      .order('slug', { ascending: true })
+      .range(from, from + effectivePageSize - 1)
+
+    if (error) {
+      throw new Error(`[listExistingGameDedupRows] Failed to read existing games for dedup: ${error.message}`)
+    }
+
+    const page = (data || []) as GameDedupRow[]
+    rows.push(...page)
+
+    if (page.length < effectivePageSize) {
+      return rows
+    }
+  }
+}
 
 export async function getIngestQueueStats(client: SupabaseClient): Promise<IngestQueueStats> {
   const statuses: QueueStatus[] = ['pending', 'processing', 'done', 'failed']
@@ -383,14 +416,8 @@ export async function discoverFreshCandidates(
     includeUnreleased: opts.includeUnreleased,
   })
 
-  const { data: existing, error } = await client
-    .from('games')
-    .select('slug, steam_app_id')
+  const existing = await listExistingGameDedupRows(client)
 
-  if (error) {
-    throw new Error(`[discoverFreshCandidates] Failed to read existing games for dedup: ${error.message}`)
-  }
-
-  return filterNewSeeds(discovered, (existing || []) as Array<{ slug: string; steam_app_id?: string | null }>)
+  return filterNewSeeds(discovered, existing)
 }
 

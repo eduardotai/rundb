@@ -10,7 +10,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-import { enqueueSeeds, discoverFreshCandidates } from '../lib/server/ingest-queue'
+import { enqueueSeeds, discoverFreshCandidates, listExistingGameDedupRows } from '../lib/server/ingest-queue'
 import { discoverAndEnqueueLatestAction } from '../app/actions/ingest-queue'
 import type { SeedGame } from '../lib/server/discover-steam-games'
 
@@ -30,7 +30,19 @@ function makeRecordingClient(initialGames: Array<{id: string, slug: string, stea
       if (table === 'games') {
         return {
           select() {
+            const sortedGameRows = () =>
+              [...gamesTable]
+                .sort((a, b) => a.slug.localeCompare(b.slug))
+                .map(({ slug, steam_app_id }) => ({ slug, steam_app_id }))
+
             return {
+              order() {
+                return {
+                  async range(from: number, to: number) {
+                    return { data: sortedGameRows().slice(from, to + 1), error: null }
+                  }
+                }
+              },
               eq(col: string, val: any) {
                 return {
                   async maybeSingle() {
@@ -154,6 +166,21 @@ test('enqueueSeeds dedups by steam_app_id even on slug mismatch (drives shipped 
   assert.equal(r2.gamesUpserted, 0, 'must not insert duplicate game for same steam_app_id')
   const gameInserts = inserts.filter((i:any) => i.table === 'games')
   assert.equal(gameInserts.length, 1, 'only one game skeleton for the appid')
+})
+
+test('listExistingGameDedupRows paginates beyond the Supabase default row cap', async () => {
+  const initialGames = Array.from({ length: 1005 }, (_, i) => ({
+    id: `gid-${i}`,
+    slug: `game-${String(i).padStart(4, '0')}`,
+    steam_app_id: String(100000 + i),
+  }))
+  const { client } = makeRecordingClient(initialGames, 0)
+
+  const rows = await listExistingGameDedupRows(client, 1000)
+
+  assert.equal(rows.length, 1005)
+  assert.equal(rows[0]?.slug, 'game-0000')
+  assert.equal(rows[1004]?.steam_app_id, '101004')
 })
 
 test('discoverFreshCandidates integrates with filter (shape only; net discovery happens) and enqueue uses its output (drives shipped)', async () => {
