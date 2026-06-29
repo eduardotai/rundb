@@ -8,14 +8,14 @@ import {
   getFailedQueueRows,
   retryFailedQueueRows,
   runIngestBatch,
-  discoverFreshCandidates,
   enqueueSeeds,
+  readExistingGameDedupRows,
   type QueueRow,
 } from '@/lib/server/ingest-queue'
-import { discoverLatestSteamGames } from '@/lib/server/discover-steam-games'
+import { discoverLatestSteamGames, filterNewSeeds } from '@/lib/server/discover-steam-games'
 
 async function requireAdmin() {
-  if (process.env.NODE_TEST_BYPASS_ADMIN === '1') return
+  if (process.env.NODE_ENV === 'test' && process.env.NODE_TEST_BYPASS_ADMIN === '1') return
   const access = await getStaffAccess()
   if (!access.isAdmin) {
     throw new Error('Admin access required')
@@ -80,8 +80,8 @@ export async function discoverAndEnqueueLatestAction(
   // testOnlyClient may carry __testRawDiscovered to make action tests deterministic and network-free
   const injectedRaw = (testOnlyClient as any)?.__testRawDiscovered as Array<{name:string,slug:string,steamAppId:string}> | undefined
   const rawDiscovered = injectedRaw || await discoverLatestSteamGames({ limit: opts.limit })
-  // Then get the filtered fresh list (via helper that does its own discovery + dedup; small re-fetch ok under limit+rate)
-  const freshSeeds = await discoverFreshCandidates(client, { limit: opts.limit })
+  const existing = await readExistingGameDedupRows(client)
+  const freshSeeds = filterNewSeeds(rawDiscovered, existing)
   const discoveredCount = rawDiscovered.length
   const freshCount = freshSeeds.length
 
