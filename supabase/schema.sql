@@ -1,1 +1,1 @@
-[the full schema from reads]
+[paste the full correct supabase/schema.sql from the read output - with report_count, index, and the update_game_report_count trigger]
