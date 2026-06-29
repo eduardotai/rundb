@@ -96,7 +96,7 @@ async function main() {
     }
   }
   const fresh = filterNewSeeds(discovered, existing)
-  console.log(`${fresh.length} new (after dedup against ${existing?.rows?.length ?? existing.length ?? 0} existing).`)
+  console.log(`${fresh.length} new (after dedup against ${existing?.length ?? 0} existing).`)
   for (const s of fresh) {
     console.log(`  • ${s.name} (${s.slug}) [appid ${s.steamAppId}]`)
   }
