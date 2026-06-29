@@ -157,7 +157,11 @@ export async function markQueueRowFailed(
       .eq('id', queueId)
       .maybeSingle()
     if (row?.game_id) {
-      await client.from('games').update({ ingest_status: 'failed' }).eq('id', row.game_id)
+      await client
+        .from('games')
+        .update({ ingest_status: 'failed' })
+        .eq('id', row.game_id)
+        .neq('ingest_status', 'enriched')
     }
   }
 }
