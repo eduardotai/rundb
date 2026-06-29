@@ -16,7 +16,7 @@ import type { SeedGame } from '../lib/server/discover-steam-games'
 
 // A minimal stub client recorder. Implements only the .from paths used by the fns under test.
 function makeRecordingClient(initialGames: Array<{id: string, slug: string, steam_app_id?: string|null}> = [], initialPending = 0) {
-  let gamesTable = [...initialGames].map(g => ({...g}))
+  const gamesTable = [...initialGames].map(g => ({...g}))
   let queuePending = initialPending
   const inserts: Array<{table: string, row: any}> = []
 
