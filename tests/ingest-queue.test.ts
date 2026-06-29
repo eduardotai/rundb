@@ -10,13 +10,13 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-import { enqueueSeeds, discoverFreshCandidates } from '../lib/server/ingest-queue'
+import { enqueueSeeds, discoverFreshCandidates, markQueueRowFailed } from '../lib/server/ingest-queue'
 import { discoverAndEnqueueLatestAction } from '../app/actions/ingest-queue'
 import type { SeedGame } from '../lib/server/discover-steam-games'
 
 // A minimal stub client recorder. Implements only the .from paths used by the fns under test.
 function makeRecordingClient(initialGames: Array<{id: string, slug: string, steam_app_id?: string|null}> = [], initialPending = 0) {
-  let gamesTable = [...initialGames].map(g => ({...g}))
+  const gamesTable = [...initialGames].map(g => ({...g}))
   let queuePending = initialPending
   const inserts: Array<{table: string, row: any}> = []
 
@@ -122,6 +122,60 @@ function makeStatsStub(pending: number) {
   } as any
 }
 
+function makeFailureMarkingClient(initialStatus: 'skeleton' | 'enriched' | 'failed' | null) {
+  let gameStatus = initialStatus
+  const gameUpdates: Array<Record<string, unknown>> = []
+  const queueUpdates: Array<Record<string, unknown>> = []
+
+  const client = {
+    from(table: string) {
+      if (table === 'game_ingest_queue') {
+        return {
+          update(row: Record<string, unknown>) {
+            queueUpdates.push(row)
+            return { eq: () => ({}) }
+          },
+          select() {
+            return {
+              eq() {
+                return {
+                  async maybeSingle() {
+                    return { data: { game_id: 'gid-1' }, error: null }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (table === 'games') {
+        return {
+          update(row: Record<string, unknown>) {
+            return {
+              eq() {
+                return {
+                  neq(_col: string, value: unknown) {
+                    if (gameStatus !== value) {
+                      gameUpdates.push(row)
+                      gameStatus = row.ingest_status as typeof gameStatus
+                    }
+                    return {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      throw new Error(`Unexpected table ${table}`)
+    }
+  } as unknown as SupabaseClient
+
+  return { client, gameUpdates, queueUpdates, getGameStatus: () => gameStatus }
+}
+
 test('enqueueSeeds inserts skeleton + pending rows and is idempotent (drives shipped fn)', async () => {
   const { client, inserts, getPending } = makeRecordingClient([], 0)
   const seeds: SeedGame[] = [
@@ -214,4 +268,25 @@ test('enqueue produces skeleton + pending with correct fields (drives real enque
   assert.equal(gameInsert.ingest_status, 'skeleton')
   const qInsert = inserts.find((i: any) => i.table === 'game_ingest_queue')!.row
   assert.equal(qInsert.status, 'pending')
+})
+
+test('markQueueRowFailed marks skeleton games failed on final attempt', async () => {
+  const { client, gameUpdates, queueUpdates, getGameStatus } = makeFailureMarkingClient('skeleton')
+
+  await markQueueRowFailed(client, 'qid-1', 'media insert failed', 3, 3)
+
+  assert.equal(queueUpdates[0]?.status, 'failed')
+  assert.equal(gameUpdates.length, 1)
+  assert.equal(gameUpdates[0]?.ingest_status, 'failed')
+  assert.equal(getGameStatus(), 'failed')
+})
+
+test('markQueueRowFailed does not downgrade enriched games on final attempt', async () => {
+  const { client, gameUpdates, queueUpdates, getGameStatus } = makeFailureMarkingClient('enriched')
+
+  await markQueueRowFailed(client, 'qid-1', 'late screenshot dedupe failed', 3, 3)
+
+  assert.equal(queueUpdates[0]?.status, 'failed')
+  assert.equal(gameUpdates.length, 0)
+  assert.equal(getGameStatus(), 'enriched')
 })

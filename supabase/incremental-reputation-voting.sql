@@ -84,6 +84,8 @@ BEGIN
       credibility_score = GREATEST(0, v_score * 10 + v_up * 2),
       credibility_badge = v_badge,
       status = CASE
+        WHEN status = 'rejected'::report_status THEN status
+        WHEN moderated_by IS NOT NULL AND status = 'flagged'::report_status THEN status
         WHEN v_down >= 3 AND v_score <= -3 THEN 'flagged'::report_status
         ELSE 'approved'::report_status
       END
