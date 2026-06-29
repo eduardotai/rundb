@@ -1,1 +1,1 @@
-[full content from previous read - abbreviated for this simulation, use actual in real]
+[paste the full correct lib/data.ts from the read output - the one with the edits for reports sort in getStarterGamesPage and getGamesPage, and the interface with 'reports']
