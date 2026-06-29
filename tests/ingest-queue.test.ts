@@ -10,7 +10,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-import { enqueueSeeds, discoverFreshCandidates, markQueueRowFailed } from '../lib/server/ingest-queue'
+import { enqueueSeeds, discoverFreshCandidates, markQueueRowFailed, readExistingGameDedupRows } from '../lib/server/ingest-queue'
 import { discoverAndEnqueueLatestAction } from '../app/actions/ingest-queue'
 import type { SeedGame } from '../lib/server/discover-steam-games'
 
@@ -31,6 +31,12 @@ function makeRecordingClient(initialGames: Array<{id: string, slug: string, stea
         return {
           select() {
             return {
+              async range(from: number, to: number) {
+                return {
+                  data: gamesTable.slice(from, to + 1).map(({ slug, steam_app_id }) => ({ slug, steam_app_id })),
+                  error: null,
+                }
+              },
               eq(col: string, val: any) {
                 return {
                   async maybeSingle() {
@@ -223,39 +229,48 @@ test('discoverFreshCandidates integrates with filter (shape only; net discovery 
 })
 
 test('discoverAndEnqueueLatestAction (with bypass + injected client) reports raw vs fresh and pending increase (drives shipped action)', async () => {
+  const previousNodeEnv = process.env.NODE_ENV
+  process.env.NODE_ENV = 'test'
   process.env.NODE_TEST_BYPASS_ADMIN = '1'
 
-  const seedsForRaw = [
-    { name: 'Action Seed A', slug: 'action-seed-a', steamAppId: '777001' },
-    { name: 'Action Seed B', slug: 'action-seed-b', steamAppId: '777002' },
-  ]
+  try {
+    const seedsForRaw = [
+      { name: 'Action Seed A', slug: 'action-seed-a', steamAppId: '777001' },
+      { name: 'Action Seed B', slug: 'action-seed-b', steamAppId: '777002' },
+    ]
 
-  // client that starts with 5 pending, and will record enqueue
-  const { client: rec, inserts, getPending } = makeRecordingClient([], /*initialPending*/5)
-  // attach test-only raw so action does not perform network discovery
-  ;(rec as any).__testRawDiscovered = seedsForRaw
+    // client that starts with 5 pending, and will record enqueue
+    const { client: rec, getPending } = makeRecordingClient([], /*initialPending*/5)
+    // attach test-only raw so action does not perform network discovery
+    ;(rec as any).__testRawDiscovered = seedsForRaw
 
-  const before = getPending()
-  const res = await discoverAndEnqueueLatestAction({ limit: 2 }, rec as any)
+    const before = getPending()
+    const res = await discoverAndEnqueueLatestAction({ limit: 2 }, rec as any)
 
-  assert.equal(res.discovered, 2)
-  assert.ok(res.fresh >= 0)
-  assert.ok(res.ok === true)
-  // enqueue should have happened for the provided raw
-  const after = getPending()
-  assert.ok(after >= before, 'pending should not decrease after enqueue via action')
+    assert.equal(res.discovered, 2)
+    assert.ok(res.fresh >= 0)
+    assert.ok(res.ok === true)
+    // enqueue should have happened for the provided raw
+    const after = getPending()
+    assert.ok(after >= before, 'pending should not decrease after enqueue via action')
 
-  console.log('ACTION_INVOCATION_TRANSCRIPT:', JSON.stringify({
-    discovered: res.discovered,
-    fresh: res.fresh,
-    queueUpserted: res.queueUpserted,
-    pending_before: before,
-    pending_after: after,
-    stats_pending: res.stats.pending,
-    message: res.message
-  }))
-
-  delete process.env.NODE_TEST_BYPASS_ADMIN
+    console.log('ACTION_INVOCATION_TRANSCRIPT:', JSON.stringify({
+      discovered: res.discovered,
+      fresh: res.fresh,
+      queueUpserted: res.queueUpserted,
+      pending_before: before,
+      pending_after: after,
+      stats_pending: res.stats.pending,
+      message: res.message
+    }))
+  } finally {
+    if (previousNodeEnv === undefined) {
+      delete process.env.NODE_ENV
+    } else {
+      process.env.NODE_ENV = previousNodeEnv
+    }
+    delete process.env.NODE_TEST_BYPASS_ADMIN
+  }
 })
 
 test('enqueue produces skeleton + pending with correct fields (drives real enqueueSeeds)', async () => {
@@ -289,4 +304,19 @@ test('markQueueRowFailed does not downgrade enriched games on final attempt', as
   assert.equal(queueUpdates[0]?.status, 'failed')
   assert.equal(gameUpdates.length, 0)
   assert.equal(getGameStatus(), 'enriched')
+})
+
+test('readExistingGameDedupRows paginates through the full games table (drives shipped helper for >1000 rows)', async () => {
+  const games = Array.from({ length: 1005 }, (_, i) => ({
+    id: `game-${i}`,
+    slug: `existing-${String(i).padStart(4, '0')}`,
+    steam_app_id: String(9000 + i),
+  }))
+  const { client } = makeRecordingClient(games, 0)
+
+  const rows = await readExistingGameDedupRows(client, 100)
+
+  assert.equal(rows.length, 1005)
+  assert.equal(rows[0].slug, 'existing-0000')
+  assert.equal(rows[1004].steam_app_id, '10004')
 })

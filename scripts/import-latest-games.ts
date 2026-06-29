@@ -19,7 +19,7 @@ import { loadEnvLocal } from './load-env-local'
 import { discoverLatestSteamGames, filterNewSeeds } from '../lib/server/discover-steam-games'
 import { ingestGame } from '../lib/server/ingest-game'
 import { ensureGameMediaBucket } from '../lib/server/game-media'
-import { enqueueSeeds } from '../lib/server/ingest-queue'
+import { enqueueSeeds, readExistingGameDedupRows } from '../lib/server/ingest-queue'
 
 loadEnvLocal()
 
@@ -85,9 +85,7 @@ async function main() {
 
   let existing: any[] = []
   try {
-    const res = await client.from('games').select('slug, steam_app_id')
-    if (res.error) throw res.error
-    existing = res.data || []
+    existing = await readExistingGameDedupRows(client as any)
   } catch (e: any) {
     if (flags.dryRun) {
       console.warn('[dry-run] existing games query unavailable, treating as 0 for dedup demo:', e?.message || e)
@@ -97,8 +95,8 @@ async function main() {
       process.exit(1)
     }
   }
-  const fresh = filterNewSeeds(discovered, (existing || []) as any)
-  console.log(`${fresh.length} new (after dedup against ${existing?.length ?? 0} existing).`)
+  const fresh = filterNewSeeds(discovered, existing)
+  console.log(`${fresh.length} new (after dedup against ${existing?.rows?.length ?? existing.length ?? 0} existing).`)
   for (const s of fresh) {
     console.log(`  • ${s.name} (${s.slug}) [appid ${s.steamAppId}]`)
   }
