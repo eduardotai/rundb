@@ -19,6 +19,7 @@ function makeRecordingClient(initialGames: Array<{id: string, slug: string, stea
   const gamesTable = [...initialGames].map(g => ({...g}))
   let queuePending = initialPending
   const inserts: Array<{table: string, row: any}> = []
+  const orders: Array<{table: string, column: string, opts?: any}> = []
 
   function findGameBy(col: string, val: any) {
     const v = String(val)
@@ -31,6 +32,10 @@ function makeRecordingClient(initialGames: Array<{id: string, slug: string, stea
         return {
           select() {
             return {
+              order(column: string, opts?: any) {
+                orders.push({ table, column, opts })
+                return this
+              },
               async range(from: number, to: number) {
                 return {
                   data: gamesTable.slice(from, to + 1).map(({ slug, steam_app_id }) => ({ slug, steam_app_id })),
@@ -99,7 +104,7 @@ function makeRecordingClient(initialGames: Array<{id: string, slug: string, stea
     }
   } as unknown as SupabaseClient
 
-  return { client, inserts, getPending: () => queuePending }
+  return { client, inserts, orders, getPending: () => queuePending }
 }
 
 function makeStatsStub(pending: number) {
@@ -312,11 +317,12 @@ test('readExistingGameDedupRows paginates through the full games table (drives s
     slug: `existing-${String(i).padStart(4, '0')}`,
     steam_app_id: String(9000 + i),
   }))
-  const { client } = makeRecordingClient(games, 0)
+  const { client, orders } = makeRecordingClient(games, 0)
 
   const rows = await readExistingGameDedupRows(client, 100)
 
   assert.equal(rows.length, 1005)
   assert.equal(rows[0].slug, 'existing-0000')
   assert.equal(rows[1004].steam_app_id, '10004')
+  assert.deepEqual(orders[0], { table: 'games', column: 'slug', opts: { ascending: true } })
 })

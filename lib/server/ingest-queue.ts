@@ -44,6 +44,7 @@ export async function readExistingGameDedupRows(
     const { data, error } = await client
       .from('games')
       .select('slug, steam_app_id')
+      .order('slug', { ascending: true })
       .range(from, to)
 
     if (error) {
