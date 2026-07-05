@@ -14,7 +14,7 @@ import { PerformanceTier, GameStats } from '@/lib/types';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { sanitizeSearchQuery } from '@/lib/sanitize';
@@ -25,32 +25,23 @@ const PAGE_SIZE = 48;
 
 export default function GamesPage() {
   const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [selectedTier, setSelectedTier] = useState<PerformanceTier | ''>('');
   const [sort, setSort] = useState<'reports' | 'name' | 'year'>('name');
   const [page, setPage] = useState(1);
 
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setDebouncedSearch(search);
-      setPage(1);
-    }, 300);
-    return () => clearTimeout(t);
-  }, [search]);
-
   const paginatedMode = USE_REAL;
 
   const gamesQuery = useQuery({
     queryKey: paginatedMode
-      ? ['games-page', page, debouncedSearch, selectedGenres[0], sort]
+      ? ['games-page', page, search, selectedGenres[0], sort]
       : ['all-games'],
     queryFn: () =>
       paginatedMode
         ? getGamesPage({
             page,
             pageSize: PAGE_SIZE,
-            search: debouncedSearch || undefined,
+            search: search || undefined,
             genre: selectedGenres[0],
             sort,
           })
@@ -61,6 +52,7 @@ export default function GamesPage() {
             pageSize: games.length,
             totalPages: 1,
           })),
+    placeholderData: keepPreviousData,
   });
 
   const reportsQuery = useQuery({
@@ -95,8 +87,8 @@ export default function GamesPage() {
     // In paginated mode these are applied server-side (or starter fallback) before we receive the page slice.
     // Genres are dynamically sourced via useAvailableGenres() / getAvailableGenresAsync() from actual DB/starter genres (IGDB etc).
     if (!paginatedMode) {
-      if (debouncedSearch) {
-        const q = debouncedSearch.toLowerCase();
+      if (search) {
+        const q = search.toLowerCase();
         result = result.filter(
           (g) =>
             g.name.toLowerCase().includes(q) ||
@@ -139,10 +131,10 @@ export default function GamesPage() {
     }
 
     return result;
-  }, [paginatedMode, games, debouncedSearch, selectedGenres, selectedTier, sort, gameStatsMap, allReports.length]);
+  }, [paginatedMode, games, search, selectedGenres, selectedTier, sort, gameStatsMap, allReports.length]);
 
   const hasActiveFilters =
-    Boolean(debouncedSearch) || selectedGenres.length > 0 || Boolean(selectedTier);
+    Boolean(search) || selectedGenres.length > 0 || Boolean(selectedTier);
 
   const toggleGenre = (genre: string) => {
     setSelectedGenres((prev) => {
@@ -153,6 +145,8 @@ export default function GamesPage() {
   };
 
   const isLoading = gamesQuery.isLoading;
+  const isFetching = gamesQuery.isFetching;
+  const isInitialLoading = isLoading && !pageData;
   const isStatsLoading = reportsQuery.isLoading;
 
   return (
@@ -163,13 +157,15 @@ export default function GamesPage() {
           <p className="text-muted-foreground">Search and filter by community performance data.</p>
         </div>
         <div className="text-sm text-muted-foreground">
-          {isLoading
+          {isInitialLoading
             ? 'Loading…'
-            : paginatedMode
-              ? selectedTier
-                ? `${filtered.length} match tier on this page · ${totalGames} total · page ${page}/${totalPages}`
-                : `${totalGames} games · page ${page}/${totalPages}`
-              : `${filtered.length} games shown`}
+            : isFetching
+              ? 'Searching…'
+              : paginatedMode
+                ? selectedTier
+                  ? `${filtered.length} match tier on this page · ${totalGames} total · page ${page}/${totalPages}`
+                  : `${totalGames} games · page ${page}/${totalPages}`
+                : `${filtered.length} games shown`}
         </div>
       </div>
 
@@ -178,9 +174,11 @@ export default function GamesPage() {
           <Input
             placeholder="Search games or developers..."
             value={search}
-            onChange={(e) => setSearch(sanitizeSearchQuery(e.target.value))}
+            onChange={(e) => {
+              setSearch(sanitizeSearchQuery(e.target.value));
+              setPage(1);
+            }}
             className="md:w-80"
-            disabled={isLoading}
           />
 
           <div className="flex items-center gap-2">
@@ -272,7 +270,7 @@ export default function GamesPage() {
       </div>
 
       <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-        {isLoading ? (
+        {isInitialLoading ? (
           Array.from({ length: 12 }).map((_, i) => (
             <div key={i} className="rounded-xl border border-border bg-card overflow-hidden">
               <Skeleton className="aspect-[2/3] w-full" />
