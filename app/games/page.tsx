@@ -4,12 +4,13 @@ import { useState, useMemo, useEffect } from 'react';
 import { GameCard } from '@/components/game-card';
 import {
   getGamesPage,
+  getAllGames,
   getAllReportsAsync,
   computeGameStatsFromReports,
   applyGamesBrowseTransform,
   USE_REAL,
 } from '@/lib/data';
-import { PerformanceTier, GameStats } from '@/lib/types';
+import { PerformanceTier, GameStats, Game } from '@/lib/types';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -55,7 +56,7 @@ export default function GamesPage() {
             genre: selectedGenres[0],
             sort, // pass 'reports' too; server delegates search/genre, reports sort + tier done globally client on received set
           })
-        : getAllGames().then((games) => ({
+        : getAllGames().then((games: Game[]) => ({
             games,
             total: games.length,
             page: 1,
@@ -79,7 +80,7 @@ export default function GamesPage() {
     if (allReports.length === 0) return map;
     // Compute for received games. When needsGlobalTransform we requested the full search/genre set,
     // so stats cover everything needed for tier filter + global reports sort.
-    rawGames.forEach((g) => {
+    rawGames.forEach((g: Game) => {
       const greports = allReports.filter((r) => r.gameId === g.id);
       map[g.id] = computeGameStatsFromReports(greports);
     });
@@ -95,15 +96,15 @@ export default function GamesPage() {
       if (debouncedSearch) {
         const q = debouncedSearch.toLowerCase();
         working = working.filter(
-          (g) =>
+          (g: Game) =>
             g.name.toLowerCase().includes(q) ||
             g.developer.toLowerCase().includes(q) ||
-            g.genres.some((gen) => gen.toLowerCase().includes(q))
+            g.genres.some((gen: string) => gen.toLowerCase().includes(q))
         );
       }
 
       if (selectedGenres.length > 0) {
-        working = working.filter((g) => g.genres.some((gen) => selectedGenres.includes(gen)));
+        working = working.filter((g: Game) => g.genres.some((gen: string) => selectedGenres.includes(gen)));
       }
     }
 
@@ -283,7 +284,7 @@ export default function GamesPage() {
             </div>
           ))
         ) : displayGames.length > 0 ? (
-          displayGames.map((game) => (
+          displayGames.map((game: Game) => (
             <GameCard
               key={game.id}
               game={game}

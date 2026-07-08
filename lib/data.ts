@@ -2022,7 +2022,7 @@ export {
 
 // Pure aggregation/prediction helpers (extracted for Phase 3 real-data list pages + GameCard stats derivation).
 // Use with reports fetched via *Async adapters (e.g. getAllReportsAsync) to compute without N+1 calls or direct mock imports.
-export { computeGameStatsFromReports, predictForUserRigFromReports } from './data-logic'
+export { computeGameStatsFromReports, predictForUserRigFromReports, applyGamesBrowseTransform } from './data-logic'
 
 // ============================================
 // HARDWARE CATALOG (Phase 6+ full database)
