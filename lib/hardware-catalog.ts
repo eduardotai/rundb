@@ -26,6 +26,7 @@
 
 import type { HardwareCatalogEntry } from './types';
 import { GENERATED_CATALOG, GENERATED_ABBREVIATIONS } from './hardware-catalog-generated';
+import { enrichEntryWithIgpu } from './cpu-igpu';
 
 // ============================================
 // CATALOG VERSIONING
@@ -1197,6 +1198,167 @@ export const GPU_CATALOG: Record<string, HardwareCatalogEntry> = {
     source: 'PassMark G3D',
     lastUpdated: '2026-06-20',
   },
+
+  // =====================================================================
+  // Integrated graphics (iGPU) — first-class GPU rows for APU / iGPU-only rigs
+  // perfIndex is relative to discrete scale (RTX 4090 = 100); values are intentionally low.
+  // =====================================================================
+  'Intel UHD Graphics 630': {
+    canonical: 'Intel UHD Graphics 630',
+    componentType: 'gpu',
+    vendor: 'Intel',
+    series: 'Intel iGPU',
+    perfIndex: 4.5,
+    releaseYear: 2017,
+    architecture: 'Gen9.5',
+    notes: 'Integrated graphics (Coffee Lake / Comet Lake era).',
+    source: 'PassMark G3D relative + iGPU-only rig support',
+    lastUpdated: '2026-07-08',
+  },
+  'Intel UHD Graphics 730': {
+    canonical: 'Intel UHD Graphics 730',
+    componentType: 'gpu',
+    vendor: 'Intel',
+    series: 'Intel iGPU',
+    perfIndex: 5.5,
+    releaseYear: 2021,
+    architecture: 'Xe-LP',
+    notes: 'Integrated graphics (Alder/Raptor Lake non-K midrange).',
+    source: 'PassMark G3D relative + iGPU-only rig support',
+    lastUpdated: '2026-07-08',
+  },
+  'Intel UHD Graphics 750': {
+    canonical: 'Intel UHD Graphics 750',
+    componentType: 'gpu',
+    vendor: 'Intel',
+    series: 'Intel iGPU',
+    perfIndex: 6.0,
+    releaseYear: 2021,
+    architecture: 'Xe-LP',
+    notes: 'Integrated graphics (Rocket Lake).',
+    source: 'PassMark G3D relative + iGPU-only rig support',
+    lastUpdated: '2026-07-08',
+  },
+  'Intel UHD Graphics 770': {
+    canonical: 'Intel UHD Graphics 770',
+    componentType: 'gpu',
+    vendor: 'Intel',
+    series: 'Intel iGPU',
+    perfIndex: 7.0,
+    releaseYear: 2021,
+    architecture: 'Xe-LP',
+    notes: 'Integrated graphics (Alder/Raptor Lake K-series / higher).',
+    source: 'PassMark G3D relative + iGPU-only rig support',
+    lastUpdated: '2026-07-08',
+  },
+  'Intel Iris Xe Graphics': {
+    canonical: 'Intel Iris Xe Graphics',
+    componentType: 'gpu',
+    vendor: 'Intel',
+    series: 'Intel iGPU',
+    perfIndex: 9.0,
+    releaseYear: 2020,
+    architecture: 'Xe-LP',
+    notes: 'Integrated graphics (Tiger Lake / laptop Xe).',
+    source: 'PassMark G3D relative + iGPU-only rig support',
+    lastUpdated: '2026-07-08',
+  },
+  'Intel Arc Graphics': {
+    canonical: 'Intel Arc Graphics',
+    componentType: 'gpu',
+    vendor: 'Intel',
+    series: 'Intel iGPU',
+    perfIndex: 11.0,
+    releaseYear: 2023,
+    architecture: 'Xe-LPG',
+    notes: 'Integrated Arc graphics (Core Ultra / Meteor–Arrow Lake).',
+    source: 'PassMark G3D relative + iGPU-only rig support',
+    lastUpdated: '2026-07-08',
+  },
+  'AMD Radeon Graphics': {
+    canonical: 'AMD Radeon Graphics',
+    componentType: 'gpu',
+    vendor: 'AMD',
+    series: 'AMD iGPU',
+    perfIndex: 3.5,
+    releaseYear: 2022,
+    architecture: 'RDNA 2',
+    notes: 'Integrated 2CU Radeon Graphics on AM5 desktop Ryzen (7000/9000).',
+    source: 'AMD specs + relative iGPU banding',
+    lastUpdated: '2026-07-08',
+  },
+  'AMD Radeon Vega 7 Graphics': {
+    canonical: 'AMD Radeon Vega 7 Graphics',
+    componentType: 'gpu',
+    vendor: 'AMD',
+    series: 'AMD iGPU',
+    perfIndex: 8.0,
+    releaseYear: 2021,
+    architecture: 'Vega',
+    notes: 'Integrated graphics (Ryzen 5000G Cezanne APU, e.g. 5600G).',
+    source: 'PassMark G3D relative + APU reviews',
+    lastUpdated: '2026-07-08',
+  },
+  'AMD Radeon Vega 8 Graphics': {
+    canonical: 'AMD Radeon Vega 8 Graphics',
+    componentType: 'gpu',
+    vendor: 'AMD',
+    series: 'AMD iGPU',
+    perfIndex: 9.0,
+    releaseYear: 2019,
+    architecture: 'Vega',
+    notes: 'Integrated graphics (Ryzen G APUs, e.g. 3200G / 5700G).',
+    source: 'PassMark G3D relative + APU reviews',
+    lastUpdated: '2026-07-08',
+  },
+  'AMD Radeon Vega 11 Graphics': {
+    canonical: 'AMD Radeon Vega 11 Graphics',
+    componentType: 'gpu',
+    vendor: 'AMD',
+    series: 'AMD iGPU',
+    perfIndex: 10.0,
+    releaseYear: 2019,
+    architecture: 'Vega',
+    notes: 'Integrated graphics (Ryzen 5 3400G).',
+    source: 'PassMark G3D relative + APU reviews',
+    lastUpdated: '2026-07-08',
+  },
+  'AMD Radeon 760M': {
+    canonical: 'AMD Radeon 760M',
+    componentType: 'gpu',
+    vendor: 'AMD',
+    series: 'AMD iGPU',
+    perfIndex: 14.0,
+    releaseYear: 2024,
+    architecture: 'RDNA 3',
+    notes: 'Integrated graphics (Ryzen 5 8600G Phoenix).',
+    source: 'PassMark G3D relative + APU reviews',
+    lastUpdated: '2026-07-08',
+  },
+  'AMD Radeon 780M': {
+    canonical: 'AMD Radeon 780M',
+    componentType: 'gpu',
+    vendor: 'AMD',
+    series: 'AMD iGPU',
+    perfIndex: 18.0,
+    releaseYear: 2023,
+    architecture: 'RDNA 3',
+    notes: 'Integrated graphics (Ryzen 7 8700G / strong Phoenix APU).',
+    source: 'PassMark G3D relative + APU reviews',
+    lastUpdated: '2026-07-08',
+  },
+  'AMD Radeon 610M': {
+    canonical: 'AMD Radeon 610M',
+    componentType: 'gpu',
+    vendor: 'AMD',
+    series: 'AMD iGPU',
+    perfIndex: 3.0,
+    releaseYear: 2022,
+    architecture: 'RDNA 2',
+    notes: 'Entry integrated graphics (some Ryzen 7000 mobile).',
+    source: 'AMD specs + relative iGPU banding',
+    lastUpdated: '2026-07-08',
+  },
 };
 
 // ============================================
@@ -2171,7 +2333,8 @@ const ALL_ENTRIES: HardwareCatalogEntry[] = (() => {
   for (const e of [...Object.values(GPU_CATALOG), ...Object.values(CPU_CATALOG)]) {
     byCanonical.set(e.canonical, e);
   }
-  return Array.from(byCanonical.values());
+  // Enrich CPUs with hasIgpu / igpuCanonical (structured fields win; inference fills gaps).
+  return Array.from(byCanonical.values()).map(enrichEntryWithIgpu);
 })();
 
 export function getAllHardwareCatalog(): HardwareCatalogEntry[] {
@@ -2182,11 +2345,10 @@ export function getHardwareEntry(canonical: string): HardwareCatalogEntry | unde
   if (!canonical) return undefined;
   const upper = canonical.toUpperCase().trim();
 
-  // Direct match
-  if (GPU_CATALOG[canonical]) return GPU_CATALOG[canonical];
-  if (CPU_CATALOG[canonical]) return CPU_CATALOG[canonical];
-
-  // Case-insensitive fallback
+  // Prefer merged+enriched catalog (includes iGPU fields on CPUs and curated iGPU GPU rows).
+  for (const entry of ALL_ENTRIES) {
+    if (entry.canonical === canonical) return entry;
+  }
   for (const entry of ALL_ENTRIES) {
     if (entry.canonical.toUpperCase() === upper) return entry;
   }

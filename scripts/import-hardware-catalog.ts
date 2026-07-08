@@ -55,6 +55,8 @@ interface DatasetRecord {
   threads?: number;
   has3DVCache?: boolean;
   tdpW?: number;
+  hasIgpu?: boolean;
+  igpuCanonical?: string;
   // GPU
   vramGB?: number;
   architecture?: string;
@@ -177,6 +179,11 @@ function main() {
       if (rec.threads != null) entry.threads = rec.threads;
       if (rec.has3DVCache != null) entry.has3DVCache = rec.has3DVCache;
       if (rec.tdpW != null) entry.tdpW = rec.tdpW;
+      if (rec.hasIgpu != null) entry.hasIgpu = rec.hasIgpu;
+      if (rec.igpuCanonical) entry.igpuCanonical = rec.igpuCanonical;
+      if (entry.hasIgpu === true && !entry.igpuCanonical) {
+        errors.push(`${where}: hasIgpu true requires igpuCanonical`);
+      }
     } else {
       if (rec.vramGB != null) entry.vramGB = rec.vramGB;
       if (rec.architecture) entry.architecture = rec.architecture;
@@ -220,6 +227,8 @@ function renderEntry(e: HardwareCatalogEntry): string {
   if (e.threads != null) push('threads', e.threads);
   if (e.has3DVCache != null) push('has3DVCache', e.has3DVCache);
   if (e.tdpW != null) push('tdpW', e.tdpW);
+  if (e.hasIgpu != null) push('hasIgpu', e.hasIgpu);
+  if (e.igpuCanonical) push('igpuCanonical', e.igpuCanonical);
   if (e.notes) push('notes', e.notes);
   push('source', e.source);
   push('lastUpdated', e.lastUpdated);

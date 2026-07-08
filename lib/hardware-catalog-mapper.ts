@@ -18,6 +18,7 @@
  */
 
 import type { HardwareCatalogEntry, HardwareComponentType } from './types';
+import { enrichEntryWithIgpu } from './cpu-igpu';
 
 /**
  * Convert a Supabase row (snake_case, possibly partial) to canonical TS shape.
@@ -45,6 +46,13 @@ export function dbRowToHardwareCatalogEntry(row: any): HardwareCatalogEntry {
     threads: row.threads != null ? Number(row.threads) : undefined,
     has3DVCache: row.has_3d_vcache != null ? Boolean(row.has_3d_vcache) : (row.has3DVCache != null ? Boolean(row.has3DVCache) : false),
     tdpW: row.tdp_w != null ? Number(row.tdp_w) : (row.tdpW != null ? Number(row.tdpW) : undefined),
+    hasIgpu:
+      row.has_igpu != null
+        ? Boolean(row.has_igpu)
+        : row.hasIgpu != null
+          ? Boolean(row.hasIgpu)
+          : undefined,
+    igpuCanonical: row.igpu_canonical || row.igpuCanonical || undefined,
     // RAM / future
     memoryType: (row.memory_type || row.memoryType) as any,
     speedMTs: row.speed_mts != null ? Number(row.speed_mts) : (row.speedMTs != null ? Number(row.speedMTs) : undefined),
@@ -80,6 +88,8 @@ export function hardwareCatalogEntryToDbRow(entry: HardwareCatalogEntry): Record
   if (entry.threads != null) row.threads = entry.threads;
   if (entry.has3DVCache != null) row.has_3d_vcache = entry.has3DVCache;
   if (entry.tdpW != null) row.tdp_w = entry.tdpW;
+  if (entry.hasIgpu != null) row.has_igpu = entry.hasIgpu;
+  if (entry.igpuCanonical) row.igpu_canonical = entry.igpuCanonical;
 
   // RAM/future
   if (entry.memoryType) row.memory_type = entry.memoryType;
@@ -115,8 +125,11 @@ export function mergeCatalogs(
     }
   }
 
-  // Return as array, prefer high-perf first (matches current combobox non-search behavior)
-  return Array.from(byCanonical.values()).sort((a, b) => {
+  // Enrich CPUs missing structured iGPU fields (DB explicit values win via enrichEntryWithIgpu).
+  const merged = Array.from(byCanonical.values()).map(enrichEntryWithIgpu);
+
+  // Prefer high-perf first (matches current combobox non-search behavior)
+  return merged.sort((a, b) => {
     const pa = a.perfIndex ?? 0;
     const pb = b.perfIndex ?? 0;
     return pb - pa;

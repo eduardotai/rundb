@@ -11,12 +11,15 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { HardwareCombobox } from '@/components/hardware-combobox';
+import { IgpuSuggestDialog } from '@/components/igpu-suggest-dialog';
 import { PerformanceBadge } from '@/components/performance-badge';
 import { GraphicsPreset, PerformanceTier } from '@/lib/types';
 import type { ProfileReportLite } from '@/lib/server/profile';
 import { updateReportAction } from '@/app/actions/reports';
 import { showUserError, showUserSuccess } from '@/lib/toast';
 import { sanitizeFullName } from '@/lib/sanitize';
+import { getAllHardwareCatalogAsync } from '@/lib/data';
+import { shouldOfferIgpuOnEmptyGpu } from '@/lib/cpu-igpu';
 import { Pencil } from 'lucide-react';
 
 const PRESETS: GraphicsPreset[] = ['Low', 'Medium', 'High', 'Ultra', 'Custom'];
@@ -73,6 +76,9 @@ function num(v: number | null | undefined): number | undefined {
 
 export function EditReportDialog({ report, open, onOpenChange, onSaved }: EditReportDialogProps) {
   const [isSaving, setIsSaving] = useState(false);
+  const [igpuDialogOpen, setIgpuDialogOpen] = useState(false);
+  const [pendingIgpu, setPendingIgpu] = useState<string | null>(null);
+  const [gpuPickerOpen, setGpuPickerOpen] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema) as any,
@@ -109,6 +115,26 @@ export function EditReportDialog({ report, open, onOpenChange, onSaved }: EditRe
   const avgFpsNum = Number(v.avgFps);
   const tierPreview = useMemo(() => previewTier(avgFpsNum), [avgFpsNum]);
 
+  const handleFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cpuVal = sanitizeFullName(String(form.getValues('cpu') || ''));
+    const gpuVal = sanitizeFullName(String(form.getValues('gpu') || ''));
+    if (cpuVal && !gpuVal) {
+      try {
+        const catalog = await getAllHardwareCatalogAsync();
+        const offer = shouldOfferIgpuOnEmptyGpu(cpuVal, '', catalog);
+        if (offer.offer) {
+          setPendingIgpu(offer.igpuCanonical);
+          setIgpuDialogOpen(true);
+          return;
+        }
+      } catch {
+        // fall through
+      }
+    }
+    void form.handleSubmit(onSubmit)(e);
+  };
+
   const onSubmit = async (values: FormValues) => {
     if (!report) return;
     setIsSaving(true);
@@ -142,6 +168,7 @@ export function EditReportDialog({ report, open, onOpenChange, onSaved }: EditRe
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto !bg-card p-0 shadow-2xl">
         <div className="p-5 md:p-6">
@@ -159,7 +186,7 @@ export function EditReportDialog({ report, open, onOpenChange, onSaved }: EditRe
             </DialogDescription>
           </div>
 
-          <form onSubmit={form.handleSubmit(onSubmit)} className="mt-5 space-y-7" noValidate>
+          <form onSubmit={handleFormSubmit} className="mt-5 space-y-7" noValidate>
             {/* Hardware */}
             <section className="space-y-3">
               <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Your hardware</h3>
@@ -182,7 +209,10 @@ export function EditReportDialog({ report, open, onOpenChange, onSaved }: EditRe
                     value={form.watch('gpu') as string}
                     onChange={(val) => form.setValue('gpu', val, { shouldValidate: true })}
                     componentType="gpu"
-                    placeholder="RTX 4070 Ti, RX 7800 XT…"
+                    relatedCpu={form.watch('cpu') as string}
+                    open={gpuPickerOpen}
+                    onOpenChange={setGpuPickerOpen}
+                    placeholder="RTX 4070 Ti or integrated graphics…"
                   />
                   {form.formState.errors.gpu && (
                     <p className="mt-1 text-xs text-destructive">{form.formState.errors.gpu.message}</p>
@@ -306,5 +336,26 @@ export function EditReportDialog({ report, open, onOpenChange, onSaved }: EditRe
         </div>
       </DialogContent>
     </Dialog>
+
+    <IgpuSuggestDialog
+      open={igpuDialogOpen}
+      onOpenChange={setIgpuDialogOpen}
+      igpuCanonical={pendingIgpu || ''}
+      cpuLabel={String(form.watch('cpu') || '')}
+      onUse={() => {
+        if (!pendingIgpu) return;
+        const igpu = pendingIgpu;
+        form.setValue('gpu', igpu, { shouldValidate: true });
+        setIgpuDialogOpen(false);
+        setPendingIgpu(null);
+        void form.handleSubmit(onSubmit)();
+      }}
+      onPickManually={() => {
+        setIgpuDialogOpen(false);
+        setPendingIgpu(null);
+        setGpuPickerOpen(true);
+      }}
+    />
+    </>
   );
 }

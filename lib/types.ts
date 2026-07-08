@@ -45,6 +45,10 @@ export interface HardwareCatalogEntry {
   threads?: number;
   has3DVCache?: boolean;
   tdpW?: number;
+  /** Whether this CPU ships with integrated graphics. Explicit false = no iGPU (e.g. F-series). */
+  hasIgpu?: boolean;
+  /** Canonical GPU catalog name for this CPU's iGPU when hasIgpu is true. */
+  igpuCanonical?: string;
   // RAM-specific
   memoryType?: 'DDR4' | 'DDR5' | 'LPDDR5X';
   speedMTs?: number;                    // e.g. 6000

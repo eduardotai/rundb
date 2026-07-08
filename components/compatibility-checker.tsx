@@ -14,6 +14,7 @@ import {
   saveMyRigAsync,
   clearMyRigAsync,
   getAllGames,
+  getAllHardwareCatalogAsync,
 } from '@/lib/data';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
@@ -27,6 +28,8 @@ import { applicableHardwareFields } from '@/lib/hardware-detector';
 import { useHardwareDetection } from '@/components/use-hardware-detection';
 import { sanitizeFullName } from '@/lib/sanitize';
 import { HardwareCombobox } from '@/components/hardware-combobox';
+import { IgpuSuggestDialog } from '@/components/igpu-suggest-dialog';
+import { shouldOfferIgpuOnEmptyGpu } from '@/lib/cpu-igpu';
 
 interface CompatibilityCheckerProps {
   embedded?: boolean;
@@ -43,6 +46,9 @@ export function CompatibilityChecker({ embedded = false }: CompatibilityCheckerP
   const [gpu, setGpu] = useState('');
   const [ram, setRam] = useState(32);
   const [resolution, setResolution] = useState<string>(MAIN_RESOLUTIONS[1]);
+  const [igpuDialogOpen, setIgpuDialogOpen] = useState(false);
+  const [pendingIgpu, setPendingIgpu] = useState<string | null>(null);
+  const [gpuPickerOpen, setGpuPickerOpen] = useState(false);
 
   // Phase 2 complete (Master Plan): Loaded async from data layer (user_rigs primary for logged-in + profiles fallback,
   // or localStorage guest fallback only). Auth listener keeps in sync on sign in/out.
@@ -134,15 +140,7 @@ export function CompatibilityChecker({ embedded = false }: CompatibilityCheckerP
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const saveRig = async () => {
-    const safeCpu = sanitizeFullName(cpu);
-    const safeGpu = sanitizeFullName(gpu);
-    const safeResolution = sanitizeFullName(resolution);
-
-    if (!safeCpu || !safeGpu) {
-      showUserError('Please enter your CPU and GPU');
-      return;
-    }
+  const persistRig = async (safeCpu: string, safeGpu: string, safeResolution: string) => {
     const rig: UserPC = { cpu: safeCpu, gpu: safeGpu, ram, resolution: safeResolution || undefined };
 
     setIsSaving(true);
@@ -159,6 +157,35 @@ export function CompatibilityChecker({ embedded = false }: CompatibilityCheckerP
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const saveRig = async () => {
+    const safeCpu = sanitizeFullName(cpu);
+    const safeGpu = sanitizeFullName(gpu);
+    const safeResolution = sanitizeFullName(resolution);
+
+    if (!safeCpu) {
+      showUserError('Please enter your CPU and GPU');
+      return;
+    }
+
+    if (!safeGpu) {
+      try {
+        const catalog = await getAllHardwareCatalogAsync();
+        const offer = shouldOfferIgpuOnEmptyGpu(safeCpu, '', catalog);
+        if (offer.offer) {
+          setPendingIgpu(offer.igpuCanonical);
+          setIgpuDialogOpen(true);
+          return;
+        }
+      } catch {
+        // fall through
+      }
+      showUserError('Please enter your CPU and GPU');
+      return;
+    }
+
+    await persistRig(safeCpu, safeGpu, safeResolution);
   };
 
   const clearRig = async () => {
@@ -245,7 +272,10 @@ export function CompatibilityChecker({ embedded = false }: CompatibilityCheckerP
                 value={gpu}
                 onChange={(val) => setGpu(val)}
                 componentType="gpu"
-                placeholder="Search RTX 4070 Ti / RX 7800 XT..."
+                relatedCpu={cpu}
+                open={gpuPickerOpen}
+                onOpenChange={setGpuPickerOpen}
+                placeholder="Search RTX 4070 Ti / integrated graphics..."
                 disabled={isSaving || isLoadingRig}
               />
             </div>
@@ -313,6 +343,32 @@ export function CompatibilityChecker({ embedded = false }: CompatibilityCheckerP
           )}
         </CardContent>
       </Card>
+
+      <IgpuSuggestDialog
+        open={igpuDialogOpen}
+        onOpenChange={setIgpuDialogOpen}
+        igpuCanonical={pendingIgpu || ''}
+        cpuLabel={cpu}
+        onUse={() => {
+          if (!pendingIgpu) return;
+          const igpu = pendingIgpu;
+          const safeCpu = sanitizeFullName(cpu);
+          const safeResolution = sanitizeFullName(resolution);
+          setGpu(igpu);
+          setIgpuDialogOpen(false);
+          setPendingIgpu(null);
+          if (!safeCpu) {
+            showUserError('Please enter your CPU and GPU');
+            return;
+          }
+          void persistRig(safeCpu, igpu, safeResolution);
+        }}
+        onPickManually={() => {
+          setIgpuDialogOpen(false);
+          setPendingIgpu(null);
+          setGpuPickerOpen(true);
+        }}
+      />
 
       {/* Paste modal — merges with any prior browser detection, then applies */}
       <PasteHardwareModal
