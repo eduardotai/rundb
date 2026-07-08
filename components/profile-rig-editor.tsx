@@ -11,12 +11,14 @@ import { sanitizeFullName } from '@/lib/sanitize';
 import { HardwareDetectButton } from '@/components/hardware-detect-button';
 import { PasteHardwareModal } from '@/components/paste-hardware-modal';
 import { HardwareCombobox } from '@/components/hardware-combobox';
+import { IgpuSuggestDialog } from '@/components/igpu-suggest-dialog';
 import { SteamLinkButton } from '@/components/steam-link-button';
 import { MAIN_RESOLUTIONS } from '@/lib/types';
-import { loadMyRigAsync, saveMyRigAsync } from '@/lib/data';
+import { loadMyRigAsync, saveMyRigAsync, getAllHardwareCatalogAsync } from '@/lib/data';
 import type { SteamLinkStatus } from '@/lib/data';
 import type { DetectedHardware } from '@/lib/types';
 import { mergeDetected, applicableHardwareFields } from '@/lib/hardware-detector';
+import { shouldOfferIgpuOnEmptyGpu } from '@/lib/cpu-igpu';
 
 interface ProfileRigEditorProps {
   /** Only the id is required — identity (name/avatar) is managed in the profile hero. */
@@ -42,6 +44,9 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
   const [pasteModalOpen, setPasteModalOpen] = useState(false);
   const [lastBrowserDetect, setLastBrowserDetect] = useState<DetectedHardware | null>(null);
   const [steamStatus, setSteamStatus] = useState<SteamLinkStatus | null>(null);
+  const [igpuDialogOpen, setIgpuDialogOpen] = useState(false);
+  const [pendingIgpu, setPendingIgpu] = useState<string | null>(null);
+  const [gpuPickerOpen, setGpuPickerOpen] = useState(false);
 
   // Load the saved My Rig through the data adapter (user_rigs preferred, profiles fallback).
   useEffect(() => {
@@ -82,15 +87,52 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
     })();
   }, []);
 
+  const persistRig = async (cpu: string, gpu: string, resolution: string, ramNum: number) => {
+    setIsSaving(true);
+    try {
+      // Adapter saves to user_rigs (authoritative for the compatibility checker)
+      // and mirrors main_* fields to profiles, keeping both surfaces in sync.
+      await saveMyRigAsync({
+        cpu,
+        gpu,
+        ram: ramNum,
+        resolution,
+      });
+
+      showUserSuccess('Rig saved!');
+    } catch {
+      showUserError('Could not save your rig. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleSave = async () => {
     const safeCpu = sanitizeFullName(rig.cpu);
     const safeGpu = sanitizeFullName(rig.gpu);
     const safeResolution = sanitizeFullName(rig.resolution);
 
-    if (!safeCpu || !safeGpu) {
+    if (!safeCpu) {
       showUserError('CPU and GPU are required');
       return;
     }
+
+    if (!safeGpu) {
+      try {
+        const catalog = await getAllHardwareCatalogAsync();
+        const offer = shouldOfferIgpuOnEmptyGpu(safeCpu, '', catalog);
+        if (offer.offer) {
+          setPendingIgpu(offer.igpuCanonical);
+          setIgpuDialogOpen(true);
+          return;
+        }
+      } catch {
+        // fall through to generic error
+      }
+      showUserError('CPU and GPU are required');
+      return;
+    }
+
     const ramNum = typeof rig.ram === 'number' ? rig.ram : parseInt(String(rig.ram), 10);
     if (isNaN(ramNum) || ramNum < 4 || ramNum > 128) {
       showUserError('RAM must be between 4 and 128 GB');
@@ -101,23 +143,23 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
       return;
     }
 
-    setIsSaving(true);
-    try {
-      // Adapter saves to user_rigs (authoritative for the compatibility checker)
-      // and mirrors main_* fields to profiles, keeping both surfaces in sync.
-      await saveMyRigAsync({
-        cpu: safeCpu,
-        gpu: safeGpu,
-        ram: ramNum,
-        resolution: safeResolution,
-      });
+    await persistRig(safeCpu, safeGpu, safeResolution, ramNum);
+  };
 
-      showUserSuccess('Rig saved!');
-    } catch {
-      showUserError('Could not save your rig. Please try again.');
-    } finally {
-      setIsSaving(false);
+  const handleUseIgpu = async () => {
+    if (!pendingIgpu) return;
+    const igpu = pendingIgpu;
+    const safeCpu = sanitizeFullName(rig.cpu);
+    const safeResolution = sanitizeFullName(rig.resolution);
+    const ramNum = typeof rig.ram === 'number' ? rig.ram : parseInt(String(rig.ram), 10);
+    updateField('gpu', igpu);
+    setIgpuDialogOpen(false);
+    setPendingIgpu(null);
+    if (!safeCpu || isNaN(ramNum) || ramNum < 4 || ramNum > 128 || !safeResolution) {
+      showUserError('Fill RAM and resolution, then save again.');
+      return;
     }
+    await persistRig(safeCpu, igpu, safeResolution, ramNum);
   };
 
   const updateField = (field: keyof RigFields, value: string | number) => {
@@ -177,7 +219,10 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
               value={rig.gpu}
               onChange={(val) => updateField('gpu', val)}
               componentType="gpu"
-              placeholder="Search RTX 4070 Super or RX 7800 XT..."
+              relatedCpu={rig.cpu}
+              open={gpuPickerOpen}
+              onOpenChange={setGpuPickerOpen}
+              placeholder="Search RTX 4070 Super or integrated graphics..."
               disabled={isSaving}
             />
           </div>
@@ -270,6 +315,21 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
             </div>
           )}
         </div>
+
+        <IgpuSuggestDialog
+          open={igpuDialogOpen}
+          onOpenChange={setIgpuDialogOpen}
+          igpuCanonical={pendingIgpu || ''}
+          cpuLabel={rig.cpu}
+          onUse={() => {
+            void handleUseIgpu();
+          }}
+          onPickManually={() => {
+            setIgpuDialogOpen(false);
+            setPendingIgpu(null);
+            setGpuPickerOpen(true);
+          }}
+        />
 
         <PasteHardwareModal
           open={pasteModalOpen}

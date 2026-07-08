@@ -15,6 +15,7 @@ import { addUserReport, isSupabaseConfigured } from '@/lib/data';
 import { showUserError, showUserSuccess } from '@/lib/toast';
 import { sanitizeFullName } from '@/lib/sanitize';
 import { HardwareCombobox } from '@/components/hardware-combobox';
+import { IgpuSuggestDialog } from '@/components/igpu-suggest-dialog';
 import { normalizeHardwareSync } from '@/lib/normalize-hardware';
 import { HardwareDetectButton } from '@/components/hardware-detect-button';
 import { DetectedHardwareBanner } from '@/components/detected-hardware-banner';
@@ -23,7 +24,8 @@ import { PerformanceBadge } from '@/components/performance-badge';
 import type { DetectedHardware } from '@/lib/types';
 import { applicableHardwareFields } from '@/lib/hardware-detector';
 import { useHardwareDetection } from '@/components/use-hardware-detection';
-import { loadMyRigAsync, loadUserDevices } from '@/lib/data';
+import { loadMyRigAsync, loadUserDevices, getAllHardwareCatalogAsync } from '@/lib/data';
+import { shouldOfferIgpuOnEmptyGpu } from '@/lib/cpu-igpu';
 import { Cpu, Zap, Monitor } from 'lucide-react';
 import { upgradeCoverImageSrc } from '@/lib/cover-image-url';
 
@@ -121,6 +123,9 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
 
   const [savedDevices, setSavedDevices] = useState<any[]>([]);
   const [coverError, setCoverError] = useState(false);
+  const [igpuDialogOpen, setIgpuDialogOpen] = useState(false);
+  const [pendingIgpu, setPendingIgpu] = useState<string | null>(null);
+  const [gpuPickerOpen, setGpuPickerOpen] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema) as any, // zodResolver + coerce types edge case
@@ -195,6 +200,27 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
     }
   };
 
+  /** Intercept empty-GPU submit to offer CPU iGPU before zod errors. */
+  const handleFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cpuVal = sanitizeFullName(String(form.getValues('cpu') || ''));
+    const gpuVal = sanitizeFullName(String(form.getValues('gpu') || ''));
+    if (cpuVal && !gpuVal) {
+      try {
+        const catalog = await getAllHardwareCatalogAsync();
+        const offer = shouldOfferIgpuOnEmptyGpu(cpuVal, '', catalog);
+        if (offer.offer) {
+          setPendingIgpu(offer.igpuCanonical);
+          setIgpuDialogOpen(true);
+          return;
+        }
+      } catch {
+        // fall through to normal validation
+      }
+    }
+    void form.handleSubmit(onSubmit)(e);
+  };
+
   const onSubmit = async (values: FormValues) => {
     setIsSubmitting(true);
 
@@ -239,6 +265,7 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl gap-0 overflow-y-auto !bg-card p-0 shadow-2xl md:overflow-hidden max-h-[92vh]">
         <div className="grid md:grid-cols-[260px_1fr]">
@@ -346,7 +373,7 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
               </DialogDescription>
             </div>
 
-            <form onSubmit={form.handleSubmit(onSubmit)} className="mt-5 space-y-7" noValidate>
+            <form onSubmit={handleFormSubmit} className="mt-5 space-y-7" noValidate>
               {/* -------------------------------------------------------- */}
               {/* Hardware */}
               {/* -------------------------------------------------------- */}
@@ -419,7 +446,10 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
                       value={form.watch('gpu')}
                       onChange={(val) => form.setValue('gpu', val, { shouldValidate: true })}
                       componentType="gpu"
-                      placeholder="RTX 4070 Ti, RX 7800 XT…"
+                      relatedCpu={form.watch('cpu')}
+                      open={gpuPickerOpen}
+                      onOpenChange={setGpuPickerOpen}
+                      placeholder="RTX 4070 Ti or integrated graphics…"
                     />
                     {form.formState.errors.gpu && (
                       <p className="mt-1 text-xs text-destructive">{form.formState.errors.gpu.message}</p>
@@ -599,5 +629,27 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
         />
       </DialogContent>
     </Dialog>
+
+    <IgpuSuggestDialog
+      open={igpuDialogOpen}
+      onOpenChange={setIgpuDialogOpen}
+      igpuCanonical={pendingIgpu || ''}
+      cpuLabel={String(form.watch('cpu') || '')}
+      onUse={() => {
+        if (!pendingIgpu) return;
+        const igpu = pendingIgpu;
+        form.setValue('gpu', igpu, { shouldValidate: true });
+        setIgpuDialogOpen(false);
+        setPendingIgpu(null);
+        // Continue submit after fill
+        void form.handleSubmit(onSubmit)();
+      }}
+      onPickManually={() => {
+        setIgpuDialogOpen(false);
+        setPendingIgpu(null);
+        setGpuPickerOpen(true);
+      }}
+    />
+    </>
   );
 }
