@@ -17,6 +17,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Reframed the project description around RunDB's core value: real PC hardware, measured FPS reports, compatibility predictions, and community moderation.
 - Revamped `README.md` with a visual GitHub-first layout: status badges, Mermaid diagrams for the product loop and data-adapter architecture, alert callouts for critical rules (Next.js 16 docs, service-role key safety, adapter boundary), and collapsible sections for repository structure, data model, and script catalogs.
 
+### Fixed
+
+- Implemented missing `applyGamesBrowseTransform` (pure helper in data-logic) + wired exports/imports so Browse Games tier filter ("Dominant community tier") and "Most reports" sort work correctly in real-data paginated mode.
+- Fixed `getAllGames` import and cleaned implicit `any`s in games browse page.
+- Added dedicated pure tests for the transform. `npm run lint && npm run test && npm run build` now pass cleanly (per AGENTS.md gate).
+
 ## [0.1.0] - 2026-06-04
 
 ### Added
