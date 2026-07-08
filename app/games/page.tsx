@@ -3,56 +3,66 @@
 import { useState, useMemo, useEffect } from 'react';
 import { GameCard } from '@/components/game-card';
 import {
-  getAllGames,
   getGamesPage,
+  getAllGames,
   getAllReportsAsync,
   computeGameStatsFromReports,
+  applyGamesBrowseTransform,
   USE_REAL,
-  useAvailableGenres,
 } from '@/lib/data';
-import { PerformanceTier, GameStats } from '@/lib/types';
+import { PerformanceTier, GameStats, Game } from '@/lib/types';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { sanitizeSearchQuery } from '@/lib/sanitize';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 
+const ALL_GENRES = ['Action', 'RPG', 'Open World', 'FPS', 'Competitive', 'Strategy', 'Shooter', 'Horror', 'Survival', 'Roguelike'];
 const TIERS: PerformanceTier[] = ['Excellent', 'Good', 'Playable', 'Struggling', 'Unplayable'];
 const PAGE_SIZE = 48;
 
 export default function GamesPage() {
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [selectedTier, setSelectedTier] = useState<PerformanceTier | ''>('');
   const [sort, setSort] = useState<'reports' | 'name' | 'year'>('name');
   const [page, setPage] = useState(1);
 
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
   const paginatedMode = USE_REAL;
+  const needsGlobalTransform = Boolean(selectedTier) || sort === 'reports';
 
   const gamesQuery = useQuery({
     queryKey: paginatedMode
-      ? ['games-page', page, search, selectedGenres[0], sort]
+      ? ['games-page', needsGlobalTransform ? 'full' : page, debouncedSearch, selectedGenres[0] || '', sort, selectedTier || '']
       : ['all-games'],
     queryFn: () =>
       paginatedMode
         ? getGamesPage({
-            page,
-            pageSize: PAGE_SIZE,
-            search: search || undefined,
+            page: needsGlobalTransform ? 1 : page,
+            pageSize: needsGlobalTransform ? 10000 : PAGE_SIZE,
+            search: debouncedSearch || undefined,
             genre: selectedGenres[0],
-            sort,
+            sort, // pass 'reports' too; server delegates search/genre, reports sort + tier done globally client on received set
           })
-        : getAllGames().then((games) => ({
+        : getAllGames().then((games: Game[]) => ({
             games,
             total: games.length,
             page: 1,
             pageSize: games.length,
             totalPages: 1,
           })),
-    placeholderData: keepPreviousData,
   });
 
   const reportsQuery = useQuery({
@@ -60,81 +70,82 @@ export default function GamesPage() {
     queryFn: () => getAllReportsAsync(),
   });
 
-  const genresQuery = useAvailableGenres();
-  const availableGenres = genresQuery.data ?? [];
-
   const pageData = gamesQuery.data;
-  const games = useMemo(() => pageData?.games ?? [], [pageData]);
-  const totalPages = pageData?.totalPages ?? 1;
-  const totalGames = pageData?.total ?? games.length;
+  const rawGames = useMemo(() => pageData?.games ?? [], [pageData]);
   const reportsData = reportsQuery.data;
   const allReports = useMemo(() => reportsData || [], [reportsData]);
 
   const gameStatsMap = useMemo(() => {
     const map: Record<string, GameStats> = {};
     if (allReports.length === 0) return map;
-    games.forEach((g) => {
+    // Compute for received games. When needsGlobalTransform we requested the full search/genre set,
+    // so stats cover everything needed for tier filter + global reports sort.
+    rawGames.forEach((g: Game) => {
       const greports = allReports.filter((r) => r.gameId === g.id);
       map[g.id] = computeGameStatsFromReports(greports);
     });
     return map;
-  }, [games, allReports]);
+  }, [rawGames, allReports]);
 
-  const filtered = useMemo(() => {
-    let result = [...games];
+  // Server delegates search/genre in paginated (full set requested when tier/reports active).
+  // Client search/genre only for mock full mode. Tier + reports (and post-tier name/year) via pure transform for uniformity.
+  const postFilterSortAll = useMemo(() => {
+    let working = [...rawGames];
 
-    // Client-side search + genre only needed in non-paginated (mock) mode.
-    // In paginated mode these are applied server-side (or starter fallback) before we receive the page slice.
-    // Genres are dynamically sourced via useAvailableGenres() / getAvailableGenresAsync() from actual DB/starter genres (IGDB etc).
     if (!paginatedMode) {
-      if (search) {
-        const q = search.toLowerCase();
-        result = result.filter(
-          (g) =>
+      if (debouncedSearch) {
+        const q = debouncedSearch.toLowerCase();
+        working = working.filter(
+          (g: Game) =>
             g.name.toLowerCase().includes(q) ||
             g.developer.toLowerCase().includes(q) ||
-            g.genres.some((gen) => gen.toLowerCase().includes(q))
+            g.genres.some((gen: string) => gen.toLowerCase().includes(q))
         );
       }
 
       if (selectedGenres.length > 0) {
-        result = result.filter((g) => g.genres.some((gen) => selectedGenres.includes(gen)));
+        working = working.filter((g: Game) => g.genres.some((gen: string) => selectedGenres.includes(gen)));
       }
     }
 
-    // Dominant community tier filter (client-side on both modes).
-    // Only match games that have reports and whose most-reported tier equals the selection.
-    if (selectedTier && allReports.length > 0) {
-      result = result.filter((g) => {
-        const stats = gameStatsMap[g.id];
-        if (!stats || stats.totalReports === 0) return false;
-        const dominant = (Object.entries(stats.tierDistribution) as [PerformanceTier, number][])
-          .sort((a, b) => b[1] - a[1])[0]?.[0];
-        return dominant === selectedTier;
-      });
+    // Delegate tier + sort to the pure testable transform (uses global stats counts for reports)
+    return applyGamesBrowseTransform(working, gameStatsMap, {
+      tier: selectedTier,
+      sort,
+    });
+  }, [paginatedMode, rawGames, debouncedSearch, selectedGenres, selectedTier, sort, gameStatsMap]);
+
+  // Derive display list + counts/pages from the *fully transformed* set when client post-processing
+  // (tier or reports) was used; otherwise trust server page data for name/year no-tier case.
+  const { displayGames, totalGames, totalPages: effectiveTotalPages, currentPage: effectivePage } = useMemo(() => {
+    if (paginatedMode && needsGlobalTransform) {
+      const full = postFilterSortAll;
+      const t = full.length;
+      const tp = Math.max(1, Math.ceil(t / PAGE_SIZE));
+      const p = Math.min(Math.max(1, page), tp);
+      const start = (p - 1) * PAGE_SIZE;
+      return {
+        displayGames: full.slice(start, start + PAGE_SIZE),
+        totalGames: t,
+        totalPages: tp,
+        currentPage: p,
+      };
     }
 
-    // Client-side sort ONLY for non-paginated (starter/mock) mode. In paginated real mode,
-    // name/year/reports ordering (including report_count) is performed server-side in getGamesPage.
-    if (!paginatedMode) {
-      if (sort === 'reports') {
-        result.sort((a, b) => {
-          const aCount = gameStatsMap[a.id]?.totalReports ?? 0;
-          const bCount = gameStatsMap[b.id]?.totalReports ?? 0;
-          return bCount - aCount;
-        });
-      } else if (sort === 'name') {
-        result.sort((a, b) => a.name.localeCompare(b.name));
-      } else if (sort === 'year') {
-        result.sort((a, b) => b.releaseYear - a.releaseYear);
-      }
-    }
-
-    return result;
-  }, [paginatedMode, games, search, selectedGenres, selectedTier, sort, gameStatsMap, allReports.length]);
+    // Simple server-paged name/year (no tier) or mock mode: no extra slice
+    return {
+      displayGames: postFilterSortAll,
+      totalGames: pageData?.total ?? postFilterSortAll.length,
+      totalPages: pageData?.totalPages ?? 1,
+      currentPage: pageData?.page ?? page,
+    };
+  }, [paginatedMode, needsGlobalTransform, postFilterSortAll, page, pageData]);
 
   const hasActiveFilters =
-    Boolean(search) || selectedGenres.length > 0 || Boolean(selectedTier);
+    Boolean(debouncedSearch) || selectedGenres.length > 0 || Boolean(selectedTier);
+  // Note: hasActiveFilters intentionally excludes sort (sort is ordering, not a restrictor for "empty db vs no matches").
+  // Counts, pages, display list, and paging controls now always derive from post-filter/sort transformed set
+  // when tier or reports-sort active (via needsGlobalTransform + effective* derived from postFilterSortAll).
 
   const toggleGenre = (genre: string) => {
     setSelectedGenres((prev) => {
@@ -145,8 +156,6 @@ export default function GamesPage() {
   };
 
   const isLoading = gamesQuery.isLoading;
-  const isFetching = gamesQuery.isFetching;
-  const isInitialLoading = isLoading && !pageData;
   const isStatsLoading = reportsQuery.isLoading;
 
   return (
@@ -157,15 +166,11 @@ export default function GamesPage() {
           <p className="text-muted-foreground">Search and filter by community performance data.</p>
         </div>
         <div className="text-sm text-muted-foreground">
-          {isInitialLoading
+          {isLoading
             ? 'Loading…'
-            : isFetching
-              ? 'Searching…'
-              : paginatedMode
-                ? selectedTier
-                  ? `${filtered.length} match tier on this page · ${totalGames} total · page ${page}/${totalPages}`
-                  : `${totalGames} games · page ${page}/${totalPages}`
-                : `${filtered.length} games shown`}
+            : paginatedMode
+              ? `${totalGames} games${selectedTier ? ' (tier-filtered)' : ''} · page ${effectivePage}/${effectiveTotalPages}`
+              : `${postFilterSortAll.length} games shown`}
         </div>
       </div>
 
@@ -174,11 +179,9 @@ export default function GamesPage() {
           <Input
             placeholder="Search games or developers..."
             value={search}
-            onChange={(e) => {
-              setSearch(sanitizeSearchQuery(e.target.value));
-              setPage(1);
-            }}
+            onChange={(e) => setSearch(sanitizeSearchQuery(e.target.value))}
             className="md:w-80"
+            disabled={isLoading}
           />
 
           <div className="flex items-center gap-2">
@@ -211,17 +214,17 @@ export default function GamesPage() {
         <div>
           <div className="mb-1.5 text-xs uppercase tracking-widest text-muted-foreground">Genres</div>
           <div className="flex flex-wrap gap-2">
-            {availableGenres.map((genre) => (
+            {ALL_GENRES.map((genre) => (
               <button
                 key={genre}
                 onClick={() => toggleGenre(genre)}
-                disabled={isLoading || genresQuery.isLoading}
+                disabled={isLoading}
                 className={cn(
                   'rounded-full border px-3 py-1 text-sm transition',
                   selectedGenres.includes(genre)
                     ? 'border-primary bg-white text-black shadow-sm'
                     : 'border-border hover:bg-muted',
-                  (isLoading || genresQuery.isLoading) && 'opacity-60 cursor-not-allowed'
+                  isLoading && 'opacity-60 cursor-not-allowed'
                 )}
               >
                 {genre}
@@ -270,7 +273,7 @@ export default function GamesPage() {
       </div>
 
       <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-        {isInitialLoading ? (
+        {isLoading ? (
           Array.from({ length: 12 }).map((_, i) => (
             <div key={i} className="rounded-xl border border-border bg-card overflow-hidden">
               <Skeleton className="aspect-[2/3] w-full" />
@@ -280,8 +283,8 @@ export default function GamesPage() {
               </div>
             </div>
           ))
-        ) : filtered.length > 0 ? (
-          filtered.map((game) => (
+        ) : displayGames.length > 0 ? (
+          displayGames.map((game: Game) => (
             <GameCard
               key={game.id}
               game={game}
@@ -290,44 +293,41 @@ export default function GamesPage() {
               imageSizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1280px) 20vw, 16vw"
             />
           ))
-        ) : games.length === 0 && !hasActiveFilters ? (
+        ) : rawGames.length === 0 && !hasActiveFilters ? (
           <div className="col-span-full py-12 text-center">
             <p className="text-muted-foreground">No games in the database yet.</p>
             {USE_REAL && (
               <p className="mt-2 text-sm text-muted-foreground">
-                Run{' '}
-                <code className="rounded bg-muted px-1.5 py-0.5 text-xs">npm run build:seed</code>,{' '}
+                Run <code className="rounded bg-muted px-1.5 py-0.5 text-xs">npm run build:seed</code>,{' '}
                 <code className="rounded bg-muted px-1.5 py-0.5 text-xs">npm run seed:queue</code>, then{' '}
                 <code className="rounded bg-muted px-1.5 py-0.5 text-xs">npm run ingest:worker</code>.
               </p>
             )}
           </div>
         ) : (
-          <div className="col-span-full py-12 text-center text-muted-foreground">
-            No games match your filters.
-          </div>
+          <div className="col-span-full py-12 text-center text-muted-foreground">No games match your filters.</div>
         )}
       </div>
 
-      {paginatedMode && totalPages > 1 && (
+      {paginatedMode && effectiveTotalPages > 1 && (
         <div className="mt-8 flex items-center justify-center gap-4">
           <Button
             variant="outline"
             size="sm"
-            disabled={page <= 1 || isLoading}
+            disabled={effectivePage <= 1 || isLoading}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
           >
             <ChevronLeft className="h-4 w-4 mr-1" />
             Previous
           </Button>
           <span className="text-sm text-muted-foreground">
-            Page {page} of {totalPages}
+            Page {effectivePage} of {effectiveTotalPages}
           </span>
           <Button
             variant="outline"
             size="sm"
-            disabled={page >= totalPages || isLoading}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={effectivePage >= effectiveTotalPages || isLoading}
+            onClick={() => setPage((p) => Math.min(effectiveTotalPages, p + 1))}
           >
             Next
             <ChevronRight className="h-4 w-4 ml-1" />

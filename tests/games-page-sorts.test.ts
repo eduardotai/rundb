@@ -23,7 +23,10 @@ import {
   getGamesPage,
   getAvailableGenresAsync,
   getAllReportsAsync,
+  applyGamesBrowseTransform,
 } from '../lib/data'
+
+import type { Game, GameStats, PerformanceTier } from '../lib/types'
 
 test('getGamesPage reports sort (starter) yields non-increasing counts', async () => {
   const reports = await getAllReportsAsync()
@@ -77,4 +80,69 @@ test('getGamesPage respects search + sort=year simultaneously', async () => {
   const res = await getGamesPage({ page: 1, pageSize: 3, sort: 'year', search: 'cyber' })
   assert(res.games.length === 1)
   assert(res.games[0].name.toLowerCase().includes('cyber'))
+})
+
+// Pure tests for the new applyGamesBrowseTransform (used by real-mode tier + reports UI)
+const makeGame = (id: string, name: string, year = 2020): Game => ({
+  id,
+  slug: id,
+  name,
+  coverImage: '',
+  genres: [],
+  releaseYear: year,
+  developer: 'Test',
+})
+
+const makeStats = (total: number, dominant: PerformanceTier = 'Good'): GameStats => ({
+  totalReports: total,
+  tierDistribution: { Excellent: 0, Good: 0, Playable: 0, Struggling: 0, Unplayable: 0, [dominant]: total },
+  avgFpsByResolution: {},
+  mostCommonPreset: null,
+  avgFpsOverall: 60,
+})
+
+const g1 = makeGame('g1', 'Alpha', 2023)
+const g2 = makeGame('g2', 'Bravo', 2021)
+const g3 = makeGame('g3', 'Charlie', 2024)
+
+const statsMap: Record<string, GameStats> = {
+  g1: makeStats(5, 'Excellent'),
+  g2: makeStats(12, 'Good'),
+  g3: makeStats(0),
+}
+
+test('applyGamesBrowseTransform filters by dominant tier', () => {
+  const res = applyGamesBrowseTransform([g1, g2, g3], statsMap, { tier: 'Excellent', sort: 'name' })
+  assert(res.length === 1)
+  assert(res[0].id === 'g1')
+})
+
+test('applyGamesBrowseTransform sorts by reports desc (with name tiebreak)', () => {
+  const res = applyGamesBrowseTransform([g1, g2, g3], statsMap, { sort: 'reports' })
+  assert(res[0].id === 'g2') // 12 reports
+  assert(res[1].id === 'g1') // 5
+  // g3 (0) last
+})
+
+test('applyGamesBrowseTransform name sort is A-Z', () => {
+  const res = applyGamesBrowseTransform([g3, g1, g2], statsMap, { sort: 'name' })
+  assert(res.map((g) => g.name).join(',') === 'Alpha,Bravo,Charlie')
+})
+
+test('applyGamesBrowseTransform year sort is newest first', () => {
+  const res = applyGamesBrowseTransform([g1, g2, g3], statsMap, { sort: 'year' })
+  assert(res[0].id === 'g3')
+  assert(res[1].id === 'g1')
+})
+
+test('applyGamesBrowseTransform excludes zero-report games under tier filter', () => {
+  const res = applyGamesBrowseTransform([g1, g2, g3], statsMap, { tier: 'Good', sort: 'reports' })
+  assert(res.length === 1)
+  assert(res[0].id === 'g2')
+})
+
+test('applyGamesBrowseTransform with no tier returns all (sorted)', () => {
+  const res = applyGamesBrowseTransform([g3, g1, g2], statsMap, { sort: 'reports' })
+  assert(res.length === 3)
+  assert(res[0].id === 'g2')
 })
