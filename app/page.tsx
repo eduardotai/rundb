@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { GameCard } from '@/components/game-card';
 import { ValueLoopExplainer } from '@/components/value-loop-explainer';
@@ -54,19 +54,6 @@ export default function Home() {
   const totalReports = countsQuery.data?.totalReports ?? 0;
   const totalGames = countsQuery.data?.totalGames ?? 0;
   const avgReportsPerGame = totalGames > 0 ? Math.round(totalReports / totalGames) : 0;
-
-  // Resilience for aggressive privacy tools / adblockers (the play.google.com/log + Supabase blocks some users see).
-  // If queries are still pending after a short time (common when blockers tarpit or drop requests),
-  // we still render with whatever we have + a clear notice instead of infinite skeletons.
-  const [showLoadingNotice, setShowLoadingNotice] = useState(false);
-  useMemo(() => {
-    const t = setTimeout(() => {
-      if (trendingQuery.isLoading && trending.length === 0) {
-        setShowLoadingNotice(true);
-      }
-    }, 2200);
-    return () => clearTimeout(t);
-  }, [trendingQuery.isLoading, trending.length]);
 
   return (
     <>
@@ -184,9 +171,12 @@ export default function Home() {
 
             <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
               <Button asChild size="lg" className="w-full sm:w-auto text-base px-8 bg-white text-black font-medium hover:bg-white/90 shadow-sm">
+                <Link href="/submit">Submit your first report</Link>
+              </Button>
+              <Button asChild size="lg" className="w-full sm:w-auto text-base px-8 bg-white text-black font-medium hover:bg-white/90 shadow-sm">
                 <Link href="/games">Browse Games</Link>
               </Button>
-              <Button asChild size="lg" variant="outline" className="w-full sm:w-auto text-base px-8 border-white/40 text-white hover:bg-white/10 hover:text-white">
+              <Button asChild size="lg" className="w-full sm:w-auto text-base px-8 bg-white text-black font-medium hover:bg-white/90 shadow-sm">
                 <Link href="/compatibility">Check My PC</Link>
               </Button>
             </div>
@@ -243,36 +233,27 @@ export default function Home() {
             // trending is empty (no games to rank, even after the all-time top-up + starter fallback).
             <div className="col-span-full rounded-2xl border border-dashed border-border py-10 text-center text-muted-foreground">
               <p>No trending games yet — community reports rank titles here as they come in. Browse the catalog or submit a report to get things moving.</p>
-              <Link
-                href="/games"
-                className="mt-2 inline-block text-sm text-primary hover:underline"
-              >
-                Browse all games
-              </Link>
+              <div className="mt-3 flex flex-col sm:flex-row items-center justify-center gap-x-3 gap-y-1 text-sm">
+                <Link href="/games" className="text-primary hover:underline">
+                  Browse all games
+                </Link>
+                <span className="hidden sm:inline text-muted-foreground/40">•</span>
+                <Link href="/submit" className="text-primary hover:underline font-medium">
+                  Submit your first report
+                </Link>
+              </div>
             </div>
           )}
         </div>
-
-        {/* Privacy tools / adblocker resilience notice — directly addresses the play.google.com/log ERR_BLOCKED_BY_CLIENT + stuck loading some users hit */}
-        {(showLoadingNotice || trendingQuery.isLoading) && trending.length === 0 && (
-          <div className="mt-3 text-center text-xs text-amber-400/90">
-            Still loading live data… If you use a strict ad blocker or Brave Shields, some requests (including Google telemetry during auth) get blocked.
-            The app works fine — try disabling the blocker for this site or check the Supabase connection.
-          </div>
-        )}
-
-        {trendingQuery.isFetching && trending.length > 0 && (
-          <div className="text-center text-sm text-muted-foreground mt-2">Refreshing trending…</div>
-        )}
-        {trendingQuery.isError && (
-          <div className="text-center text-sm text-amber-500 mt-2">Some live data unavailable — showing available results.</div>
-        )}
       </div>
 
       {/* How RunDB works — educational value loop (replaces previous trust bar) */}
       <div className="mb-12">
         <div className="mb-4 flex items-baseline justify-between">
           <h2 className="text-2xl font-semibold tracking-tight">How RunDB works</h2>
+          <Link href="/submit" className="text-sm text-primary hover:underline flex items-center gap-1">
+            Submit your first report <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
         </div>
         <ValueLoopExplainer variant="prominent" />
       </div>

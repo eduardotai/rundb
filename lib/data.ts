@@ -671,7 +671,7 @@ async function getStarterGameBySlug(slug: string): Promise<Game | undefined> {
  * Aligns with approved Master Plan for gradual real-data migration.
  */
 export async function getGameBySlugAsync(slug: string): Promise<Game | undefined> {
-  if (USE_REAL) {
+  if (USE_REAL && isSupabaseConfigured()) {
     try {
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
@@ -748,7 +748,7 @@ export async function getReportsForGameAsync(
   filters?: ReportFilters,
   limit: number = REPORTS_FETCH_HARD_CAP
 ): Promise<Report[]> {
-  if (USE_REAL) {
+  if (USE_REAL && isSupabaseConfigured()) {
     try {
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
@@ -1049,7 +1049,7 @@ async function getMockFilteredGlobalReports(filters: {
  * Full fallback + error handling.
  */
 export async function getAllReportsAsync(): Promise<Report[]> {
-  if (USE_REAL) {
+  if (USE_REAL && isSupabaseConfigured()) {
     try {
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
@@ -1107,7 +1107,7 @@ export async function getFilteredGlobalReportsAsync(filters: {
   minFps?: number
   tier?: import('./types').PerformanceTier
 }): Promise<Report[]> {
-  if (USE_REAL) {
+  if (USE_REAL && isSupabaseConfigured()) {
     try {
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
@@ -1205,7 +1205,7 @@ async function getMockPrediction(userPC: UserPC, gameId: string): Promise<Predic
  * Used by React Query in game detail page (Phase 3).
  */
 export async function computeGameStatsAsync(gameId: string): Promise<GameStats> {
-  if (USE_REAL) {
+  if (USE_REAL && isSupabaseConfigured()) {
     try {
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
@@ -1940,16 +1940,19 @@ export function useMyRig() {
  * @returns { game, isLoading, error, refetch, query }
  */
 export function useGame(slug: string) {
-  const query = useQuery<Game | undefined>({
+  const query = useQuery<Game | null>({
     queryKey: ['game', slug],
-    queryFn: () => getGameBySlugAsync(slug),
+    queryFn: async () => {
+      const g = await getGameBySlugAsync(slug)
+      return g ?? null
+    },
     enabled: !!slug,
     staleTime: 1000 * 60 * 5,
     gcTime: 1000 * 60 * 30,
   })
 
   return {
-    game: query.data ?? undefined,
+    game: query.data ?? null,
     isLoading: query.isLoading,
     error: query.error ? (query.error instanceof Error ? query.error.message : String(query.error)) : null,
     refetch: query.refetch,
