@@ -15,6 +15,7 @@ import {
   PerformanceTier,
   GraphicsPreset,
   GameStats,
+  Game,
   ReportFilters,
   PredictionResult,
 } from './types';
@@ -119,6 +120,53 @@ export function computeGameStatsFromReports(reports: Report[]): GameStats {
     mostCommonPreset,
     avgFpsOverall,
   };
+}
+
+export interface GamesBrowseTransformOptions {
+  tier?: PerformanceTier | '';
+  sort: 'reports' | 'name' | 'year';
+}
+
+function getDominantTier(stats?: GameStats): PerformanceTier | null {
+  if (!stats || stats.totalReports === 0) return null;
+  const entries = Object.entries(stats.tierDistribution) as [PerformanceTier, number][];
+  if (entries.length === 0) return null;
+  entries.sort((a, b) => b[1] - a[1]);
+  return entries[0][0];
+}
+
+/**
+ * Pure, testable transform for Browse Games page tier filtering and reports sort.
+ * Used by client when USE_REAL + needsGlobalTransform (tier or reports sort).
+ * Matches the expectations in app/games/page.tsx and data-logic contract.
+ */
+export function applyGamesBrowseTransform(
+  games: Game[],
+  statsMap: Record<string, GameStats>,
+  options: GamesBrowseTransformOptions
+): Game[] {
+  let result = [...games];
+
+  // Tier filter (dominant community tier from stats)
+  if (options.tier) {
+    result = result.filter((g) => getDominantTier(statsMap[g.id]) === options.tier);
+  }
+
+  // Sorting (reports uses stats counts for accuracy with client-computed stats)
+  if (options.sort === 'reports') {
+    result.sort((a, b) => {
+      const ca = statsMap[a.id]?.totalReports ?? 0;
+      const cb = statsMap[b.id]?.totalReports ?? 0;
+      if (cb !== ca) return cb - ca;
+      return a.name.localeCompare(b.name);
+    });
+  } else if (options.sort === 'name') {
+    result.sort((a, b) => a.name.localeCompare(b.name));
+  } else if (options.sort === 'year') {
+    result.sort((a, b) => (b.releaseYear ?? 0) - (a.releaseYear ?? 0));
+  }
+
+  return result;
 }
 
 // Small helper for UI
