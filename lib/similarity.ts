@@ -90,6 +90,90 @@ export interface MatchBreakdown {
   resolution: boolean;
 }
 
+export type TransferDirection = 'higher' | 'similar' | 'lower' | 'unknown';
+export type TransferMagnitude = 'none' | 'slight' | 'clear' | 'large';
+
+export interface HardwareTransfer {
+  direction: TransferDirection;
+  magnitude: TransferMagnitude;
+  /** Signed percent: positive = user GPU stronger than reporter. Null if unknown. */
+  gpuRelPercent: number | null;
+  userGpuPerf: number | null;
+  reportGpuPerf: number | null;
+  resolutionMatch: boolean;
+  /** MVP A: true only when resolution matches. */
+  settingsComparable: boolean;
+}
+
+const TRANSFER_SLIGHT = 0.08;
+const TRANSFER_CLEAR = 0.2;
+const TRANSFER_LARGE = 0.4;
+
+function resolveGpuPerf(raw: string, canon?: string): number | null {
+  const v =
+    getPerfIndexForRaw(raw) ??
+    (canon ? getPerfIndexForRaw(canon) : undefined) ??
+    null;
+  return v == null ? null : v;
+}
+
+function magnitudeFromAbsRel(absRel: number): TransferMagnitude {
+  if (absRel < TRANSFER_SLIGHT) return 'none';
+  if (absRel < TRANSFER_CLEAR) return 'slight';
+  if (absRel < TRANSFER_LARGE) return 'clear';
+  return 'large';
+}
+
+/**
+ * Signed hardware transfer from a community report toward the user's rig.
+ * MVP A: GPU perfIndex only. Does NOT estimate FPS.
+ */
+export function calculateHardwareTransfer(report: Report, rig: UserPC): HardwareTransfer {
+  const userGpuPerf = resolveGpuPerf(rig.gpu, rig.canonicalGpu);
+  const reportGpuPerf = resolveGpuPerf(report.gpu, report.canonicalGpu);
+  const resolutionMatch = !!report.resolution && report.resolution === rig.resolution;
+  const settingsComparable = resolutionMatch;
+
+  if (userGpuPerf == null || reportGpuPerf == null || reportGpuPerf === 0) {
+    return {
+      direction: 'unknown',
+      magnitude: 'none',
+      gpuRelPercent: null,
+      userGpuPerf,
+      reportGpuPerf,
+      resolutionMatch,
+      settingsComparable,
+    };
+  }
+
+  const rel = (userGpuPerf - reportGpuPerf) / reportGpuPerf;
+  const absRel = Math.abs(rel);
+  const magnitude = magnitudeFromAbsRel(absRel);
+  let direction: TransferDirection = 'similar';
+  if (magnitude !== 'none') {
+    direction = rel > 0 ? 'higher' : 'lower';
+  }
+
+  return {
+    direction,
+    magnitude,
+    gpuRelPercent: Math.round(rel * 100),
+    userGpuPerf,
+    reportGpuPerf,
+    resolutionMatch,
+    settingsComparable,
+  };
+}
+
+export function shouldDisplayTransfer(
+  transfer: HardwareTransfer,
+  opts: { looserMode: boolean }
+): boolean {
+  if (transfer.direction === 'unknown') return opts.looserMode;
+  if (transfer.magnitude === 'none') return false;
+  return true;
+}
+
 function bucketByPerfDelta(
   reportRaw: string,
   reportCanon: string | undefined,
@@ -142,6 +226,7 @@ export interface RigMatch {
   report: Report;
   score: number;
   breakdown: MatchBreakdown;
+  transfer: HardwareTransfer;
 }
 
 export function rankAndFilterMatches(
@@ -153,7 +238,8 @@ export function rankAndFilterMatches(
 
   let matches: RigMatch[] = reports.map((report) => {
     const breakdown = calculateMatchBreakdown(report, rig);
-    return { report, score: breakdown.score, breakdown };
+    const transfer = calculateHardwareTransfer(report, rig);
+    return { report, score: breakdown.score, breakdown, transfer };
   });
 
   matches = matches.filter((m) => m.score >= minScore);
