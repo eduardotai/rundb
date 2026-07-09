@@ -72,7 +72,9 @@ export function MatchFeed({ rig, allGames }: MatchFeedProps) {
         <Users className="h-4 w-4 text-primary" />
         {loading
           ? 'Finding rigs like yours...'
-          : `${matches.length} report${matches.length === 1 ? '' : 's'} from rigs like yours`}
+          : usingLooserMatches
+            ? `${matches.length} report${matches.length === 1 ? '' : 's'} from less similar rigs — with expected gap for your hardware`
+            : `${matches.length} report${matches.length === 1 ? '' : 's'} from rigs like yours`}
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -130,6 +132,12 @@ export function MatchFeed({ rig, allGames }: MatchFeedProps) {
         </div>
       </div>
 
+      {usingLooserMatches && sort === 'fps' && !loading && matches.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Sorted by reporter FPS — check the “For your rig” gap so high-end outliers don’t mislead.
+        </p>
+      )}
+
       {loading ? (
         <div className="grid gap-3 md:grid-cols-2">
           {[0, 1, 2, 3].map((item) => (
@@ -148,6 +156,8 @@ export function MatchFeed({ rig, allGames }: MatchFeedProps) {
               }}
               userRig={rig}
               breakdown={match.breakdown}
+              transfer={match.transfer}
+              looserMode={usingLooserMatches}
               showGame
             />
           ))}
