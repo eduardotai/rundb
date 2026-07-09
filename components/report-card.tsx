@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Game, Report, UserPC } from '@/lib/types';
-import type { MatchBreakdown } from '@/lib/similarity';
+import type { MatchBreakdown, HardwareTransfer } from '@/lib/similarity';
+import { shouldDisplayTransfer } from '@/lib/similarity';
 import { PerformanceBadge } from './performance-badge';
 import { formatRelativeTime, calculateHardwareAwareSimilarity as calculateSimilarity } from '@/lib/data';
 import { normalizeHardwareSync } from '@/lib/normalize-hardware';
@@ -46,6 +47,9 @@ interface ReportCardProps {
   compact?: boolean;
   showGame?: boolean;
   breakdown?: MatchBreakdown;
+  transfer?: HardwareTransfer | null;
+  /** When true, show unknown-transfer chip (“Can’t compare…”) */
+  looserMode?: boolean;
 }
 
 export function ReportCard({
@@ -58,6 +62,8 @@ export function ReportCard({
   compact = false,
   showGame = false,
   breakdown,
+  transfer,
+  looserMode = false,
 }: ReportCardProps) {
   const [expanded, setExpanded] = useState(false);
   // Which way the current user has voted (drives button highlight + undo).
@@ -220,6 +226,10 @@ export function ReportCard({
             </>
           )}
         </div>
+      )}
+
+      {transfer && (
+        <TransferRow transfer={transfer} looserMode={looserMode} />
       )}
 
       <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
@@ -417,5 +427,59 @@ function MatchChip({ label, level }: { label: string; level: 'exact' | 'close' |
     <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-medium', styles[level])}>
       {label} {text}
     </span>
+  );
+}
+
+function transferDirectionLabel(t: HardwareTransfer): string {
+  switch (t.direction) {
+    case 'higher':
+      if (t.magnitude === 'slight') return 'Slightly higher expected';
+      if (t.magnitude === 'large') return 'Much higher class of hardware';
+      return 'Likely higher for your rig';
+    case 'lower':
+      if (t.magnitude === 'slight') return 'Slightly lower expected';
+      if (t.magnitude === 'large') return 'Much lower class of hardware';
+      return 'Likely lower for your rig';
+    case 'similar':
+      return 'About the same';
+    case 'unknown':
+    default:
+      return 'Can’t compare hardware power';
+  }
+}
+
+function TransferRow({
+  transfer,
+  looserMode,
+}: {
+  transfer: HardwareTransfer;
+  looserMode: boolean;
+}) {
+  if (!shouldDisplayTransfer(transfer, { looserMode })) return null;
+
+  const gap =
+    transfer.gpuRelPercent != null
+      ? `GPU ${transfer.gpuRelPercent > 0 ? '+' : ''}${transfer.gpuRelPercent}% vs reporter`
+      : null;
+
+  return (
+    <div
+      className="mt-1.5 flex flex-wrap items-center gap-1.5"
+      title="Based on catalog GPU performance indexes. Games vary; this is not a measured result for your PC."
+    >
+      <span className="inline-flex items-center rounded-full border border-border bg-muted/30 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+        For your rig: {transferDirectionLabel(transfer)}
+      </span>
+      {gap && (
+        <span className="rounded-full border border-border/80 px-2 py-0.5 text-[10px] tabular-nums text-muted-foreground/90">
+          {gap}
+        </span>
+      )}
+      {!transfer.settingsComparable && transfer.direction !== 'unknown' && (
+        <span className="rounded-full border border-amber-500/20 bg-amber-500/5 px-2 py-0.5 text-[10px] text-amber-200/80">
+          Different resolution — not same-settings
+        </span>
+      )}
+    </div>
   );
 }
