@@ -104,17 +104,25 @@ export function generateSteamOpenIDLoginUrl(returnTo: string, state: string): st
 export async function verifySteamOpenIDCallback(
   params: URLSearchParams | Record<string, string>
 ): Promise<string | null> {
-  const p = params instanceof URLSearchParams ? params : new URLSearchParams(params as any);
+  const incoming = params instanceof URLSearchParams ? params : new URLSearchParams(params as any);
 
   // Must have the required fields
-  if (!p.get('openid.claimed_id') || !p.get('openid.sig')) {
+  if (!incoming.get('openid.claimed_id') || !incoming.get('openid.sig')) {
     return null;
   }
 
-  // Switch to check_authentication mode and re-POST all openid params
-  p.set('openid.mode', 'check_authentication');
+  // OpenID check_authentication expects only openid.* fields (exact copies of the
+  // assertion, with mode flipped). Drop our CSRF `state` and any other non-openid
+  // query params so Steam does not reject the verification POST.
+  const openidOnly = new URLSearchParams();
+  for (const [key, value] of incoming.entries()) {
+    if (key.startsWith('openid.')) {
+      openidOnly.append(key, value);
+    }
+  }
+  openidOnly.set('openid.mode', 'check_authentication');
 
-  const body = p.toString();
+  const body = openidOnly.toString();
 
   const response = await fetch(STEAM_OPENID_ENDPOINT, {
     method: 'POST',
@@ -131,7 +139,7 @@ export async function verifySteamOpenIDCallback(
 
   // Steam returns "ns:... \n is_valid:true" (or false)
   if (text.includes('is_valid:true')) {
-    const claimed = p.get('openid.claimed_id') || p.get('openid.identity') || '';
+    const claimed = openidOnly.get('openid.claimed_id') || openidOnly.get('openid.identity') || '';
     // Format: https://steamcommunity.com/openid/id/76561197960287930
     const match = claimed.match(/\/id\/(\d{17})$/);
     return match ? match[1] : null;
