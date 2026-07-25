@@ -1,19 +1,19 @@
 /* ===========================================================================
    Build Dashboard — "Flight Recorder / Telemetry Console" aesthetic.
    Scoped under .dash so it never leaks into the product UI.
-   Builds on the existing ProtonDB navy + cyan phosphor tokens (globals.css).
+   Aligned with x.ai black / cool phosphor (Signal-adjacent).
    =========================================================================== */
 
 .dash {
-  --phosphor: #67e8f9;
-  --phosphor-dim: #22d3ee;
-  --grid-line: rgba(103, 232, 249, 0.06);
-  --hair: rgba(148, 163, 184, 0.16);
-  --hair-strong: rgba(148, 163, 184, 0.28);
-  --panel: #0d1424;
-  --panel-2: #0a101e;
-  --ink: #e2e8f0;
-  --ink-dim: #94a3b8;
+  --phosphor: #a5d8ff;
+  --phosphor-dim: #7eb6e8;
+  --grid-line: rgba(165, 216, 255, 0.06);
+  --hair: rgba(255, 255, 255, 0.12);
+  --hair-strong: rgba(255, 255, 255, 0.22);
+  --panel: #0c1219;
+  --panel-2: #080c12;
+  --ink: #e8f0f8;
+  --ink-dim: #8ba0b5;
   --ink-faint: #5b6b82;
 
   position: relative;
@@ -21,9 +21,9 @@
   color: var(--ink);
   font-family: var(--font-geist-sans);
   background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(34, 211, 238, 0.07), transparent 60%),
-    radial-gradient(900px 500px at -10% 10%, rgba(103, 232, 249, 0.05), transparent 55%),
-    linear-gradient(to bottom, #070b14, #0a0f1c 40%);
+    radial-gradient(1200px 600px at 80% -10%, rgba(165, 216, 255, 0.06), transparent 60%),
+    radial-gradient(900px 500px at -10% 10%, rgba(126, 182, 232, 0.04), transparent 55%),
+    linear-gradient(to bottom, #05070a, #080c12 40%);
 }
 
 /* Faint blueprint grid + scanline atmosphere */
@@ -156,7 +156,7 @@
 .dash-type { font-family: var(--font-geist-mono), monospace; font-size: 0.66rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 0.15rem 0.45rem; border-radius: 5px; border: 1px solid transparent; }
 .dt-feat  { color: #34d399; background: rgba(16,185,129,0.10); border-color: rgba(16,185,129,0.32); }
 .dt-fix   { color: #fbbf24; background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.32); }
-.dt-docs  { color: #67e8f9; background: rgba(103,232,249,0.10); border-color: rgba(103,232,249,0.32); }
+.dt-docs  { color: #a5d8ff; background: rgba(165,216,255,0.10); border-color: rgba(165,216,255,0.32); }
 .dt-chore { color: #94a3b8; background: rgba(148,163,184,0.10); border-color: rgba(148,163,184,0.28); }
 .dt-refactor { color: #c084fc; background: rgba(168,85,247,0.10); border-color: rgba(168,85,247,0.30); }
 .dt-merge { color: #f472b6; background: rgba(236,72,153,0.10); border-color: rgba(236,72,153,0.30); }

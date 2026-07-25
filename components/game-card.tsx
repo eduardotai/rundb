@@ -6,11 +6,7 @@ import { Game, GameStats, PerformanceTier } from '@/lib/types';
 import { PerformanceBadge } from './performance-badge';
 import { GameCoverFrame } from '@/components/game-cover-frame';
 import { cn } from '@/lib/utils';
-import { ShieldCheck, Sparkles } from 'lucide-react';
-
-// Phase 3: GameCard now supports optional precomputed `stats` (from adapter + computeGameStatsFromReports in parent RQ data).
-// When provided (e.g. home trending, games list after wiring): uses real data for badges/counts/FPS.
-// When omitted: renders the empty-stats state (parents are expected to precompute via batched adapters).
+import { Sparkles } from 'lucide-react';
 
 const EMPTY_STATS: GameStats = {
   totalReports: 0,
@@ -20,10 +16,18 @@ const EMPTY_STATS: GameStats = {
   avgFpsOverall: 0,
 };
 
+const tierAccentClass: Record<PerformanceTier, string> = {
+  Excellent: 'tier-accent-excellent',
+  Good: 'tier-accent-good',
+  Playable: 'tier-accent-playable',
+  Struggling: 'tier-accent-struggling',
+  Unplayable: 'tier-accent-unplayable',
+};
+
 interface GameCardProps {
   game: Game;
   className?: string;
-  /** Optional precomputed stats from real adapter data (Phase 3). Falls back to sync if omitted. */
+  /** Optional precomputed stats from real adapter data (Phase 3). Falls back to empty if omitted. */
   stats?: GameStats;
   /**
    * Use priority for LCP/featured game cover (e.g. first trending on home page).
@@ -45,11 +49,9 @@ export function GameCard({
   variant = 'default',
 }: GameCardProps) {
   const isCompact = variant === 'compact';
-  // Phase 3: prefer provided real stats (from parent RQ + adapter reports), else empty-state.
   const stats = providedStats || EMPTY_STATS;
   const reportCount = stats.totalReports;
 
-  // Dominant tier only when there are real reports (avoid "Excellent" on empty games)
   const dominantTier: PerformanceTier | null =
     reportCount > 0
       ? ((Object.entries(stats.tierDistribution) as [PerformanceTier, number][])
@@ -58,15 +60,16 @@ export function GameCard({
 
   const avgFps1440 = stats.avgFpsByResolution['2560x1440'] || stats.avgFpsByResolution['1920x1080'];
 
-  // Error state for real covers (IGDB/Steam/Supabase etc can transiently fail; graceful fallback, no layout shift)
   const [imgError, setImgError] = useState(false);
 
   return (
     <Link
       href={`/games/${game.slug}`}
       className={cn(
-        'group block overflow-hidden border border-border bg-card transition-all hover:border-slate-600/70 hover:shadow-lg',
-        isCompact ? 'rounded-xl' : 'rounded-2xl',
+        'theme-card group block overflow-hidden border border-border bg-card',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+        dominantTier && 'tier-accent',
+        dominantTier && tierAccentClass[dominantTier],
         className
       )}
     >
@@ -84,81 +87,56 @@ export function GameCard({
             onError={() => setImgError(true)}
           />
         ) : (
-          /* Beautiful consistent fallback for failed real cover loads (keeps visual weight identical) */
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-muted via-muted to-muted/60 text-center p-3">
-            <div className="text-[10px] font-mono uppercase tracking-[2px] text-muted-foreground/70 mb-1">COVER</div>
-            <div className="text-sm font-semibold text-foreground/90 leading-tight line-clamp-2">
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-muted via-muted to-muted/60 p-3 text-center">
+            <div className="mb-1 font-mono text-[10px] uppercase tracking-[2px] text-muted-foreground/70">
+              COVER
+            </div>
+            <div className="line-clamp-2 text-sm font-semibold leading-tight text-foreground/90">
               {game.name}
             </div>
           </div>
         )}
 
-        {/* Subtle gradient always present for text legibility on real art or fallback */}
-        <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/80 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/85 to-transparent" />
 
-        <div
-          className={cn(
-            'absolute left-2 top-2 z-20 inline-flex max-w-[calc(100%-1rem)] items-center gap-1 rounded-md border px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg backdrop-blur-md',
-            reportCount > 0
-              ? 'border-cyan-300/25 bg-cyan-950/75'
-              : 'border-amber-300/30 bg-amber-950/75'
-          )}
-        >
-          {reportCount > 0 ? (
-            <ShieldCheck className="h-3 w-3 shrink-0 text-cyan-200" />
-          ) : (
-            <Sparkles className="h-3 w-3 shrink-0 text-amber-200" />
-          )}
-          <span className="truncate">{reportCount > 0 ? (isCompact ? 'Tested' : 'Community tested') : 'Needs reports'}</span>
-        </div>
-
-        {/* Optional attribution polish (subtle, only when provided by real cover source; non-breaking) */}
-        {game.coverAttribution && !imgError && (
-          <div className="absolute bottom-1 right-1 rounded bg-black/60 px-1 py-px text-[8px] leading-none text-white/70 backdrop-blur-sm pointer-events-none">
-            {game.coverAttribution.length > 28 ? game.coverAttribution.slice(0, 25) + '…' : game.coverAttribution}
-          </div>
-        )}
-
-        {/* Cover footer: tier badge + report CTA in one legible bar */}
         {reportCount === 0 ? (
           <div
             className={cn(
-              'absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/75 to-transparent',
+              'absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/70 to-transparent',
               isCompact ? 'px-2 pb-2 pt-8' : 'px-3 pb-3 pt-10'
             )}
           >
             <div
               className={cn(
-                'flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-400/35 bg-emerald-500 font-semibold text-white shadow-lg transition-colors group-hover:border-emerald-300/50 group-hover:bg-emerald-400',
-                isCompact ? 'px-2.5 py-1.5 text-[11px]' : 'px-3 py-2 text-xs'
+                'flex w-full items-center justify-center gap-1.5 rounded-md border border-white/15 bg-white/10 font-semibold text-foreground',
+                isCompact ? 'px-2 py-1.5 text-[11px]' : 'px-3 py-2 text-xs'
               )}
             >
               <Sparkles className={cn('shrink-0', isCompact ? 'h-3.5 w-3.5' : 'h-4 w-4')} />
               <span className="text-center leading-tight">
                 <span className="font-bold">New</span>
-                <span className="font-medium opacity-90"> · Be the first to report</span>
+                <span className="font-medium opacity-90"> · First report</span>
               </span>
             </div>
           </div>
         ) : (
           <div
             className={cn(
-              'absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/95 via-black/70 to-transparent',
+              'absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/95 via-black/65 to-transparent',
               isCompact ? 'px-2 pb-2 pt-7' : 'px-3 pb-3 pt-10'
             )}
           >
             {dominantTier && (
               <PerformanceBadge
                 tier={dominantTier}
-                size={isCompact ? 'md' : 'lg'}
-                className="shrink-0 shadow-md ring-1 ring-white/15"
+                size={isCompact ? 'sm' : 'md'}
+                className="shrink-0 shadow-sm"
               />
             )}
-
             <div
               className={cn(
-                'ml-auto shrink-0 rounded-lg border border-white/10 bg-black/75 font-semibold text-white shadow-md backdrop-blur-sm',
-                isCompact ? 'px-2 py-1 text-[11px]' : 'px-3 py-1.5 text-xs'
+                'ml-auto shrink-0 rounded-md border border-white/10 bg-black/70 font-semibold tabular-nums text-white',
+                isCompact ? 'px-2 py-0.5 text-[11px]' : 'px-2.5 py-1 text-xs'
               )}
             >
               {reportCount} {reportCount === 1 ? 'report' : 'reports'}
@@ -167,51 +145,44 @@ export function GameCard({
         )}
       </div>
 
-      <div className={isCompact ? 'p-2.5' : 'p-4'}>
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <h3
-              className={cn(
-                'font-semibold leading-tight text-foreground transition-colors group-hover:text-primary',
-                isCompact ? 'text-sm line-clamp-2' : 'text-base'
-              )}
-            >
-              {game.name}
-            </h3>
-            <p className={cn('mt-0.5 text-muted-foreground truncate', isCompact ? 'text-[11px]' : 'text-xs')}>
-              {game.releaseYear} • {game.developer}
-            </p>
-          </div>
-        </div>
+      <div className={isCompact ? 'p-2.5' : 'p-3.5'}>
+        <h3
+          className={cn(
+            'font-semibold leading-tight text-foreground transition-colors group-hover:text-primary',
+            isCompact ? 'line-clamp-2 text-sm' : 'text-base'
+          )}
+        >
+          {game.name}
+        </h3>
+        <p className={cn('mt-0.5 truncate text-muted-foreground', isCompact ? 'text-[11px]' : 'text-xs')}>
+          {game.releaseYear} · {game.developer}
+        </p>
 
         <div className={cn('flex flex-wrap gap-1', isCompact ? 'mt-1.5' : 'mt-2')}>
           {game.genres.slice(0, isCompact ? 2 : 3).map((genre) => (
             <span
               key={genre}
-              className={cn(
-                'rounded bg-muted font-medium text-muted-foreground',
-                isCompact ? 'px-1.5 py-px text-[10px]' : 'px-1.5 py-px text-[10px]'
-              )}
+              className="rounded bg-muted px-1.5 py-px text-[10px] font-medium text-muted-foreground"
             >
               {genre}
             </span>
           ))}
         </div>
 
-        {!isCompact && avgFps1440 && (
-          <div className="mt-3 text-sm">
-            <span className="font-mono text-lg font-semibold tabular-nums text-foreground">
+        {!isCompact && avgFps1440 ? (
+          <div className="mt-2.5 text-sm">
+            <span className="font-mono text-lg font-semibold tabular-nums text-[var(--highlight)]">
               {avgFps1440}
             </span>
             <span className="ml-1 text-muted-foreground">avg FPS @ 1440p</span>
           </div>
-        )}
+        ) : null}
 
-        {!isCompact && stats.mostCommonPreset && (
+        {!isCompact && stats.mostCommonPreset ? (
           <div className="mt-1 text-xs text-muted-foreground">
             Most common: <span className="font-medium text-foreground">{stats.mostCommonPreset}</span>
           </div>
-        )}
+        ) : null}
       </div>
     </Link>
   );

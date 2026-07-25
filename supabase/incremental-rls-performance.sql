@@ -58,14 +58,11 @@ DROP POLICY IF EXISTS "Users can read their own reports" ON public.reports;
 CREATE POLICY "Users can read their own reports" ON public.reports
   FOR SELECT USING (user_id = (SELECT auth.uid()));
 
+-- Client INSERT closed (service_role path only). Keep DROP so re-running this script
+-- does not leave a stale open-insert policy; never re-CREATE one here.
 DROP POLICY IF EXISTS "Anyone can insert reports (self or anonymous)" ON public.reports;
-CREATE POLICY "Anyone can insert reports (self or anonymous)" ON public.reports
-  FOR INSERT
-  TO anon, authenticated
-  WITH CHECK (
-    status IN ('pending', 'approved')
-    AND ((user_id IS NULL) OR (user_id = (SELECT auth.uid())))
-  );
+DROP POLICY IF EXISTS "Authenticated users can insert reports" ON public.reports;
+REVOKE INSERT ON public.reports FROM anon, authenticated;
 
 DROP POLICY IF EXISTS "Users can update own pending reports" ON public.reports;
 CREATE POLICY "Users can update own pending reports" ON public.reports

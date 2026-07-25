@@ -2,6 +2,7 @@
 
 import { Cpu, BarChart3, Users, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Reveal } from '@/components/motion/reveal';
 
 interface ValueLoopExplainerProps {
   variant?: 'prominent' | 'compact';
@@ -34,7 +35,7 @@ export function ValueLoopExplainer({ variant = 'prominent' }: ValueLoopExplainer
   const isProminent = variant === 'prominent';
 
   return (
-    <div
+    <Reveal
       className={cn(
         'rounded-2xl border border-border bg-card',
         isProminent ? 'p-6' : 'p-4'
@@ -46,13 +47,16 @@ export function ValueLoopExplainer({ variant = 'prominent' }: ValueLoopExplainer
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="motion-stagger grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {steps.map((step, index) => {
           const Icon = step.icon;
           return (
-            <div key={index} className="relative flex gap-3">
-              <div className="relative mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary/5">
-                <Icon className="h-4 w-4 text-primary" />
+            <div
+              key={index}
+              className="group/step relative flex gap-3 transition-transform duration-200 ease-out hover:-translate-y-0.5 motion-reduce:hover:translate-y-0"
+            >
+              <div className="relative mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-muted transition-colors duration-200 group-hover/step:border-white/20 group-hover/step:bg-secondary">
+                <Icon className="h-4 w-4 text-foreground transition-transform duration-200 group-hover/step:scale-110" />
                 <span className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-primary font-mono text-[9px] font-bold leading-none text-primary-foreground">
                   {index + 1}
                 </span>
@@ -61,7 +65,6 @@ export function ValueLoopExplainer({ variant = 'prominent' }: ValueLoopExplainer
                 <div className="text-sm font-semibold tracking-tight">{step.title}</div>
                 <p className="text-xs leading-snug text-muted-foreground">{step.desc}</p>
               </div>
-              {/* Connector arrow between steps on wide layout */}
               {index < steps.length - 1 && (
                 <span aria-hidden="true" className="absolute -right-3 top-2 hidden text-muted-foreground/40 lg:block">
                   →
@@ -77,6 +80,6 @@ export function ValueLoopExplainer({ variant = 'prominent' }: ValueLoopExplainer
           More good reports = smarter compatibility for you and the community.
         </div>
       )}
-    </div>
+    </Reveal>
   );
 }

@@ -67,11 +67,11 @@ function FooterIconStandby({ label, children }: { label: string; children: React
 
 export function SiteFooter() {
   return (
-    <footer className="border-t border-border py-3">
-      <div className="mx-auto flex max-w-7xl flex-col items-center gap-1 px-4 text-center">
+    <footer className="theme-footer">
+      <div className="mx-auto flex max-w-7xl flex-col items-center gap-1.5 px-4 text-center">
         <div className="font-semibold tracking-tight text-xs">
-          <span className="text-primary">Run</span>
-          <span className="text-foreground">DB</span>
+          <span className="text-foreground">Run</span>
+          <span className="text-muted-foreground">DB</span>
         </div>
 
         <p className="text-[10px] leading-tight text-muted-foreground">

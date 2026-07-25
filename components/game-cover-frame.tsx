@@ -59,7 +59,8 @@ export function GameCoverFrame({
         fill
         className={cn(
           'object-contain object-center',
-          hoverZoom && 'transition-transform duration-300 group-hover:scale-[1.03]'
+          hoverZoom &&
+            'transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.04] motion-reduce:transition-none motion-reduce:group-hover:scale-100'
         )}
         sizes={sizes}
         quality={quality}

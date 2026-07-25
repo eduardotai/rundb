@@ -195,19 +195,13 @@ CREATE POLICY "Users can delete own report votes" ON public.report_votes
 DROP POLICY IF EXISTS "Anyone can insert reports (self or anonymous)" ON public.reports;
 DROP POLICY IF EXISTS "Authenticated users can insert reports" ON public.reports;
 
--- Compatible with both submitReportAction (approved immediate + defaults 0 for counters) and RPC (pending).
-CREATE POLICY "Anyone can insert reports (self or anonymous)" ON public.reports
-  FOR INSERT
-  TO anon, authenticated
-  WITH CHECK (
-    status IN ('pending', 'approved')
-    AND ((user_id IS NULL) OR (user_id = auth.uid()))
-  );
+-- Client INSERT closed: submitReportAction inserts via service_role after auth + rate limits.
+-- Do not re-create open INSERT policies or GRANT INSERT to anon/authenticated (see incremental-security-rls.sql).
+REVOKE INSERT ON public.reports FROM anon, authenticated;
 
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
 GRANT SELECT ON public.games, public.reports, public.profiles TO anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.report_votes TO authenticated;
-GRANT INSERT ON public.reports TO anon, authenticated;
 
 DO $$
 DECLARE

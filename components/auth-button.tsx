@@ -75,7 +75,7 @@ export function AuthButton({ user }: AuthButtonProps) {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-64 p-1.5">
           <div className="flex items-center gap-3 px-2 py-2.5">
-            <div className="h-10 w-10 rounded-full overflow-hidden border border-[#334155] bg-muted flex-shrink-0 flex items-center justify-center text-sm font-semibold">
+            <div className="h-10 w-10 rounded-full overflow-hidden border border-border bg-muted flex-shrink-0 flex items-center justify-center text-sm font-semibold">
               {avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -98,7 +98,7 @@ export function AuthButton({ user }: AuthButtonProps) {
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={() => (window.location.href = '/profile')}
-            className="group cursor-pointer py-2 focus:bg-[#334155]"
+            className="group cursor-pointer py-2 focus:bg-accent"
           >
             <User className="mr-2 h-4 w-4 text-muted-foreground group-focus:text-foreground" />
             <span className="flex-1">Profile &amp; My Rig</span>
@@ -106,7 +106,7 @@ export function AuthButton({ user }: AuthButtonProps) {
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() => (window.location.href = '/my-reports')}
-            className="group cursor-pointer py-2 focus:bg-[#334155]"
+            className="group cursor-pointer py-2 focus:bg-accent"
           >
             <FileText className="mr-2 h-4 w-4 text-muted-foreground group-focus:text-foreground" />
             <span className="flex-1">My Reports</span>

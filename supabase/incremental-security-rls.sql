@@ -40,21 +40,14 @@ CREATE POLICY "Users can update own profile" ON public.profiles
 DROP POLICY IF EXISTS "Anyone can insert reports (self or anonymous)" ON public.reports;
 DROP POLICY IF EXISTS "Authenticated users can insert reports" ON public.reports;
 
--- Compatible with submitReportAction (direct insert with status='approved' for immediate publish + optional moderator_notes for unknown-hw prefix)
--- and submit_report RPC (pending). The server action is the live submission path used by the UI.
-CREATE POLICY "Anyone can insert reports (self or anonymous)" ON public.reports
-  FOR INSERT
-  TO anon, authenticated
-  WITH CHECK (
-    status IN ('pending', 'approved')
-    AND ((user_id IS NULL) OR (user_id = auth.uid()))
-  );
+-- Client-side INSERT is closed: anon/authenticated must not write reports via PostgREST.
+-- submitReportAction validates, rate-limits, and inserts with createServiceClient()
+-- (service_role bypasses RLS) — same pattern as updateReportAction / moderateReportAction.
+REVOKE INSERT ON public.reports FROM anon, authenticated;
 
--- Owners can read their own reports (any status). Without this, insert().select()
--- in submitReportAction is denied by RLS on the RETURNING row (error 42501
--- "new row violates row-level security policy for table reports") because the
--- only other SELECT policy restricts reads to status = 'approved'. This also lets
--- the rate-limit / duplicate-detection count queries see the user's own pending rows.
+-- Owners can read their own reports (any status). Lets rate-limit / duplicate-detection
+-- count queries in submitReportAction see the user's own rows (including non-approved).
+-- Public SELECT of status='approved' remains via the separate public-read policy.
 DROP POLICY IF EXISTS "Users can read their own reports" ON public.reports;
 
 CREATE POLICY "Users can read their own reports" ON public.reports
