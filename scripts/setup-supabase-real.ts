@@ -55,6 +55,10 @@ const INCREMENTAL_SQL_FILES = [
     path: resolve(process.cwd(), 'supabase/incremental-security-rls.sql'),
     label: 'security RLS hardening',
   },
+  {
+    path: resolve(process.cwd(), 'supabase/incremental-steam-linked-accounts.sql'),
+    label: 'Steam linked_accounts + profile steam denorm columns',
+  },
 ]
 
 function loadEnvMap(): Record<string, string> {

@@ -57,3 +57,11 @@ FOR EACH ROW EXECUTE FUNCTION update_game_report_count();
 
 -- Note: Backfill for existing:
 -- UPDATE games g SET report_count = (SELECT count(*) FROM reports r WHERE r.game_id = g.id AND r.status = 'approved');
+
+-- =============================================================================
+-- Steam account linking (Plan 2)
+-- Full CREATE lives in supabase/incremental-steam-linked-accounts.sql so existing
+-- projects can apply it without re-running this truncated schema.sql.
+-- Required for /api/steam/start-link + /auth/steam/callback (linked_accounts upsert).
+-- =============================================================================
+-- See: supabase/incremental-steam-linked-accounts.sql
