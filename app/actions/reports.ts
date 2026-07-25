@@ -209,8 +209,50 @@ export async function submitReportAction(input: SubmitReportInput): Promise<Repo
       throw new Error(insertErr?.message || 'Failed to submit report. Please try again.')
     }
 
+    // Ensure the public nickname is available for report attribution.
+    // Sign-up stores username in auth user_metadata; profiles.username may still be empty
+    // until the user edits their profile. Sync it so ReportCard enrichment can show "by Nick".
+    const metaUsername =
+      typeof (user.user_metadata as { username?: unknown } | undefined)?.username === 'string'
+        ? String((user.user_metadata as { username?: string }).username).trim()
+        : ''
+    let reporterUsername: string | null = metaUsername || null
+    let reporterAvatar: string | null =
+      typeof (user.user_metadata as { avatar_url?: unknown } | undefined)?.avatar_url === 'string'
+        ? String((user.user_metadata as { avatar_url?: string }).avatar_url)
+        : null
+    let reporterBadge: import('@/lib/types').CredibilityBadge | null = null
+    try {
+      const { data: existingProf } = await service
+        .from('profiles')
+        .select('username, avatar_url, credibility_badge')
+        .eq('id', userId)
+        .maybeSingle()
+      const existingName =
+        typeof existingProf?.username === 'string' ? existingProf.username.trim() : ''
+      if (existingName) {
+        reporterUsername = existingName
+      } else if (metaUsername) {
+        await service.from('profiles').upsert({ id: userId, username: metaUsername })
+        reporterUsername = metaUsername
+      }
+      if (existingProf?.avatar_url) reporterAvatar = String(existingProf.avatar_url)
+      if (existingProf?.credibility_badge) {
+        reporterBadge = existingProf.credibility_badge as import('@/lib/types').CredibilityBadge
+      }
+    } catch (syncErr: any) {
+      console.warn('[submitReportAction] profile username sync failed (non-fatal):', syncErr?.message || syncErr)
+    }
+
     // 4. Return mapped (status is live immediately unless DB-side automation changes it)
-    return mapDbReportToReport(inserted)
+    const mapped = mapDbReportToReport(inserted)
+    mapped.reporter = {
+      id: userId,
+      username: reporterUsername,
+      avatarUrl: reporterAvatar,
+      credibilityBadge: reporterBadge,
+    }
+    return mapped
   } catch (err: any) {
     // Ensure every code path results in a thrown Error with message (never raw unhandled
     // exception or rejected promise from supabase fetch). This prevents Next.js from

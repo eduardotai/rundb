@@ -225,6 +225,20 @@ function SignUpForm() {
         return;
       }
 
+      // Persist nickname onto public profiles so report cards can show "by {username}".
+      // Sign-up only puts it in auth user_metadata by default; ReportCard enrichment reads profiles.
+      const newUserId = data.user?.id ?? data.session?.user?.id;
+      if (newUserId && values.username) {
+        try {
+          await supabase.from('profiles').upsert({
+            id: newUserId,
+            username: values.username,
+          });
+        } catch (profileErr) {
+          console.warn('[signup] profile username upsert failed (non-fatal):', profileErr);
+        }
+      }
+
       if (data.session) {
         showUserSuccess('Account created!');
         // refresh() re-renders server components (e.g. SiteHeader) with the new auth

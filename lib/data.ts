@@ -792,6 +792,9 @@ export { filterReports } from './data-logic'
  * Used so game-specific report pages and ReportCard can show "reported by X" + badges.
  * Requires the public profiles SELECT policy (added for this). Falls back silently.
  * Only runs in real mode; distinct userIds are batched to avoid N+1.
+ *
+ * Always attaches a `reporter` object when `userId` is present so the UI can show
+ * nickname attribution (falls back to "Anonymous" when username is empty).
  */
 async function enrichReportsWithReporters(reports: Report[]): Promise<Report[]> {
   if (!USE_REAL || !isSupabaseConfigured() || reports.length === 0) return reports
@@ -806,20 +809,29 @@ async function enrichReportsWithReporters(reports: Report[]): Promise<Report[]> 
       .in('id', userIds)
     if (error || !profs) {
       console.warn('[data] enrichReportsWithReporters: profiles fetch failed (policy or incremental?):', error?.message)
-      return reports
+      // Still mark known authors so the card can show "Anonymous" rather than hiding attribution.
+      return reports.map((r) =>
+        r.userId && !r.reporter
+          ? { ...r, reporter: { id: r.userId, username: null, avatarUrl: null, credibilityBadge: null } }
+          : r
+      )
     }
     const byId = new Map<string, any>((profs || []).map((p: any) => [p.id, p]))
     return reports.map((r) => {
       if (!r.userId) return r
       const p = byId.get(r.userId)
-      if (!p) return r
+      const rawName = (p?.username ?? r.reporter?.username ?? null) as string | null
+      const username = typeof rawName === 'string' && rawName.trim() ? rawName.trim() : null
       return {
         ...r,
         reporter: {
-          id: p.id,
-          username: p.username ?? null,
-          avatarUrl: p.avatar_url ?? null,
-          credibilityBadge: (p.credibility_badge as CredibilityBadge | undefined) ?? null,
+          id: p?.id ?? r.userId,
+          username,
+          avatarUrl: (p?.avatar_url as string | null | undefined) ?? r.reporter?.avatarUrl ?? null,
+          credibilityBadge:
+            ((p?.credibility_badge as CredibilityBadge | undefined) ??
+              r.reporter?.credibilityBadge ??
+              null) as CredibilityBadge | null,
         },
       }
     })
