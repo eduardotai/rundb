@@ -1,75 +1,125 @@
 @import "tailwindcss";
 
+/* ─── Semantic color bridge (Tailwind v4 @theme) ─── */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+/* ─── RunDB canonical face — neutral dark (x.ai / ProtonDB cousin) ───
+   Near-black stage, cool grays, white primary chrome.
+   Warm gold only for key numbers (ProtonDB-style accent, used sparingly).
+   Tier colors stay for data — not brand chrome. */
 :root {
-  /* ProtonDB-inspired deep navy/black dark theme */
-  --background: #0a0f1c;
-  --foreground: #e2e8f0;
-  --card: #111827;
-  --card-foreground: #f1f5f9;
-  --popover: #0f172a;
-  --popover-foreground: #e2e8f0;
-  --primary: #67e8f9;
-  --primary-foreground: #0a0f1c;
-  --secondary: #1e293b;
-  --secondary-foreground: #cbd5e1;
-  --muted: #1e293b;
-  --muted-foreground: #94a3b8;
-  --accent: #22d3ee;
-  --accent-foreground: #0a0f1c;
+  --background: #050505;
+  --foreground: #f5f5f5;
+  --card: #111111;
+  --card-foreground: #fafafa;
+  --popover: #0c0c0c;
+  --popover-foreground: #f5f5f5;
+  --primary: #f5f5f5;
+  --primary-foreground: #0a0a0a;
+  --secondary: #171717;
+  --secondary-foreground: #e5e5e5;
+  --muted: #141414;
+  --muted-foreground: #a3a3a3;
+  --accent: #1a1a1a;
+  --accent-foreground: #fafafa;
   --destructive: #ef4444;
-  --destructive-foreground: #f1f5f9;
-  --border: #1e293b;
-  --input: #1e293b;
-  --ring: #67e8f9;
+  --destructive-foreground: #fafafa;
+  --border: rgb(255 255 255 / 0.1);
+  --input: rgb(255 255 255 / 0.12);
+  --ring: rgb(255 255 255 / 0.35);
 
-  /* Performance tier colors (Excellent = cyan/emerald like ProtonDB) */
-  --tier-excellent: #22c55e;
+  /* Key stats / sparingly used highlight (ProtonDB gold family) */
+  --highlight: #e0b33f;
+  --highlight-muted: rgb(224 179 63 / 0.12);
+
+  --tier-excellent: #4ade80;
   --tier-excellent-bg: #052e16;
-  --tier-good: #3b82f6;
-  --tier-good-bg: #1e3a8a;
-  --tier-playable: #eab308;
-  --tier-playable-bg: #422006;
-  --tier-struggling: #f97316;
-  --tier-struggling-bg: #431407;
-  --tier-unplayable: #ef4444;
-  --tier-unplayable-bg: #450a0a;
+  --tier-good: #7dd3fc;
+  --tier-good-bg: #0c1a2e;
+  --tier-playable: #facc15;
+  --tier-playable-bg: #2a2005;
+  --tier-struggling: #fb923c;
+  --tier-struggling-bg: #2a1405;
+  --tier-unplayable: #f87171;
+  --tier-unplayable-bg: #2a0a0a;
 
-  --radius: 0.625rem;
+  --radius: 0.5rem;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --header-h: 3rem;
+  --content-max: 80rem;
+  /* Gold horizon — warm wash pinned to viewport (matches --highlight) */
+  --glow-gold: rgb(224 179 63 / 0.045);
+  --glow-gold-mid: rgb(224 179 63 / 0.025);
+  --glow-gold-soft: rgb(224 179 63 / 0.012);
 }
 
-/* Dense, scannable typography + data-heavy feel */
 body {
-  font-family: var(--font-geist-sans);
-  /* Layered atmosphere: cyan glow falling from the top + deep navy base */
-  background:
-    radial-gradient(ellipse 90% 42% at 50% -12%, rgb(34 211 238 / 0.07), transparent 70%),
-    var(--background);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  /*
+    Gold horizon: fixed to viewport so it does not “cut off” mid-section
+    as content scrolls. Tall, slow falloff covers hero + trending fully.
+  */
+  background-color: var(--background);
+  background-image:
+    radial-gradient(ellipse 140% 95% at 50% 100%, var(--glow-gold), transparent 72%),
+    radial-gradient(ellipse 120% 80% at 50% 88%, var(--glow-gold-mid), transparent 70%),
+    radial-gradient(ellipse 100% 70% at 50% 55%, var(--glow-gold-soft), transparent 68%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
   color: var(--foreground);
+  font-feature-settings: "tnum" 1;
 }
 
-/* Faint blueprint grid behind content — fades out down the page */
+/* No grid — gold horizon only */
 body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background-image:
-    linear-gradient(rgb(148 163 184 / 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(148 163 184 / 0.045) 1px, transparent 1px);
-  background-size: 56px 56px;
-  -webkit-mask-image: linear-gradient(to bottom, black, transparent 65%);
-  mask-image: linear-gradient(to bottom, black, transparent 65%);
+  display: none;
 }
 
 ::selection {
-  background: rgb(103 232 249 / 0.28);
-  color: #f8fafc;
+  background: rgb(255 255 255 / 0.18);
+  color: #fafafa;
 }
 
-/* Staggered hero entrance (CSS-only) */
+/* ─── Motion system (smooth, useful, reduced-motion safe) ─── */
+:root {
+  --ease-out-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-fast: 0.15s;
+  --motion-med: 0.35s;
+  --motion-slow: 0.55s;
+}
+
 @keyframes rise-fade {
   from {
     opacity: 0;
@@ -81,43 +131,254 @@ body::before {
   }
 }
 
-.animate-rise {
-  animation: rise-fade 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-.rise-delay-1 { animation-delay: 0.07s; }
-.rise-delay-2 { animation-delay: 0.14s; }
-.rise-delay-3 { animation-delay: 0.22s; }
-.rise-delay-4 { animation-delay: 0.3s; }
-
-@media (prefers-reduced-motion: reduce) {
-  .animate-rise {
-    animation: none;
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
-/* Premium data-dense component polish */
-.card {
-  transition: border-color 0.1s ease, box-shadow 0.1s ease;
+@keyframes float-soft {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
 }
 
-.card:hover {
-  border-color: #334155;
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(0.85); }
+}
+
+@keyframes arrow-nudge {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(3px); }
+}
+
+.animate-rise {
+  animation: rise-fade 0.65s var(--ease-out-smooth) both;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.45s var(--ease-out-soft) both;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.45s var(--ease-out-smooth) both;
+}
+
+.animate-float {
+  animation: float-soft 5.5s ease-in-out infinite;
+}
+
+.rise-delay-1 { animation-delay: 0.06s; }
+.rise-delay-2 { animation-delay: 0.12s; }
+.rise-delay-3 { animation-delay: 0.18s; }
+.rise-delay-4 { animation-delay: 0.24s; }
+.rise-delay-5 { animation-delay: 0.3s; }
+.rise-delay-6 { animation-delay: 0.36s; }
+
+/* Scroll / mount reveal (toggled by Reveal component) */
+.motion-reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity var(--motion-slow) var(--ease-out-smooth),
+    transform var(--motion-slow) var(--ease-out-smooth);
+  will-change: opacity, transform;
+}
+
+.motion-reveal-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* Stagger children when ancestor is revealed (or self has both classes) */
+.motion-stagger > * {
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity 0.5s var(--ease-out-smooth),
+    transform 0.5s var(--ease-out-smooth);
+}
+
+.motion-reveal-in.motion-stagger > *:nth-child(1),
+.motion-reveal-in .motion-stagger > *:nth-child(1) { transition-delay: 0.04s; }
+.motion-reveal-in.motion-stagger > *:nth-child(2),
+.motion-reveal-in .motion-stagger > *:nth-child(2) { transition-delay: 0.1s; }
+.motion-reveal-in.motion-stagger > *:nth-child(3),
+.motion-reveal-in .motion-stagger > *:nth-child(3) { transition-delay: 0.16s; }
+.motion-reveal-in.motion-stagger > *:nth-child(4),
+.motion-reveal-in .motion-stagger > *:nth-child(4) { transition-delay: 0.22s; }
+.motion-reveal-in.motion-stagger > *:nth-child(5),
+.motion-reveal-in .motion-stagger > *:nth-child(5) { transition-delay: 0.28s; }
+.motion-reveal-in.motion-stagger > *:nth-child(6),
+.motion-reveal-in .motion-stagger > *:nth-child(6) { transition-delay: 0.34s; }
+
+.motion-reveal-in.motion-stagger > *,
+.motion-reveal-in .motion-stagger > * {
+  opacity: 1;
+  transform: none;
+}
+
+/* Grid card stagger (home trending, games browse) */
+.motion-grid-stagger > * {
+  animation: rise-fade 0.5s var(--ease-out-smooth) both;
+}
+.motion-grid-stagger > *:nth-child(1) { animation-delay: 0.02s; }
+.motion-grid-stagger > *:nth-child(2) { animation-delay: 0.06s; }
+.motion-grid-stagger > *:nth-child(3) { animation-delay: 0.1s; }
+.motion-grid-stagger > *:nth-child(4) { animation-delay: 0.14s; }
+.motion-grid-stagger > *:nth-child(5) { animation-delay: 0.18s; }
+.motion-grid-stagger > *:nth-child(6) { animation-delay: 0.22s; }
+.motion-grid-stagger > *:nth-child(n+7) { animation-delay: 0.26s; }
+
+/* Link with arrow that nudges on hover */
+.motion-link-arrow {
+  transition: color var(--motion-fast) ease;
+}
+.motion-link-arrow svg {
+  transition: transform var(--motion-fast) var(--ease-out-smooth);
+}
+.motion-link-arrow:hover svg {
+  transform: translateX(3px);
+}
+
+/* KPI card micro-lift */
+.motion-kpi {
+  transition:
+    border-color var(--motion-fast) ease,
+    transform var(--motion-fast) var(--ease-out-smooth),
+    box-shadow var(--motion-fast) ease;
+}
+.motion-kpi:hover {
+  border-color: rgb(224 179 63 / 0.28);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -12px rgb(0 0 0 / 0.55);
+}
+
+/* Badge live-dot */
+.motion-badge-dot {
+  animation: pulse-dot 2.2s ease-in-out infinite;
+}
+
+/* Skeleton shimmer (replaces flat pulse when applied) */
+.motion-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--muted) 0%,
+    color-mix(in srgb, var(--muted-foreground) 12%, var(--muted)) 45%,
+    var(--muted) 90%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise,
+  .animate-fade-in,
+  .animate-scale-in,
+  .animate-float,
+  .motion-grid-stagger > *,
+  .motion-badge-dot,
+  .motion-shimmer {
+    animation: none !important;
+  }
+
+  .motion-reveal,
+  .motion-stagger > * {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+
+  .motion-kpi:hover,
+  .theme-card:hover,
+  .report-card:hover,
+  .card:hover {
+    transform: none !important;
+  }
+}
+
+/* ─── Shell ─── */
+.theme-header {
+  height: var(--header-h);
+  border-bottom: 1px solid var(--border);
+  background: rgb(5 5 5 / 0.92);
+  backdrop-filter: blur(10px);
+}
+
+.theme-header-inner {
+  max-width: var(--content-max);
+}
+
+.theme-nav-link {
+  font-size: 0.8125rem;
+  letter-spacing: 0.01em;
+  color: var(--muted-foreground);
+  border-radius: calc(var(--radius) - 2px);
+  padding: 0.35rem 0.65rem;
+  transition:
+    color var(--motion-fast) ease,
+    background var(--motion-fast) ease,
+    box-shadow var(--motion-fast) ease;
+}
+
+.theme-nav-link:hover {
+  color: var(--foreground);
+  background: rgb(255 255 255 / 0.06);
+}
+
+.theme-nav-link[aria-current="page"] {
+  color: var(--foreground);
+  background: rgb(255 255 255 / 0.08);
+  box-shadow: inset 0 -1px 0 rgb(224 179 63 / 0.55);
+}
+
+.theme-footer {
+  border-top: 1px solid var(--border);
+  padding: 1.25rem 1rem;
+  background: rgb(5 5 5 / 0.75);
+}
+
+.theme-logo {
+  font-size: 1.05rem;
+}
+
+/* ─── Cards / surfaces ─── */
+.card,
+.theme-card,
 .report-card {
-  transition: transform 0.08s ease, border-color 0.1s ease, box-shadow 0.1s ease;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--card);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
 }
 
-.report-card:hover {
+.theme-card:hover,
+.report-card:hover,
+.card:hover {
+  border-color: rgb(255 255 255 / 0.2);
+  box-shadow: 0 4px 16px -8px rgb(0 0 0 / 0.55);
   transform: translateY(-1px);
-  border-color: #475569;
-  box-shadow: 0 4px 16px -2px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(103 232 249 / 0.06);
 }
 
-/* Tier accent stripe — instant scannability without reading the badge */
+/* Tier accent stripe */
 .tier-accent {
   border-left-width: 3px;
+  border-left-style: solid;
 }
 
 .tier-accent-excellent { border-left-color: var(--tier-excellent); }
@@ -126,49 +387,121 @@ body::before {
 .tier-accent-struggling { border-left-color: var(--tier-struggling); }
 .tier-accent-unplayable { border-left-color: var(--tier-unplayable); }
 
-/* Tabular numbers for all FPS, RAM, counts */
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
 
-/* Performance badges */
+/* Performance badges — token driven */
 .badge-excellent {
   background: var(--tier-excellent-bg);
   color: var(--tier-excellent);
-  border: 1px solid #14532d;
+  border: 1px solid color-mix(in srgb, var(--tier-excellent) 35%, transparent);
 }
 
 .badge-good {
   background: var(--tier-good-bg);
   color: var(--tier-good);
-  border: 1px solid #1e40af;
+  border: 1px solid color-mix(in srgb, var(--tier-good) 35%, transparent);
 }
 
 .badge-playable {
   background: var(--tier-playable-bg);
   color: var(--tier-playable);
-  border: 1px solid #713f12;
+  border: 1px solid color-mix(in srgb, var(--tier-playable) 35%, transparent);
 }
 
 .badge-struggling {
   background: var(--tier-struggling-bg);
   color: var(--tier-struggling);
-  border: 1px solid #9a3412;
+  border: 1px solid color-mix(in srgb, var(--tier-struggling) 35%, transparent);
 }
 
 .badge-unplayable {
   background: var(--tier-unplayable-bg);
   color: var(--tier-unplayable);
-  border: 1px solid #991b1b;
+  border: 1px solid color-mix(in srgb, var(--tier-unplayable) 35%, transparent);
 }
 
-/* Compact, scannable tables */
-.table-dense td, .table-dense th {
+/* ─── Home sections ─── */
+.theme-home-hero {
+  padding: 2.5rem 1rem 2rem;
+}
+
+@media (min-width: 768px) {
+  .theme-home-hero {
+    padding: 3.25rem 1.5rem 2.5rem;
+  }
+}
+
+.theme-home-title {
+  font-size: clamp(1.875rem, 4vw, 2.75rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.12;
+  color: var(--foreground);
+}
+
+.theme-section-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+}
+
+.theme-badge-pill {
+  border-radius: 9999px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  background: rgb(255 255 255 / 0.05);
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.theme-home-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .theme-home-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.875rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .theme-home-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 1rem;
+  }
+}
+
+.theme-kpi-value {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: clamp(1.75rem, 3.5vw, 2.25rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--highlight);
+  font-variant-numeric: tabular-nums;
+}
+
+.theme-kpi-label {
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  letter-spacing: 0.02em;
+}
+
+.table-dense td,
+.table-dense th {
   padding-top: 0.375rem;
   padding-bottom: 0.375rem;
 }
 
-/* Combobox / Command polish for hardware & game search */
 [cmdk-list] {
   max-height: 280px;
   overflow: auto;
@@ -177,19 +510,17 @@ body::before {
 [cmdk-item] {
   cursor: pointer;
   padding: 0.5rem 0.75rem;
-  border-radius: 6px;
+  border-radius: var(--radius);
 }
 
 [cmdk-item][data-selected="true"] {
-  background: #1e293b;
+  background: var(--muted);
 }
 
-/* Form inputs feel premium and dense */
 input, textarea, select {
   font-size: 0.9375rem;
 }
 
-/* Hide browser spin buttons on number inputs */
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
@@ -201,39 +532,32 @@ input[type="number"] {
   appearance: textfield;
 }
 
-/* Subtle scrollbars for dark theme */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: color-mix(in srgb, var(--foreground) 18%, transparent);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: color-mix(in srgb, var(--foreground) 30%, transparent);
 }
 
-/* Responsive helpers for the data-heavy layout */
 @media (max-width: 768px) {
   .desktop-only-stats {
     display: none;
   }
 }
 
-/* ============================================================
-   STRONG VISUAL ERROR TOASTS ("pop box in red")
-   Makes Sonner error toasts prominent, high-contrast, and user-friendly.
-   Designed for <= 2 lines, friendly messages only (no tech jargon).
-============================================================ */
-
+/* Error toasts — high visibility preserved */
 [data-sonner-toast][data-type="error"] {
   background: #b91c1c !important;
   color: #fff !important;
   border: 1px solid #f87171 !important;
   box-shadow: 0 12px 28px -8px rgb(0 0 0 / 0.45), 0 4px 12px -2px rgb(0 0 0 / 0.3) !important;
   font-weight: 500;
-  /* Make it feel like a solid "pop box" */
+  max-width: 420px;
 }
 
 [data-sonner-toast][data-type="error"] [data-title] {
@@ -249,12 +573,10 @@ input[type="number"] {
   line-height: 1.35;
 }
 
-/* Stronger error icon */
 [data-sonner-toast][data-type="error"] .sonner-icon {
   color: #fff !important;
 }
 
-/* When using richColors + our overrides, ensure close button is visible */
 [data-sonner-toast][data-type="error"] [data-close-button] {
   background: rgba(255, 255, 255, 0.18) !important;
   color: #fff !important;
@@ -263,9 +585,4 @@ input[type="number"] {
 
 [data-sonner-toast][data-type="error"] [data-close-button]:hover {
   background: rgba(255, 255, 255, 0.28) !important;
-}
-
-/* Keep toasts from getting too tall — encourages <2 line messages */
-[data-sonner-toast][data-type="error"] {
-  max-width: 420px;
 }

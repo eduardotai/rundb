@@ -99,7 +99,7 @@ export function PasteHardwareModal({ open, onOpenChange, onApply }: PasteHardwar
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-3xl !bg-[#111827] border-[#334155]">
+      <DialogContent className="max-w-3xl bg-card border-border">
         <DialogHeader>
           <DialogTitle>Paste Hardware Output (Most Accurate)</DialogTitle>
           <DialogDescription>

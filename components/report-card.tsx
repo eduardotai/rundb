@@ -138,8 +138,8 @@ export function ReportCard({
   return (
     <div
       className={cn(
-        'report-card group cursor-pointer rounded-2xl border border-border bg-card p-4 md:p-5',
-        'hover:border-slate-600/70',
+        'report-card theme-card group cursor-pointer rounded-[var(--radius)] border border-border bg-card p-4 md:p-5',
+        'active:scale-[0.995] motion-reduce:active:scale-100',
         'tier-accent',
         `tier-accent-${report.performanceTier.toLowerCase()}`,
         compact && 'p-3 md:p-4'
@@ -159,7 +159,7 @@ export function ReportCard({
             {/* Full hardware names (e.g. "NVIDIA GeForce RTX 4070", "AMD Ryzen 7 5700X3D") —
                 stacked on their own lines so the entire name is shown, not just the model. */}
             <div className="flex items-start gap-1.5 font-medium text-foreground">
-              <Zap className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-400" />
+              <Zap className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
               <span className="break-words">{gpuName}</span>
             </div>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">

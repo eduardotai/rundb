@@ -208,7 +208,7 @@ function GameDetailInner({ game }: { game: Game }) {
               className={cn(
                 'gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold',
                 hasCommunityReports
-                  ? 'border-cyan-400/35 bg-cyan-500/10 text-cyan-200'
+                  ? 'border-primary/35 bg-primary/10 text-primary'
                   : 'border-amber-400/40 bg-amber-500/10 text-amber-200'
               )}
             >

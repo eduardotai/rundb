@@ -10,7 +10,7 @@ interface ProfileAvatarProps {
 
 // Deterministic gradient per name so each user gets a stable, distinct identity color.
 const GRADIENTS = [
-  'from-cyan-500 to-blue-600',
+  'from-neutral-200 to-neutral-500',
   'from-violet-500 to-fuchsia-600',
   'from-emerald-500 to-teal-600',
   'from-amber-500 to-orange-600',

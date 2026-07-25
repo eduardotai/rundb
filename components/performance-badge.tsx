@@ -50,7 +50,10 @@ export function PerformanceBadge({ tier, size = 'md', className }: PerformanceBa
         className
       )}
     >
-      <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
+      <span
+        aria-hidden="true"
+        className="motion-badge-dot h-1.5 w-1.5 shrink-0 rounded-full bg-current"
+      />
       {config.label}
     </span>
   );

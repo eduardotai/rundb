@@ -19,7 +19,7 @@ export default async function ProfilePage({ searchParams }: { searchParams?: Pro
     return (
       <div className="mx-auto max-w-3xl px-4 py-16">
         <div className="rounded-2xl border border-border bg-card p-10 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 text-2xl font-semibold text-white">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-neutral-200 to-neutral-500 text-2xl font-semibold text-black">
             ?
           </div>
           <h1 className="mt-5 text-2xl font-semibold tracking-tight">Sign in to view your profile</h1>

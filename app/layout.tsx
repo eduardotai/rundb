@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { SiteHeader } from "@/components/site-header";
-import { SiteFooter } from "@/components/site-footer";
+import { ThemeShell } from "@/components/theme/theme-shell";
 import { Toaster } from "@/components/ui/sonner";
 import { Providers } from "./providers";
 import { Analytics } from "@vercel/analytics/next";
+import { getStaffAccess } from "@/lib/admin-access";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -27,20 +27,24 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const { user, isAdmin } = await getStaffAccess();
+
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}>
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
+      suppressHydrationWarning
+    >
       <body className="min-h-full flex flex-col bg-background text-foreground">
-        <SiteHeader />
         <Providers>
-          <main className="flex-1">{children}</main>
-
-          <SiteFooter />
-
+          <ThemeShell user={user} isAdmin={isAdmin}>
+            {children}
+          </ThemeShell>
           <Toaster position="top-center" richColors closeButton />
         </Providers>
         <Analytics />

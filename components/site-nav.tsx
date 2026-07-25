@@ -2,33 +2,50 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { LayoutDashboard } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const links = [
-  { href: '/games', label: 'Browse Games' },
+const links: { href: string; label: string }[] = [
+  { href: '/games', label: 'Games' },
   { href: '/reports', label: 'Reports' },
   { href: '/compatibility', label: 'Will It Run?' },
 ];
 
-// Desktop nav with active-route indication. Kept as a small client island so
-// SiteHeader can stay a server component (it does the auth/role lookups).
-export function SiteNav({ isAdmin }: { isAdmin: boolean }) {
+type SiteNavProps = {
+  isAdmin: boolean;
+  /** horizontal is the only product chrome; other variants kept for API compat */
+  variant?: 'horizontal' | 'vertical' | 'dock' | 'ribbon';
+  className?: string;
+  includeHome?: boolean;
+};
+
+export function SiteNav({
+  isAdmin,
+  className,
+}: SiteNavProps) {
   const pathname = usePathname();
 
-  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+  const isActive = (href: string) => {
+    if (href === '/') return pathname === '/';
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
 
   return (
-    <nav className="hidden items-center gap-1 text-sm md:flex">
+    <nav
+      className={cn(
+        'flex max-w-[min(100%,28rem)] items-center gap-0.5 overflow-x-auto text-sm scrollbar-none',
+        className
+      )}
+      aria-label="Primary"
+    >
       {links.map(({ href, label }) => (
         <Link
           key={href}
           href={href}
           aria-current={isActive(href) ? 'page' : undefined}
           className={cn(
-            'relative rounded-md px-2.5 py-1.5 transition',
-            isActive(href)
-              ? 'text-foreground bg-muted/60 after:absolute after:inset-x-2.5 after:-bottom-[13px] after:h-px after:bg-primary'
-              : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
+            'theme-nav-link shrink-0 transition',
+            !isActive(href) && 'hover:text-foreground'
           )}
         >
           {label}
@@ -36,10 +53,26 @@ export function SiteNav({ isAdmin }: { isAdmin: boolean }) {
       ))}
       {isAdmin && (
         <>
-          <Link href="/admin" className="rounded-md px-2.5 py-1.5 font-medium text-amber-400 transition hover:bg-muted/40 hover:text-amber-300">Admin</Link>
-          <Link href="/dashboard" className="rounded-md px-2.5 py-1.5 font-medium text-amber-400 transition hover:bg-muted/40 hover:text-amber-300">Dashboard</Link>
+          <Link
+            href="/admin"
+            className="theme-nav-link shrink-0 font-medium text-amber-400 transition hover:text-amber-300"
+            aria-current={isActive('/admin') ? 'page' : undefined}
+          >
+            Admin
+          </Link>
+          <Link
+            href="/dashboard"
+            className="theme-nav-link hidden shrink-0 font-medium text-amber-400 transition hover:text-amber-300 sm:inline-flex"
+            aria-current={isActive('/dashboard') ? 'page' : undefined}
+          >
+            <span className="inline-flex items-center gap-1">
+              <LayoutDashboard className="h-3.5 w-3.5" aria-hidden />
+              Dashboard
+            </span>
+          </Link>
         </>
       )}
     </nav>
   );
 }
+

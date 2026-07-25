@@ -4,8 +4,8 @@
  * RunDB Phase 2 Real Reports Server Actions
  * Aligned strictly with Master Implementation Plan + approved schema in supabase/schema.sql
  *
- * - Submission: status='pending', authoritative performance_tier calc, moderation fields defaulted
- * - Anti-abuse: rate limiting (5/hr for auth users) + duplicate detection (exact hardware match, 24h)
+ * - Submission: registered users only, status='approved', authoritative performance_tier calc
+ * - Anti-abuse: rate limiting (5/hr) + duplicate detection (exact hardware match, 24h); service-role insert
  * - Upvoting: uses report_votes (RLS + unique + trigger for helpful_votes maintained in schema)
  * - Moderation: role-checked updates for /admin/reports
  *
@@ -94,14 +94,18 @@ function mapDbReportToReport(row: any): Report {
 
 /**
  * Submit a performance report.
- * Respects approved schema exactly.
- * Anti-abuse enforced here (mirrors the submit_report RPC in schema.sql for defense-in-depth).
+ * Registered users only. Anti-abuse: 5/hr rate limit + 24h exact-hardware de-dupe.
+ * Insert uses createServiceClient() because client INSERT on reports is revoked (RLS).
  */
 export async function submitReportAction(input: SubmitReportInput): Promise<Report> {
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    const userId = user?.id ?? null
+
+    if (!isRegisteredUser(user)) {
+      throw new Error('You must sign in to submit a report.')
+    }
+    const userId = user.id
 
     // 1. Validate game exists + get denormalized name
     const { data: game, error: gameErr } = await supabase
@@ -136,37 +140,35 @@ export async function submitReportAction(input: SubmitReportInput): Promise<Repo
       moderatorNotePrefix = '[Catalog: unknown hardware]'
     }
 
-    // 2. Anti-abuse checks (only for authenticated users; anon has lighter protection)
-    if (userId) {
-      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-      const { count: recentCount } = await supabase
-        .from('reports')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', userId)
-        .gte('created_at', oneHourAgo)
+    // 2. Anti-abuse: always apply for registered submitters (guests are rejected above)
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+    const { count: recentCount } = await supabase
+      .from('reports')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .gte('created_at', oneHourAgo)
 
-      if ((recentCount ?? 0) >= 5) {
-        throw new Error('Rate limit exceeded: You can submit a maximum of 5 reports per hour.')
-      }
-
-      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-      const { count: dupCount } = await supabase
-        .from('reports')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', userId)
-        .eq('game_id', input.gameId)
-        .eq('cpu', storedCpu)
-        .eq('gpu', storedGpu)
-        .eq('ram', input.ram)
-        .eq('resolution', input.resolution)
-        .gte('created_at', oneDayAgo)
-
-      if ((dupCount ?? 0) > 0) {
-        throw new Error('Duplicate report detected: You submitted a nearly identical report for this game + hardware combination within the last 24 hours.')
-      }
+    if ((recentCount ?? 0) >= 5) {
+      throw new Error('Rate limit exceeded: You can submit a maximum of 5 reports per hour.')
     }
 
-    // 3. Insert. Reports publish automatically; vote/downvote scoring can later flag bad reports.
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const { count: dupCount } = await supabase
+      .from('reports')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('game_id', input.gameId)
+      .eq('cpu', storedCpu)
+      .eq('gpu', storedGpu)
+      .eq('ram', input.ram)
+      .eq('resolution', input.resolution)
+      .gte('created_at', oneDayAgo)
+
+    if ((dupCount ?? 0) > 0) {
+      throw new Error('Duplicate report detected: You submitted a nearly identical report for this game + hardware combination within the last 24 hours.')
+    }
+
+    // 3. Insert via service role (client INSERT revoked). Reports publish automatically.
     const insertPayload = {
       game_id: input.gameId,
       user_id: userId,
@@ -195,7 +197,8 @@ export async function submitReportAction(input: SubmitReportInput): Promise<Repo
       // created_at, vote counters, moderated_* defaulted by schema / DB
     }
 
-    const { data: inserted, error: insertErr } = await supabase
+    const service = createServiceClient()
+    const { data: inserted, error: insertErr } = await service
       .from('reports')
       .insert(insertPayload)
       .select('*')
@@ -215,6 +218,7 @@ export async function submitReportAction(input: SubmitReportInput): Promise<Repo
     // + 500 resource errors (and SW-uncaught variants) on the client.
     console.error('[submitReportAction] error', err)
     if (err?.message && (
+      err.message.includes('sign in') ||
       err.message.includes('Game not found') ||
       err.message.includes('Rate limit') ||
       err.message.includes('Duplicate') ||
