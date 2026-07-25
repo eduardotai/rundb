@@ -69,6 +69,13 @@ export type { DetectedHardware, DetectionMethod };
 
 export type DetectionMode = 'browser' | 'paste' | 'steam' | 'all' | 'companion';
 
+/**
+ * Manual-first UX: Detect / Paste controls are hidden in product UI.
+ * Flip to `true` to re-enable browser detect + paste modal on checker, profile, and submit.
+ * Detector modules (`hardware-detect-button`, `paste-hardware-modal`, parsers) stay shipped.
+ */
+export const HARDWARE_DETECT_UI_ENABLED = false;
+
 // ============================================
 // CORE: applyHardwareAliases (reuse/extend mock-data:795-844 logic)
 // Case-insensitive, longest-match-first, returns canonical + vendor/series for catalog.

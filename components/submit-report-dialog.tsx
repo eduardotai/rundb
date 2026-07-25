@@ -22,7 +22,7 @@ import { DetectedHardwareBanner } from '@/components/detected-hardware-banner';
 import { PasteHardwareModal } from '@/components/paste-hardware-modal';
 import { PerformanceBadge } from '@/components/performance-badge';
 import type { DetectedHardware } from '@/lib/types';
-import { applicableHardwareFields } from '@/lib/hardware-detector';
+import { applicableHardwareFields, HARDWARE_DETECT_UI_ENABLED } from '@/lib/hardware-detector';
 import { useHardwareDetection } from '@/components/use-hardware-detection';
 import { loadMyRigAsync, loadUserDevices, getAllHardwareCatalogAsync } from '@/lib/data';
 import { shouldOfferIgpuOnEmptyGpu } from '@/lib/cpu-igpu';
@@ -193,7 +193,7 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
         if (saved.resolution) form.setValue('resolution', saved.resolution, { shouldValidate: true });
         showUserSuccess('Loaded your saved rig');
       } else {
-        showUserError('No saved rig found. Use Detect or fill manually.');
+        showUserError('No saved rig found. Fill CPU / GPU / RAM manually.');
       }
     } catch {
       showUserError('Could not load saved rig.');
@@ -272,9 +272,9 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
           {/* ============================================================ */}
           {/* LEFT — game + live preview                                   */}
           {/* ============================================================ */}
-          <aside className="relative flex flex-col gap-4 border-b border-border bg-gradient-to-b from-muted/40 to-card p-5 md:border-b-0 md:border-r">
+          <aside className="relative flex min-w-0 flex-col gap-4 overflow-hidden border-b border-border bg-gradient-to-b from-muted/40 to-card p-5 md:border-b-0 md:border-r">
             {/* Cover — square banner to match promotional square art style */}
-            <div className="flex items-center gap-3 md:flex-col md:items-start">
+            <div className="flex min-w-0 items-center gap-3 md:flex-col md:items-stretch">
               <div className="relative w-16 aspect-square shrink-0 overflow-hidden rounded-lg border border-border bg-muted md:w-full md:max-w-[220px]">
                 {!coverError ? (
                   /* Square frame to match the reference promo style. The banner is shown fully (no cropping) thanks to object-contain (letterbox bars appear on sides for standard portrait covers). */
@@ -291,8 +291,8 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
                   </div>
                 )}
               </div>
-              <div className="min-w-0">
-                <div className="truncate text-base font-semibold leading-tight md:mt-3">{game.name}</div>
+              <div className="min-w-0 w-full overflow-hidden">
+                <div className="line-clamp-2 break-words text-base font-semibold leading-tight md:mt-3">{game.name}</div>
                 <div className="truncate text-xs text-muted-foreground">
                   {game.developer}
                   {game.releaseYear ? ` • ${game.releaseYear}` : ''}
@@ -362,7 +362,7 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
           {/* ============================================================ */}
           {/* RIGHT — form                                                 */}
           {/* ============================================================ */}
-          <div className="max-h-[92vh] overflow-y-auto p-5 md:p-6">
+          <div className="min-w-0 max-h-[92vh] overflow-y-auto p-5 md:p-6">
             <div className="space-y-1 pr-8">
               <DialogTitle className="flex items-center gap-2 text-xl">
                 <Cpu className="h-5 w-5 text-primary" />
@@ -377,21 +377,25 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
               {/* -------------------------------------------------------- */}
               {/* Hardware */}
               {/* -------------------------------------------------------- */}
-              <Section label="Your hardware" hint="Detect, paste, or type">
-                {/* Quick actions */}
+              <Section label="Your hardware" hint="Search or type your exact models">
+                {/* Quick actions — Detect/Paste gated; saved rig + devices stay */}
                 <div className="flex flex-wrap items-center gap-2">
-                  <HardwareDetectButton
-                    mode="browser"
-                    onDetect={detection.handleDetected}
-                    state={detection.detectionState}
-                    onRequestPaste={detection.openPasteModal}
-                  />
+                  {HARDWARE_DETECT_UI_ENABLED && (
+                    <HardwareDetectButton
+                      mode="browser"
+                      onDetect={detection.handleDetected}
+                      state={detection.detectionState}
+                      onRequestPaste={detection.openPasteModal}
+                    />
+                  )}
                   <Button type="button" variant="outline" size="sm" onClick={useSavedRig} className="h-7 text-xs">
                     Use my saved rig
                   </Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={detection.openPasteModal} className="h-7 text-xs">
-                    Paste system info
-                  </Button>
+                  {HARDWARE_DETECT_UI_ENABLED && (
+                    <Button type="button" variant="ghost" size="sm" onClick={detection.openPasteModal} className="h-7 text-xs">
+                      Paste system info
+                    </Button>
+                  )}
 
                   {savedDevices.length > 1 && (
                     <select
@@ -417,15 +421,16 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
                   )}
                 </div>
 
-                {/* Detection banner (educational + Apply button). Same component as checker/profile. */}
-                <DetectedHardwareBanner
-                  detected={detection.detectedRig}
-                  onApply={detection.applyDetected}
-                  onRefine={detection.refineDetection}
-                  onDismiss={detection.clearDetection}
-                  onTryPaste={detection.openPasteModal}
-                  applied={detection.detectionState === 'applied'}
-                />
+                {HARDWARE_DETECT_UI_ENABLED && (
+                  <DetectedHardwareBanner
+                    detected={detection.detectedRig}
+                    onApply={detection.applyDetected}
+                    onRefine={detection.refineDetection}
+                    onDismiss={detection.clearDetection}
+                    onTryPaste={detection.openPasteModal}
+                    applied={detection.detectionState === 'applied'}
+                  />
+                )}
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
@@ -621,12 +626,13 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
           </div>
         </div>
 
-        {/* Paste modal (inxi / dxdiag / Steam sysinfo — the ProtonDB precision path) */}
-        <PasteHardwareModal
-          open={detection.pasteModalOpen}
-          onOpenChange={detection.setPasteModalOpen}
-          onApply={detection.handlePasteApply}
-        />
+        {HARDWARE_DETECT_UI_ENABLED && (
+          <PasteHardwareModal
+            open={detection.pasteModalOpen}
+            onOpenChange={detection.setPasteModalOpen}
+            onApply={detection.handlePasteApply}
+          />
+        )}
       </DialogContent>
     </Dialog>
 

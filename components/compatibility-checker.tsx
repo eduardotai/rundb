@@ -24,7 +24,7 @@ import { HardwareDetectButton } from '@/components/hardware-detect-button';
 import { DetectedHardwareBanner } from '@/components/detected-hardware-banner';
 import { PasteHardwareModal } from '@/components/paste-hardware-modal';
 import type { DetectedHardware } from '@/lib/types';
-import { applicableHardwareFields } from '@/lib/hardware-detector';
+import { applicableHardwareFields, HARDWARE_DETECT_UI_ENABLED } from '@/lib/hardware-detector';
 import { useHardwareDetection } from '@/components/use-hardware-detection';
 import { sanitizeFullName } from '@/lib/sanitize';
 import { HardwareCombobox } from '@/components/hardware-combobox';
@@ -244,12 +244,14 @@ export function CompatibilityChecker({ embedded = false }: CompatibilityCheckerP
             <div className="lg:col-span-2">
               <div className="flex items-center justify-between">
                 <Label>CPU</Label>
-                <HardwareDetectButton
-                  mode="browser"
-                  onDetect={detection.handleDetected}
-                  state={detection.detectionState}
-                  onRequestPaste={detection.openPasteModal}
-                />
+                {HARDWARE_DETECT_UI_ENABLED && (
+                  <HardwareDetectButton
+                    mode="browser"
+                    onDetect={detection.handleDetected}
+                    state={detection.detectionState}
+                    onRequestPaste={detection.openPasteModal}
+                  />
+                )}
               </div>
               <HardwareCombobox
                 value={cpu}
@@ -258,13 +260,15 @@ export function CompatibilityChecker({ embedded = false }: CompatibilityCheckerP
                 placeholder="Search Ryzen 7 7800X3D or i5-13600K..."
                 disabled={isSaving || isLoadingRig}
               />
-              <DetectedHardwareBanner
-                detected={detection.detectedRig}
-                onApply={detection.applyDetected}
-                onRefine={detection.refineDetection}
-                onDismiss={detection.clearDetection}
-                applied={detection.detectionState === 'applied'}
-              />
+              {HARDWARE_DETECT_UI_ENABLED && (
+                <DetectedHardwareBanner
+                  detected={detection.detectedRig}
+                  onApply={detection.applyDetected}
+                  onRefine={detection.refineDetection}
+                  onDismiss={detection.clearDetection}
+                  applied={detection.detectionState === 'applied'}
+                />
+              )}
             </div>
             <div className="lg:col-span-2">
               <Label>GPU</Label>
@@ -370,12 +374,14 @@ export function CompatibilityChecker({ embedded = false }: CompatibilityCheckerP
         }}
       />
 
-      {/* Paste modal — merges with any prior browser detection, then applies */}
-      <PasteHardwareModal
-        open={detection.pasteModalOpen}
-        onOpenChange={detection.setPasteModalOpen}
-        onApply={detection.handlePasteApply}
-      />
+      {/* Paste modal — kept for later; gated by HARDWARE_DETECT_UI_ENABLED */}
+      {HARDWARE_DETECT_UI_ENABLED && (
+        <PasteHardwareModal
+          open={detection.pasteModalOpen}
+          onOpenChange={detection.setPasteModalOpen}
+          onApply={detection.handlePasteApply}
+        />
+      )}
     </div>
   );
 }

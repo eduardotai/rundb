@@ -17,7 +17,7 @@ import { MAIN_RESOLUTIONS } from '@/lib/types';
 import { loadMyRigAsync, saveMyRigAsync, getAllHardwareCatalogAsync } from '@/lib/data';
 import type { SteamLinkStatus } from '@/lib/data';
 import type { DetectedHardware } from '@/lib/types';
-import { mergeDetected, applicableHardwareFields } from '@/lib/hardware-detector';
+import { mergeDetected, applicableHardwareFields, HARDWARE_DETECT_UI_ENABLED } from '@/lib/hardware-detector';
 import { shouldOfferIgpuOnEmptyGpu } from '@/lib/cpu-igpu';
 
 interface ProfileRigEditorProps {
@@ -190,20 +190,22 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
           <div>
             <div className="mb-1 flex items-center justify-between">
               <Label>CPU</Label>
-              <HardwareDetectButton
-                mode="browser"
-                onDetect={(r) => {
-                  setLastBrowserDetect(r);
-                  // Browser hints for CPU/RAM are never auto-filled into editable fields;
-                  // paste (or type the real model) for actual CPU + RAM.
-                  const fields = applicableHardwareFields(r);
-                  if (fields.cpu) updateField('cpu', fields.cpu);
-                  if (fields.gpu) updateField('gpu', fields.gpu);
-                  if (fields.ram != null) updateField('ram', fields.ram);
-                  if (fields.resolution) updateField('resolution', fields.resolution);
-                }}
-                onRequestPaste={() => setPasteModalOpen(true)}
-              />
+              {HARDWARE_DETECT_UI_ENABLED && (
+                <HardwareDetectButton
+                  mode="browser"
+                  onDetect={(r) => {
+                    setLastBrowserDetect(r);
+                    // Browser hints for CPU/RAM are never auto-filled into editable fields;
+                    // paste (or type the real model) for actual CPU + RAM.
+                    const fields = applicableHardwareFields(r);
+                    if (fields.cpu) updateField('cpu', fields.cpu);
+                    if (fields.gpu) updateField('gpu', fields.gpu);
+                    if (fields.ram != null) updateField('ram', fields.ram);
+                    if (fields.resolution) updateField('resolution', fields.resolution);
+                  }}
+                  onRequestPaste={() => setPasteModalOpen(true)}
+                />
+              )}
             </div>
             <HardwareCombobox
               value={rig.cpu}
@@ -279,14 +281,12 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
           <p className="text-xs text-muted-foreground">Saved to your Supabase profile.</p>
         </div>
 
-        {/* Steam linking makes managing hardware (My Devices / rigs) easier and persistent.
-            Link once → easily select/import accurate rigs via paste of Steam System Information.
-            Note: Steam itself provides no CPU/GPU/RAM — you still paste once per device using our excellent parsers. */}
+        {/* Steam linking: verified badges + device identity. Hardware remains manual entry. */}
         <div className="pt-4 border-t border-border/60">
           <div className="mb-2 flex items-center justify-between">
             <div>
               <div className="text-sm font-medium">Steam connection</div>
-              <div className="text-[11px] text-muted-foreground">For verified badges + quick device selection across the app (profile, submit, checker).</div>
+              <div className="text-[11px] text-muted-foreground">Verified badges on your profile and reports. Hardware is entered manually below.</div>
             </div>
             <SteamLinkButton
               status={steamStatus}
@@ -303,15 +303,19 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
               <p className="text-[11px] text-emerald-400/80">
                 Linked{steamStatus.persona ? ` as ${steamStatus.persona}` : ''}.
               </p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => setPasteModalOpen(true)}
-              >
-                Import hardware from Steam client (paste System Information once)
-              </Button>
-              <p className="text-[10px] text-muted-foreground">After pasting accurate data it will be available as a saved device in Submit / Checker.</p>
+              {HARDWARE_DETECT_UI_ENABLED && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => setPasteModalOpen(true)}
+                  >
+                    Import hardware from Steam client (paste System Information once)
+                  </Button>
+                  <p className="text-[10px] text-muted-foreground">After pasting accurate data it will be available as a saved device in Submit / Checker.</p>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -331,37 +335,39 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
           }}
         />
 
-        <PasteHardwareModal
-          open={pasteModalOpen}
-          onOpenChange={setPasteModalOpen}
-          onApply={async (pasteDetected) => {
-            // Merge prior browser result (if any) with this paste for richer rig (res + exact cpu/gpu/ram etc).
-            const merged = mergeDetected(lastBrowserDetect, pasteDetected);
-            if (merged.cpu) updateField('cpu', merged.cpu);
-            if (merged.gpu) updateField('gpu', merged.gpu);
-            if (merged.ram) updateField('ram', merged.ram);
-            if (merged.resolution) updateField('resolution', merged.resolution);
-            setLastBrowserDetect(null);
-            setPasteModalOpen(false);
+        {HARDWARE_DETECT_UI_ENABLED && (
+          <PasteHardwareModal
+            open={pasteModalOpen}
+            onOpenChange={setPasteModalOpen}
+            onApply={async (pasteDetected) => {
+              // Merge prior browser result (if any) with this paste for richer rig (res + exact cpu/gpu/ram etc).
+              const merged = mergeDetected(lastBrowserDetect, pasteDetected);
+              if (merged.cpu) updateField('cpu', merged.cpu);
+              if (merged.gpu) updateField('gpu', merged.gpu);
+              if (merged.ram) updateField('ram', merged.ram);
+              if (merged.resolution) updateField('resolution', merged.resolution);
+              setLastBrowserDetect(null);
+              setPasteModalOpen(false);
 
-            // Also persist as a named user device so it appears in Submit "Choose saved device" and other surfaces.
-            // This is the key UX win when Steam-linked: paste accurate hardware *once*.
-            try {
-              const { saveUserDevice } = await import('@/lib/data');
-              await saveUserDevice({
-                label: steamStatus?.persona ? `Steam: ${steamStatus.persona}` : 'Imported from Steam',
-                cpu: merged.cpu || '',
-                gpu: merged.gpu || '',
-                ram: typeof merged.ram === 'number' ? merged.ram : (merged.ram ? parseInt(String(merged.ram), 10) : 16),
-                resolution: merged.resolution,
-                driverVersion: (merged as any).driverVersion,
-                kernel: (merged as any).kernel,
-                distro: (merged as any).distro,
-                isPrimary: false,
-              });
-            } catch {}
-          }}
-        />
+              // Also persist as a named user device so it appears in Submit "Choose saved device" and other surfaces.
+              // This is the key UX win when Steam-linked: paste accurate hardware *once*.
+              try {
+                const { saveUserDevice } = await import('@/lib/data');
+                await saveUserDevice({
+                  label: steamStatus?.persona ? `Steam: ${steamStatus.persona}` : 'Imported from Steam',
+                  cpu: merged.cpu || '',
+                  gpu: merged.gpu || '',
+                  ram: typeof merged.ram === 'number' ? merged.ram : (merged.ram ? parseInt(String(merged.ram), 10) : 16),
+                  resolution: merged.resolution,
+                  driverVersion: (merged as any).driverVersion,
+                  kernel: (merged as any).kernel,
+                  distro: (merged as any).distro,
+                  isPrimary: false,
+                });
+              } catch {}
+            }}
+          />
+        )}
       </CardContent>
     </Card>
   );
