@@ -19,15 +19,16 @@ function prefersReducedMotion() {
 
 /** Smooth tabular count-up for stats (reports, games, FPS). */
 export function CountUp({ value, className, duration = 900, format = true }: CountUpProps) {
-  const [display, setDisplay] = useState(0);
-  const prev = useRef(0);
+  const [display, setDisplay] = useState(value);
+  const prev = useRef(value);
   const started = useRef(false);
 
   useEffect(() => {
     if (prefersReducedMotion()) {
-      setDisplay(value);
       prev.current = value;
-      return;
+      // Defer so we never setState synchronously inside the effect body.
+      const id = requestAnimationFrame(() => setDisplay(value));
+      return () => cancelAnimationFrame(id);
     }
 
     const from = started.current ? prev.current : 0;
@@ -35,8 +36,8 @@ export function CountUp({ value, className, duration = 900, format = true }: Cou
     prev.current = value;
 
     if (from === value) {
-      setDisplay(value);
-      return;
+      const id = requestAnimationFrame(() => setDisplay(value));
+      return () => cancelAnimationFrame(id);
     }
 
     let frame = 0;
