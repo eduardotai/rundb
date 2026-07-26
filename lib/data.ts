@@ -614,7 +614,7 @@ async function getGamesPageByLiveReportCounts(
     const reportedRows: any[] = []
     for (let i = 0; i < reportedIds.length; i += IN_CHUNK) {
       const slice = reportedIds.slice(i, i + IN_CHUNK)
-      let q = applyFilters(supabase.from('games').select('*').in('id', slice))
+      const q = applyFilters(supabase.from('games').select('*').in('id', slice))
       const res = await withSupabaseReadTimeout<any>(q, 'getGamesPageByLiveReportCounts:reported', 8000)
       if (res?.data) reportedRows.push(...res.data)
     }
