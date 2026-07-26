@@ -11,6 +11,13 @@ import { normalizeHardwareSync } from '@/lib/normalize-hardware';
 import { GameCoverFrame } from '@/components/game-cover-frame';
 import { cn } from '@/lib/utils';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   ArrowBigDown,
   ArrowBigUp,
   ChevronDown,
@@ -19,9 +26,17 @@ import {
   Cpu,
   Monitor,
   ShieldCheck,
+  User,
   Zap,
 } from 'lucide-react';
 import { showUserError } from '@/lib/toast';
+
+/** Public display name for a report author. Always returns a non-empty label. */
+export function reporterNickname(report: Report): string {
+  const name = report.reporter?.username?.trim();
+  if (name) return name;
+  return 'Anonymous';
+}
 
 // Reports store the short model the user reported (e.g. "RTX 4070", "Ryzen 7 5700X3D").
 // For display we resolve it to the full catalog name (e.g. "NVIDIA GeForce RTX 4070").
@@ -66,6 +81,7 @@ export function ReportCard({
   looserMode = false,
 }: ReportCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [fullOpen, setFullOpen] = useState(false);
   // Which way the current user has voted (drives button highlight + undo).
   const [userVote, setUserVote] = useState<1 | -1 | 0>(0);
   // Optimistic score offset not yet reflected in the authoritative `report` prop.
@@ -77,6 +93,8 @@ export function ReportCard({
   // Full GPU/CPU names (vendor-prefixed) for display, resolved from the catalog.
   const gpuName = useMemo(() => fullHardwareName(report.gpu, report.canonicalGpu), [report.gpu, report.canonicalGpu]);
   const cpuName = useMemo(() => fullHardwareName(report.cpu, report.canonicalCpu), [report.cpu, report.canonicalCpu]);
+  const nickname = reporterNickname(report);
+  const reporterBadge = report.reporter?.credibilityBadge;
 
   const similarity = userRig ? calculateSimilarity(report, userRig) : 0;
   const isSimilar = similarity > 65;
@@ -94,6 +112,14 @@ export function ReportCard({
       setPendingDelta(0);
     }
   }, [baseScore]);
+
+  const openFull = () => {
+    if (onViewFull) {
+      onViewFull(report);
+      return;
+    }
+    setFullOpen(true);
+  };
 
   const handleVote = async (value: 1 | -1, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -136,6 +162,7 @@ export function ReportCard({
   };
 
   return (
+    <>
     <div
       className={cn(
         'report-card theme-card group cursor-pointer rounded-[var(--radius)] border border-border bg-card p-4 md:p-5',
@@ -144,7 +171,15 @@ export function ReportCard({
         `tier-accent-${report.performanceTier.toLowerCase()}`,
         compact && 'p-3 md:p-4'
       )}
-      onClick={() => onViewFull?.(report)}
+      onClick={openFull}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openFull();
+        }
+      }}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-start gap-3">
@@ -155,6 +190,19 @@ export function ReportCard({
               {report.gameName || report.game?.name}
             </div>
           )}
+          {/* Reporter nickname is always visible — required attribution on every report card. */}
+          <div className="mb-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/50 px-2 py-0.5 font-medium text-foreground">
+              <User className="h-3 w-3 text-primary" />
+              <span className="text-muted-foreground">by</span>
+              <span className="font-semibold">{nickname}</span>
+            </span>
+            {reporterBadge && reporterBadge !== 'New' && (
+              <span className="rounded-full border border-border bg-background/60 px-1.5 py-px text-[10px] font-semibold text-muted-foreground">
+                {reporterBadge}
+              </span>
+            )}
+          </div>
           <div className="flex flex-col gap-1 text-sm">
             {/* Full hardware names (e.g. "NVIDIA GeForce RTX 4070", "AMD Ryzen 7 5700X3D") —
                 stacked on their own lines so the entire name is shown, not just the model. */}
@@ -235,12 +283,6 @@ export function ReportCard({
       <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
         <div className="flex flex-wrap items-center gap-2">
           <span>{formatRelativeTime(report.createdAt)}</span>
-          {report.reporter?.username && (
-            <span className="text-muted-foreground/70">
-              · by {report.reporter.username}
-              {report.reporter.credibilityBadge && report.reporter.credibilityBadge !== 'New' ? ` · ${report.reporter.credibilityBadge}` : ''}
-            </span>
-          )}
           <div className="inline-flex items-center overflow-hidden rounded-full border border-border bg-background/60">
             <motion.button
               onClick={(e) => handleVote(1, e)}
@@ -335,6 +377,7 @@ export function ReportCard({
         <div className="flex items-center gap-2">
           {hasDetails && (
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 setExpanded(!expanded);
@@ -345,7 +388,16 @@ export function ReportCard({
               {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
             </button>
           )}
-          <span className="text-[10px] text-muted-foreground/50 group-hover:text-muted-foreground">View full</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              openFull();
+            }}
+            className="text-[10px] font-medium text-muted-foreground/70 transition group-hover:text-foreground hover:text-foreground hover:underline"
+          >
+            View full
+          </button>
         </div>
       </div>
 
@@ -355,6 +407,7 @@ export function ReportCard({
             <div>
               <span className="font-medium text-muted-foreground">Tweaks:</span> {report.tweaks}
               <button
+                type="button"
                 onClick={(e) => handleCopy(report.tweaks!, e)}
                 className="ml-1 rounded p-0.5 text-muted-foreground transition hover:bg-accent/70 hover:text-foreground"
                 title="Copy tweaks"
@@ -386,6 +439,104 @@ export function ReportCard({
         </div>
       )}
     </div>
+
+    <FullReportDialog
+      report={report}
+      open={fullOpen}
+      onOpenChange={setFullOpen}
+      gpuName={gpuName}
+      cpuName={cpuName}
+      nickname={nickname}
+      reportBadge={reportBadge}
+    />
+    </>
+  );
+}
+
+function FullReportDialog({
+  report,
+  open,
+  onOpenChange,
+  gpuName,
+  cpuName,
+  nickname,
+  reportBadge,
+}: {
+  report: Report;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  gpuName: string;
+  cpuName: string;
+  nickname: string;
+  reportBadge: string;
+}) {
+  const rows: { label: string; value: string }[] = [
+    { label: 'Reported by', value: nickname },
+    { label: 'GPU', value: gpuName },
+    { label: 'CPU', value: cpuName },
+    { label: 'RAM', value: `${report.ram} GB${report.ramSpeed ? ` · ${report.ramSpeed}` : ''}` },
+    {
+      label: 'Display',
+      value: `${report.resolution}${report.refreshRate ? ` @ ${report.refreshRate}Hz` : ''}`,
+    },
+    {
+      label: 'Settings',
+      value: `${report.settingsPreset}${report.customSettingsNotes ? ` — ${report.customSettingsNotes}` : ''}`,
+    },
+    {
+      label: 'FPS',
+      value: `${report.avgFps} avg${report.fps1PercentLow != null ? ` · ${report.fps1PercentLow} 1% low` : ''}`,
+    },
+    { label: 'Tier', value: report.performanceTier },
+    ...(report.driverVersion ? [{ label: 'Driver', value: report.driverVersion }] : []),
+    ...(report.kernel ? [{ label: 'Kernel', value: report.kernel }] : []),
+    ...(report.distro ? [{ label: 'Distro', value: report.distro }] : []),
+    ...(report.tweaks ? [{ label: 'Tweaks', value: report.tweaks }] : []),
+    ...(report.issues ? [{ label: 'Issues', value: report.issues }] : []),
+    ...(report.notes ? [{ label: 'Notes', value: report.notes }] : []),
+    { label: 'Submitted', value: formatRelativeTime(report.createdAt) },
+    {
+      label: 'Score',
+      value: `${report.voteScore ?? report.helpfulVotes ?? 0} · ${reportBadge}`,
+    },
+  ];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="pr-6">
+            {report.gameName || report.game?.name || 'Performance report'}
+          </DialogTitle>
+          <DialogDescription className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1 font-medium text-foreground">
+              <User className="h-3.5 w-3.5 text-primary" />
+              by {nickname}
+            </span>
+            {report.reporter?.credibilityBadge && report.reporter.credibilityBadge !== 'New' && (
+              <span className="text-xs text-muted-foreground">· {report.reporter.credibilityBadge}</span>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex items-center gap-3">
+          <PerformanceBadge tier={report.performanceTier} size="md" />
+          <div className="flex items-baseline gap-1">
+            <span className="font-mono text-3xl font-semibold tabular-nums">{report.avgFps}</span>
+            <span className="text-sm text-muted-foreground">FPS</span>
+          </div>
+        </div>
+
+        <dl className="space-y-2.5 text-sm">
+          {rows.map((row) => (
+            <div key={row.label} className="grid grid-cols-[7rem_1fr] gap-2 sm:grid-cols-[8.5rem_1fr]">
+              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{row.label}</dt>
+              <dd className="break-words text-foreground">{row.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -14,6 +14,11 @@ type RevealProps = {
   style?: CSSProperties;
 };
 
+function prefersReducedMotion() {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
 /**
  * Fade + rise when element enters the viewport.
  * Uses CSS class `motion-reveal` / `motion-reveal-in` from globals.css.
@@ -27,15 +32,17 @@ export function Reveal({
   style,
 }: RevealProps) {
   const ref = useRef<HTMLElement | null>(null);
-  const [visible, setVisible] = useState(false);
+  // Prefer-reduced-motion users skip the entrance animation entirely.
+  const [visible, setVisible] = useState(() => prefersReducedMotion());
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
 
-    if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      setVisible(true);
-      return;
+    if (prefersReducedMotion()) {
+      // Already visible from initial state; keep in sync if preference flips mid-session.
+      const id = requestAnimationFrame(() => setVisible(true));
+      return () => cancelAnimationFrame(id);
     }
 
     const io = new IntersectionObserver(
