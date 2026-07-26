@@ -50,10 +50,12 @@ export function GameCard({
 }: GameCardProps) {
   const isCompact = variant === 'compact';
   const stats = providedStats || EMPTY_STATS;
-  const reportCount = stats.totalReports;
+  // Live tallied stats for tier; denormalized games.report_count only for the count badge.
+  const liveReportCount = stats.totalReports;
+  const reportCount = liveReportCount > 0 ? liveReportCount : (game.reportCount ?? 0);
 
   const dominantTier: PerformanceTier | null =
-    reportCount > 0
+    liveReportCount > 0
       ? ((Object.entries(stats.tierDistribution) as [PerformanceTier, number][])
           .sort((a, b) => b[1] - a[1])[0]?.[0] ?? null)
       : null;
@@ -155,7 +157,7 @@ export function GameCard({
           {game.name}
         </h3>
         <p className={cn('mt-0.5 truncate text-muted-foreground', isCompact ? 'text-[11px]' : 'text-xs')}>
-          {game.releaseYear} · {game.developer}
+          {game.releaseYear ? `${game.releaseYear} · ` : ''}{game.developer}
         </p>
 
         <div className={cn('flex flex-wrap gap-1', isCompact ? 'mt-1.5' : 'mt-2')}>

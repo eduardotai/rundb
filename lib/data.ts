@@ -111,9 +111,18 @@ async function getStarterGamesPage(params: Required<Pick<GetGamesPageParams, 'pa
   if (genre) games = games.filter((g) => g.genres.includes(genre))
 
   if (params.sort === 'name') {
-    games.sort((a, b) => a.name.localeCompare(b.name))
+    games.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
   } else if (params.sort === 'year') {
-    games.sort((a, b) => b.releaseYear - a.releaseYear)
+    // Newest release year first; unknown year (0/missing) last; name as tiebreak
+    games.sort((a, b) => {
+      const ya = a.releaseYear ?? 0
+      const yb = b.releaseYear ?? 0
+      if (ya === 0 && yb === 0) return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+      if (ya === 0) return 1
+      if (yb === 0) return -1
+      if (yb !== ya) return yb - ya
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+    })
   } else if (params.sort === 'reports') {
     const allReports = mock.getAllReports()
     const counts = new Map<string, number>()
@@ -122,10 +131,10 @@ async function getStarterGamesPage(params: Required<Pick<GetGamesPageParams, 'pa
       if (gid) counts.set(gid, (counts.get(gid) ?? 0) + 1)
     }
     games.sort((a, b) => {
-      const ca = counts.get(a.id) ?? 0
-      const cb = counts.get(b.id) ?? 0
+      const ca = counts.get(a.id) ?? a.reportCount ?? 0
+      const cb = counts.get(b.id) ?? b.reportCount ?? 0
       if (cb !== ca) return cb - ca
-      return a.name.localeCompare(b.name)
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
     })
   }
 
@@ -191,6 +200,17 @@ export const HARDWARE_CATALOG_LIVE = USE_REAL;
 // ============================================
 
 function mapDbGameToGame(row: any): Game {
+  const rawYear = row.release_year
+  const releaseYear =
+    rawYear != null && rawYear !== '' && !Number.isNaN(Number(rawYear))
+      ? Number(rawYear)
+      : 0
+  const rawReports = row.report_count
+  const reportCount =
+    rawReports != null && !Number.isNaN(Number(rawReports))
+      ? Number(rawReports)
+      : undefined
+
   return {
     id: row.id,
     slug: row.slug,
@@ -200,7 +220,9 @@ function mapDbGameToGame(row: any): Game {
     coverImage: row.cover_url || 'https://picsum.photos/id/1015/300/400',
     coverAttribution: row.cover_attribution || row.attribution,
     genres: row.genres || [],
-    releaseYear: row.release_year || 2020,
+    // Do not invent a year (old `|| 2020` broke Newest sort by parking nulls in 2020).
+    releaseYear,
+    reportCount,
     developer: row.developer || 'Unknown',
     publisher: row.publisher,
     officialMinReqs: row.official_min_reqs,
@@ -493,10 +515,18 @@ export interface GetGamesPageParams {
   sort?: 'name' | 'year' | 'reports'
 }
 
+const GAMES_PAGE_MAX = 100
+const GAMES_PAGE_BULK_MAX = 10_000
+
 /** Paginated games browse — use when catalog exceeds ~500 rows (real Supabase mode). */
 export async function getGamesPage(params: GetGamesPageParams = {}): Promise<GamesPageResult> {
   const page = Math.max(1, params.page ?? 1)
-  const pageSize = Math.min(100, Math.max(1, params.pageSize ?? 48))
+  // Normal pages stay ≤100. Explicit bulk fetches (tier filter client pass) may go up to 10k.
+  const requestedSize = Math.max(1, params.pageSize ?? 48)
+  const pageSize =
+    requestedSize > GAMES_PAGE_MAX
+      ? Math.min(GAMES_PAGE_BULK_MAX, requestedSize)
+      : Math.min(GAMES_PAGE_MAX, requestedSize)
   const search = params.search?.trim() ?? ''
   const genre = params.genre?.trim() ?? ''
   const sort = params.sort ?? 'name'
@@ -513,14 +543,29 @@ export async function getGamesPage(params: GetGamesPageParams = {}): Promise<Gam
   if (search) query = query.ilike('name', `%${search}%`)
   if (genre) query = query.contains('genres', [genre])
 
-  if (sort === 'name') query = query.order('name', { ascending: true })
-  else if (sort === 'year') query = query.order('release_year', { ascending: false, nullsFirst: false })
-  else if (sort === 'reports') query = query.order('report_count', { ascending: false, nullsFirst: false })
-  else query = query.order('name', { ascending: true })
+  // Sort meanings (Browse Games UI):
+  //  - name     → A–Z
+  //  - year     → newest release year first (nulls last)
+  //  - reports  → most community reports first (games.report_count)
+  if (sort === 'name') {
+    query = query.order('name', { ascending: true })
+  } else if (sort === 'year') {
+    query = query
+      .order('release_year', { ascending: false, nullsFirst: false })
+      .order('name', { ascending: true })
+  } else if (sort === 'reports') {
+    query = query
+      .order('report_count', { ascending: false, nullsFirst: false })
+      .order('name', { ascending: true })
+  } else {
+    query = query.order('name', { ascending: true })
+  }
 
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1
-  const result = await withSupabaseReadTimeout<any>(query.range(from, to), 'getGamesPage')
+  // Bulk tier-filter loads can exceed the short read timeout; give them more room.
+  const timeoutMs = pageSize > GAMES_PAGE_MAX ? 12_000 : 3500
+  const result = await withSupabaseReadTimeout<any>(query.range(from, to), 'getGamesPage', timeoutMs)
 
   if (!result) {
     return getStarterGamesPage({ page, pageSize, search, genre, sort })

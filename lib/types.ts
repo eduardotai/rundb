@@ -74,7 +74,10 @@ export interface Game {
   /** Optional attribution/credit string for the cover (from game_media.attribution or cover source). Rendered subtly when present. */
   coverAttribution?: string;
   genres: string[];
+  /** Calendar release year. 0 = unknown / not set (sorts last on Newest). */
   releaseYear: number;
+  /** Denormalized approved-report count from games.report_count (real DB). */
+  reportCount?: number;
   developer: string;
   publisher?: string;
   officialMinReqs?: HardwareSpec;

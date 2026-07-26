@@ -41,7 +41,9 @@ export default function GamesPage() {
   }, [search]);
 
   const paginatedMode = USE_REAL;
-  const needsGlobalTransform = Boolean(selectedTier) || sort === 'reports';
+  // Tier filter needs the full search/genre set client-side (dominant tier is computed from reports).
+  // Name / year / reports sorts are applied server-side via getGamesPage — do not re-sort and scramble them.
+  const needsGlobalTransform = Boolean(selectedTier);
 
   const gamesQuery = useQuery({
     queryKey: paginatedMode
@@ -54,7 +56,8 @@ export default function GamesPage() {
             pageSize: needsGlobalTransform ? 10000 : PAGE_SIZE,
             search: debouncedSearch || undefined,
             genre: selectedGenres[0],
-            sort, // pass 'reports' too; server delegates search/genre, reports sort + tier done globally client on received set
+            // Server applies: name=A–Z, year=newest release_year, reports=report_count
+            sort,
           })
         : getAllGames().then((games: Game[]) => ({
             games,
@@ -87,8 +90,8 @@ export default function GamesPage() {
     return map;
   }, [rawGames, allReports]);
 
-  // Server delegates search/genre in paginated (full set requested when tier/reports active).
-  // Client search/genre only for mock full mode. Tier + reports (and post-tier name/year) via pure transform for uniformity.
+  // Real mode without tier: trust server search/genre/sort order (do not re-sort with empty stats).
+  // Mock mode: full client filter + sort. Tier filter: client dominant-tier pass + re-sort.
   const postFilterSortAll = useMemo(() => {
     let working = [...rawGames];
 
@@ -106,17 +109,26 @@ export default function GamesPage() {
       if (selectedGenres.length > 0) {
         working = working.filter((g: Game) => g.genres.some((gen: string) => selectedGenres.includes(gen)));
       }
+
+      return applyGamesBrowseTransform(working, gameStatsMap, {
+        tier: selectedTier,
+        sort,
+      });
     }
 
-    // Delegate tier + sort to the pure testable transform (uses global stats counts for reports)
-    return applyGamesBrowseTransform(working, gameStatsMap, {
-      tier: selectedTier,
-      sort,
-    });
+    if (selectedTier) {
+      return applyGamesBrowseTransform(working, gameStatsMap, {
+        tier: selectedTier,
+        sort,
+      });
+    }
+
+    // Server already ordered by name / release_year / report_count
+    return working;
   }, [paginatedMode, rawGames, debouncedSearch, selectedGenres, selectedTier, sort, gameStatsMap]);
 
-  // Derive display list + counts/pages from the *fully transformed* set when client post-processing
-  // (tier or reports) was used; otherwise trust server page data for name/year no-tier case.
+  // Derive display list + counts/pages from the *fully transformed* set when tier filter
+  // forced a bulk load; otherwise trust server page metadata for name/year/reports.
   const { displayGames, totalGames, totalPages: effectiveTotalPages, currentPage: effectivePage } = useMemo(() => {
     if (paginatedMode && needsGlobalTransform) {
       const full = postFilterSortAll;
@@ -132,7 +144,7 @@ export default function GamesPage() {
       };
     }
 
-    // Simple server-paged name/year (no tier) or mock mode: no extra slice
+    // Server-paged sorts (no tier) or mock mode (already sliced / full list)
     return {
       displayGames: postFilterSortAll,
       totalGames: pageData?.total ?? postFilterSortAll.length,
@@ -144,8 +156,6 @@ export default function GamesPage() {
   const hasActiveFilters =
     Boolean(debouncedSearch) || selectedGenres.length > 0 || Boolean(selectedTier);
   // Note: hasActiveFilters intentionally excludes sort (sort is ordering, not a restrictor for "empty db vs no matches").
-  // Counts, pages, display list, and paging controls now always derive from post-filter/sort transformed set
-  // when tier or reports-sort active (via needsGlobalTransform + effective* derived from postFilterSortAll).
 
   const toggleGenre = (genre: string) => {
     setSelectedGenres((prev) => {
