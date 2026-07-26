@@ -518,6 +518,164 @@ export interface GetGamesPageParams {
 const GAMES_PAGE_MAX = 100
 const GAMES_PAGE_BULK_MAX = 10_000
 
+/** Cached probe: production may predate games.report_count (error 42703). */
+let gamesReportCountColumn: boolean | null = null
+
+async function probeGamesReportCountColumn(supabase: {
+  from: (t: string) => { select: (c: string) => { limit: (n: number) => PromiseLike<{ error: { code?: string } | null }> } }
+}): Promise<boolean> {
+  if (gamesReportCountColumn != null) return gamesReportCountColumn
+  try {
+    const { error } = await supabase.from('games').select('report_count').limit(1)
+    // 42703 = undefined_column
+    gamesReportCountColumn = !error || error.code !== '42703'
+    if (error && error.code === '42703') {
+      console.warn(
+        '[data] games.report_count missing — Most reports uses live tallies from reports. Apply supabase/incremental-game-report-count.sql for indexed sort.'
+      )
+    }
+  } catch {
+    gamesReportCountColumn = false
+  }
+  return gamesReportCountColumn
+}
+
+/** Tally approved (or all public-RLS) report rows by game_id. */
+async function fetchReportCountsByGameId(supabase: any): Promise<Map<string, number>> {
+  const counts = new Map<string, number>()
+  const chunk = 1000
+  let from = 0
+  for (;;) {
+    const result = await withSupabaseReadTimeout<any>(
+      supabase.from('reports').select('game_id').range(from, from + chunk - 1),
+      'fetchReportCountsByGameId',
+      8000
+    )
+    if (!result || result.error) {
+      if (result?.error) console.error('[data] fetchReportCountsByGameId:', result.error)
+      break
+    }
+    const rows = result.data || []
+    for (const row of rows) {
+      const gid = row.game_id as string | null
+      if (!gid) continue
+      counts.set(gid, (counts.get(gid) ?? 0) + 1)
+    }
+    if (rows.length < chunk) break
+    from += chunk
+  }
+  return counts
+}
+
+/**
+ * Most-reports browse when games.report_count is absent.
+ * Order: games with reports (count desc, name) then zero-report games (name A–Z).
+ * Still returns the full filtered catalog total — never the 37-game starter fallback.
+ */
+async function getGamesPageByLiveReportCounts(
+  supabase: any,
+  params: {
+    page: number
+    pageSize: number
+    search: string
+    genre: string
+  }
+): Promise<GamesPageResult | null> {
+  const { page, pageSize, search, genre } = params
+  const from = (page - 1) * pageSize
+
+  const applyFilters = (q: any) => {
+    if (search) q = q.ilike('name', `%${search}%`)
+    if (genre) q = q.contains('genres', [genre])
+    return q
+  }
+
+  const countRes = await withSupabaseReadTimeout<any>(
+    applyFilters(supabase.from('games').select('id', { count: 'exact', head: true })),
+    'getGamesPageByLiveReportCounts:count',
+    8000
+  )
+  if (!countRes || countRes.error) {
+    if (countRes?.error) console.error('[data] reports-sort count error:', countRes.error)
+    return null
+  }
+  const total = countRes.count ?? 0
+  if (total === 0) {
+    return { games: [], total: 0, page, pageSize, totalPages: 1 }
+  }
+
+  const reportCounts = await fetchReportCountsByGameId(supabase)
+  const reportedIds = [...reportCounts.keys()]
+
+  let sortedWithReports: Game[] = []
+  if (reportedIds.length > 0) {
+    // .in() has practical URL limits; chunk if a future catalog has huge reported sets
+    const IN_CHUNK = 150
+    const reportedRows: any[] = []
+    for (let i = 0; i < reportedIds.length; i += IN_CHUNK) {
+      const slice = reportedIds.slice(i, i + IN_CHUNK)
+      let q = applyFilters(supabase.from('games').select('*').in('id', slice))
+      const res = await withSupabaseReadTimeout<any>(q, 'getGamesPageByLiveReportCounts:reported', 8000)
+      if (res?.data) reportedRows.push(...res.data)
+    }
+    sortedWithReports = reportedRows
+      .map((row) => {
+        const g = mapDbGameToGame(row)
+        g.reportCount = reportCounts.get(g.id) ?? 0
+        return g
+      })
+      .sort((a, b) => {
+        const ca = a.reportCount ?? 0
+        const cb = b.reportCount ?? 0
+        if (cb !== ca) return cb - ca
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+      })
+  }
+
+  const nRep = sortedWithReports.length
+  const pageGames: Game[] = []
+
+  if (from < nRep) {
+    pageGames.push(...sortedWithReports.slice(from, from + pageSize))
+  }
+
+  const stillNeed = pageSize - pageGames.length
+  if (stillNeed > 0) {
+    const zeroOffset = Math.max(0, from - nRep)
+    let zeroQuery = applyFilters(
+      supabase.from('games').select('*').order('name', { ascending: true })
+    )
+    if (reportedIds.length > 0) {
+      // PostgREST: not-in list. Safe while reported set is modest; prefer report_count column at scale.
+      zeroQuery = zeroQuery.not('id', 'in', `(${reportedIds.join(',')})`)
+    }
+    const zeroRes = await withSupabaseReadTimeout<any>(
+      zeroQuery.range(zeroOffset, zeroOffset + stillNeed - 1),
+      'getGamesPageByLiveReportCounts:zero',
+      8000
+    )
+    if (zeroRes?.error) {
+      console.error('[data] reports-sort zero-report page error:', zeroRes.error)
+      // Still return any with-reports slice we already have rather than starter catalog
+    } else {
+      for (const row of zeroRes?.data || []) {
+        const g = mapDbGameToGame(row)
+        g.reportCount = reportCounts.get(g.id) ?? 0
+        pageGames.push(g)
+      }
+    }
+  }
+
+  const enriched = await enrichGamesWithCovers(pageGames)
+  return {
+    games: enriched,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  }
+}
+
 /** Paginated games browse — use when catalog exceeds ~500 rows (real Supabase mode). */
 export async function getGamesPage(params: GetGamesPageParams = {}): Promise<GamesPageResult> {
   const page = Math.max(1, params.page ?? 1)
@@ -538,6 +696,19 @@ export async function getGamesPage(params: GetGamesPageParams = {}): Promise<Gam
   const { createClient } = await import('@/lib/supabase/client')
   const supabase = createClient()
 
+  // Most reports: denormalized column when present; else live tallies over full catalog.
+  // Missing report_count used to 42703 → starter fallback (~37 games). Never do that again.
+  let effectiveSort: 'name' | 'year' | 'reports' = sort
+  if (sort === 'reports') {
+    const hasCol = await probeGamesReportCountColumn(supabase)
+    if (!hasCol) {
+      const live = await getGamesPageByLiveReportCounts(supabase, { page, pageSize, search, genre })
+      if (live) return live
+      // Live path failed — still show full catalog (name order) rather than starter
+      effectiveSort = 'name'
+    }
+  }
+
   let query = supabase.from('games').select('*', { count: 'exact' })
 
   if (search) query = query.ilike('name', `%${search}%`)
@@ -546,14 +717,14 @@ export async function getGamesPage(params: GetGamesPageParams = {}): Promise<Gam
   // Sort meanings (Browse Games UI):
   //  - name     → A–Z
   //  - year     → newest release year first (nulls last)
-  //  - reports  → most community reports first (games.report_count)
-  if (sort === 'name') {
+  //  - reports  → most community reports first (games.report_count when available)
+  if (effectiveSort === 'name') {
     query = query.order('name', { ascending: true })
-  } else if (sort === 'year') {
+  } else if (effectiveSort === 'year') {
     query = query
       .order('release_year', { ascending: false, nullsFirst: false })
       .order('name', { ascending: true })
-  } else if (sort === 'reports') {
+  } else if (effectiveSort === 'reports') {
     query = query
       .order('report_count', { ascending: false, nullsFirst: false })
       .order('name', { ascending: true })
@@ -574,7 +745,30 @@ export async function getGamesPage(params: GetGamesPageParams = {}): Promise<Gam
   const { data, error, count } = result
 
   if (error) {
+    // Missing report_count mid-flight: live path instead of 37-game starter
+    if (effectiveSort === 'reports' && (error as { code?: string }).code === '42703') {
+      gamesReportCountColumn = false
+      const live = await getGamesPageByLiveReportCounts(supabase, { page, pageSize, search, genre })
+      if (live) return live
+    }
     console.error('[data] getGamesPage error:', error)
+    // Prefer a real name-ordered page over starter so the full catalog stays visible
+    if (effectiveSort !== 'name') {
+      let fallback = supabase.from('games').select('*', { count: 'exact' }).order('name', { ascending: true })
+      if (search) fallback = fallback.ilike('name', `%${search}%`)
+      if (genre) fallback = fallback.contains('genres', [genre])
+      const fb = await withSupabaseReadTimeout<any>(fallback.range(from, to), 'getGamesPage:nameFallback', timeoutMs)
+      if (fb && !fb.error && (fb.count ?? 0) > 0) {
+        const mappedFb = (fb.data || []).map(mapDbGameToGame)
+        return {
+          games: await enrichGamesWithCovers(mappedFb),
+          total: fb.count ?? 0,
+          page,
+          pageSize,
+          totalPages: Math.max(1, Math.ceil((fb.count ?? 0) / pageSize)),
+        }
+      }
+    }
     return getStarterGamesPage({ page, pageSize, search, genre, sort })
   }
 
