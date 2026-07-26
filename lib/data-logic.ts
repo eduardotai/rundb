@@ -152,18 +152,31 @@ export function applyGamesBrowseTransform(
     result = result.filter((g) => getDominantTier(statsMap[g.id]) === options.tier);
   }
 
-  // Sorting (reports uses stats counts for accuracy with client-computed stats)
+  // Sorting
+  //  - reports: live stats when present, else denormalized game.reportCount
+  //  - name: A–Z (case-insensitive)
+  //  - year: newest release year first; unknown (0/null) last
   if (options.sort === 'reports') {
     result.sort((a, b) => {
-      const ca = statsMap[a.id]?.totalReports ?? 0;
-      const cb = statsMap[b.id]?.totalReports ?? 0;
+      const ca = statsMap[a.id]?.totalReports ?? a.reportCount ?? 0;
+      const cb = statsMap[b.id]?.totalReports ?? b.reportCount ?? 0;
       if (cb !== ca) return cb - ca;
-      return a.name.localeCompare(b.name);
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
     });
   } else if (options.sort === 'name') {
-    result.sort((a, b) => a.name.localeCompare(b.name));
+    result.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   } else if (options.sort === 'year') {
-    result.sort((a, b) => (b.releaseYear ?? 0) - (a.releaseYear ?? 0));
+    result.sort((a, b) => {
+      const ya = a.releaseYear ?? 0;
+      const yb = b.releaseYear ?? 0;
+      if (ya === 0 && yb === 0) {
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      }
+      if (ya === 0) return 1;
+      if (yb === 0) return -1;
+      if (yb !== ya) return yb - ya;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
   }
 
   return result;

@@ -135,6 +135,22 @@ test('applyGamesBrowseTransform year sort is newest first', () => {
   assert(res[1].id === 'g1')
 })
 
+test('applyGamesBrowseTransform year sort puts unknown year (0) last', () => {
+  const unknown = makeGame('g0', 'Zulu Unknown', 0)
+  const res = applyGamesBrowseTransform([g1, unknown, g3], statsMap, { sort: 'year' })
+  assert(res[0].id === 'g3')
+  assert(res[1].id === 'g1')
+  assert(res[2].id === 'g0')
+})
+
+test('applyGamesBrowseTransform reports sort falls back to game.reportCount when stats empty', () => {
+  const a = { ...makeGame('a', 'Alpha', 2020), reportCount: 3 }
+  const b = { ...makeGame('b', 'Bravo', 2020), reportCount: 10 }
+  const c = { ...makeGame('c', 'Charlie', 2020), reportCount: 1 }
+  const res = applyGamesBrowseTransform([a, b, c], {}, { sort: 'reports' })
+  assert(res.map((g) => g.id).join(',') === 'b,a,c')
+})
+
 test('applyGamesBrowseTransform excludes zero-report games under tier filter', () => {
   const res = applyGamesBrowseTransform([g1, g2, g3], statsMap, { tier: 'Good', sort: 'reports' })
   assert(res.length === 1)
