@@ -29,6 +29,14 @@ import { shouldOfferIgpuOnEmptyGpu } from '@/lib/cpu-igpu';
 import { Cpu, Zap, Monitor } from 'lucide-react';
 import { upgradeCoverImageSrc } from '@/lib/cover-image-url';
 
+/** Empty optional number inputs must not fail validation ("" / NaN → undefined). */
+const optionalNumber = z.preprocess((val) => {
+  if (val === '' || val === null || val === undefined) return undefined
+  if (typeof val === 'number' && Number.isNaN(val)) return undefined
+  const n = typeof val === 'number' ? val : Number(val)
+  return Number.isFinite(n) ? n : undefined
+}, z.number().optional())
+
 const formSchema = z.object({
   gameId: z.string().min(1),
   cpu: z.string()
@@ -45,14 +53,14 @@ const formSchema = z.object({
     .optional()
     .transform((v) => (v ? sanitizeFullName(v) : undefined)),
   resolution: z.string().min(3).max(20),
-  refreshRate: z.coerce.number().optional(),
+  refreshRate: optionalNumber,
   settingsPreset: z.enum(['Low', 'Medium', 'High', 'Ultra', 'Custom']),
   customSettingsNotes: z.string()
     .max(300, 'Custom settings notes are too long')
     .optional()
     .transform((v) => (v ? sanitizeFullName(v) : undefined)),
   avgFps: z.coerce.number().min(1, 'Average FPS must be at least 1').max(600, 'Average FPS must be at most 600'),
-  fps1PercentLow: z.coerce.number().optional(),
+  fps1PercentLow: optionalNumber,
   notes: z.string()
     .max(500, 'Notes are too long')
     .optional()
@@ -138,7 +146,8 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
       settingsPreset: 'High',
       avgFps: 60,
     },
-    mode: 'onTouched',
+    mode: 'onSubmit',
+    reValidateMode: 'onChange',
   });
 
   // Watch the whole form so the left-pane live preview stays in sync as the user types.
@@ -147,6 +156,14 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
   const avgFpsNum = Number(v.avgFps);
   const onePctNum = Number(v.fps1PercentLow);
   const tierPreview = useMemo(() => previewTier(avgFpsNum), [avgFpsNum]);
+
+  // Keep gameId in sync when the user picks a different title without remounting the dialog.
+  useEffect(() => {
+    if (open) {
+      form.setValue('gameId', game.id)
+      setCoverError(false)
+    }
+  }, [open, game.id, form])
 
   // Auto-load saved rig when dialog opens (Phase 1 polish)
   // Also load multiple saved devices for Phase 2 selector
@@ -200,9 +217,18 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
     }
   };
 
+  const showValidationErrors = (errors: Record<string, unknown>) => {
+    const first = Object.values(errors).find(
+      (e) => e && typeof e === 'object' && 'message' in e && (e as { message?: unknown }).message
+    ) as { message?: string } | undefined
+    showUserError(first?.message || 'Please fill in the required fields (CPU, GPU, FPS).')
+  }
+
   /** Intercept empty-GPU submit to offer CPU iGPU before zod errors. */
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Always pin the game from props so a stale defaultValues id cannot block insert.
+    form.setValue('gameId', game.id)
     const cpuVal = sanitizeFullName(String(form.getValues('cpu') || ''));
     const gpuVal = sanitizeFullName(String(form.getValues('gpu') || ''));
     if (cpuVal && !gpuVal) {
@@ -218,7 +244,7 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
         // fall through to normal validation
       }
     }
-    void form.handleSubmit(onSubmit)(e);
+    void form.handleSubmit(onSubmit, showValidationErrors)(e);
   };
 
   const onSubmit = async (values: FormValues) => {
@@ -610,7 +636,7 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
                 </Button>
                 <Button
                   type="submit"
-                  disabled={isSubmitting || !form.formState.isValid}
+                  disabled={isSubmitting}
                   className="bg-white text-black font-medium hover:bg-white/90"
                 >
                   {isSubmitting ? 'Submitting…' : 'Submit report'}

@@ -15,7 +15,8 @@ const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       theme="dark"
-      className="toaster group"
+      // Above Radix dialog overlay (z-50) so submit/auth errors stay visible while the form is open
+      className="toaster group !z-[200]"
       icons={{
         success: <CircleCheck className="h-4 w-4" />,
         info: <Info className="h-4 w-4" />,
