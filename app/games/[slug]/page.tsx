@@ -10,6 +10,7 @@ import { FpsResolutionBars } from '@/components/charts/fps-resolution-bars';
 import { ReportCard } from '@/components/report-card';
 import { SubmitReportDialog } from '@/components/submit-report-dialog';
 import { CompatibilityChecker } from '@/components/compatibility-checker';
+import { OfficialSpecCheck } from '@/components/official-spec-check';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { ShieldCheck, Sparkles, X } from 'lucide-react';
@@ -195,6 +196,17 @@ function GameDetailInner({ game }: { game: Game }) {
 
   const hasCommunityReports = stats.totalReports > 0;
 
+  // Only paint community tier marker when we actually have matching reports.
+  // Empty-pool predictions used to claim "Playable" at low confidence — dishonest.
+  const communityPredictedTier =
+    predictionQuery.data &&
+    predictionQuery.data.matchingReports.length > 0 &&
+    predictionQuery.data.confidence > 0
+      ? predictionQuery.data.predictedTier
+      : null;
+  const communityPredictionConfidence =
+    communityPredictedTier != null ? predictionQuery.data?.confidence : undefined;
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
       {/* Header */}
@@ -270,7 +282,7 @@ function GameDetailInner({ game }: { game: Game }) {
             )}
           </div>
 
-          {/* Official Requirements */}
+          {/* Official Requirements (publisher list) */}
           {(game.officialMinReqs || game.officialRecReqs) && (
             <div className="rounded-2xl border border-border bg-card p-5">
               <div className="text-sm font-medium text-muted-foreground mb-3">OFFICIAL REQUIREMENTS</div>
@@ -296,7 +308,28 @@ function GameDetailInner({ game }: { game: Game }) {
                   </div>
                 )}
               </div>
+              {/* Compact secondary line when community reports already lead */}
+              {hasCommunityReports && (
+                <div className="mt-3 pt-3 border-t border-border">
+                  <OfficialSpecCheck
+                    game={game}
+                    myRig={myRig}
+                    hasCommunityReports
+                    compact
+                  />
+                </div>
+              )}
             </div>
+          )}
+
+          {/* Primary official quick check when community data is missing */}
+          {!hasCommunityReports && !statsQuery.isLoading && (
+            <OfficialSpecCheck
+              game={game}
+              myRig={myRig}
+              hasCommunityReports={false}
+              onSubmitReport={() => setShowSubmit(true)}
+            />
           )}
 
           {/* Community Stats (now powered by RQ + real adapter when flag on) */}
@@ -331,8 +364,8 @@ function GameDetailInner({ game }: { game: Game }) {
                 <TierDistributionBar
                   distribution={stats.tierDistribution}
                   total={stats.totalReports}
-                  predictedTier={predictionQuery.data?.predictedTier ?? null}
-                  confidence={predictionQuery.data?.confidence}
+                  predictedTier={communityPredictedTier}
+                  confidence={communityPredictionConfidence}
                 />
 
                 <div className="mt-5 border-t border-border pt-4 text-sm">

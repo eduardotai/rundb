@@ -5,7 +5,8 @@
 
 ## Read This First
 - `data.ts`: the central adapter and public facade for app/components. It owns real-vs-mock behavior, mapping, React Query hooks, enrichment, saved rigs, reports, and games. It loads `mock-data.ts` lazily (dynamic import) so public real-mode bundles do not ship the demo/localStorage layer.
-- `data-logic.ts`: shared pure helpers (filterReports, computeGameStatsFromReports, predictForUserRigFromReports, formatRelativeTime, parseCSV) used by both real and mock paths. No fetches, no localStorage.
+- `data-logic.ts`: shared pure helpers (filterReports, computeGameStatsFromReports, predictForUserRigFromReports, checkOfficialSpecsForRig, formatRelativeTime, parseCSV) used by both real and mock paths. No fetches, no localStorage.
+- `parse-system-requirements.ts`, `official-spec-check.ts`: publisher min/rec string parsing + pure “can my rig meet official specs?” evaluation (separate from community `PerformanceTier`).
 - `starter-games.ts`: the canonical 18-game starter catalog (data only). Source for `game-cover-catalog.ts` and re-exported by `mock-data.ts` for scripts.
 - `admin-demo.ts`: mock/localStorage-backed admin tools (moderation queue, aliases, bulk import, image moderation) used only by `app/admin`; keeps mock state out of public bundles.
 - `types.ts`: source-of-truth TypeScript shapes that mirror Postgres concepts and UI payloads.
@@ -14,6 +15,7 @@
 - `hardware-catalog*.ts`, `normalize-hardware.ts`, `hardware-detector.ts`, `hardware-similarity-heuristics.ts`, `similarity.ts`: hardware catalog, aliases, detection, normalization, and similarity.
 - `game-cover-*`, `game-id-resolver.ts`, `cover-image-url.ts`, `server/game-media.ts`: cover, media, and external ID resilience.
 - `server/*`: service-role and server-only helpers for ingest, queues, dashboard data, profiles, and cover candidates.
+- `server/steam-requirements.ts`: fetch Steam store `pc_requirements` and map to `official_min_reqs` / `official_rec_reqs` (used by ingest + backfill).
 
 ## Main Responsibilities
 - Centralize data access so app and component code can stay thin and resilient.
@@ -45,6 +47,7 @@
 - New report property: add to `Report`/`SubmitReportInput`, mapper functions, `submit_report` RPC/action payload, forms, cards, and tests.
 - New game metadata field: update `Game`, DB schema, ingest mapper, cover/enrichment behavior if relevant, UI consumers, and seeds/scripts.
 - New prediction heuristic: edit pure prediction/similarity helpers and add focused tests.
+- Official-spec comparison: keep verdict types separate from `PerformanceTier`; never invent FPS from publisher lists; extend `parse-system-requirements` / `official-spec-check` with tests.
 - New hardware source or parser: extend `hardware-detector.ts`, normalization/catalog helpers, UI review flow, and tests.
 - New server ingest capability: add or update `lib/server/*`, wire from `scripts/` or `app/actions/*`, and keep service-role access server-only.
 - New Supabase access path: decide whether it belongs in the public adapter, server action, route handler, or server-only helper before coding.

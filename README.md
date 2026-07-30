@@ -217,6 +217,7 @@ npm run test    # Node test runner
 | `npm run ingest:games` | Run direct game ingestion |
 | `npm run ingest:worker -- --batch=50` | Process queued ingestion in batches |
 | `npm run import:latest` | Import latest game candidates |
+| `npm run backfill:steam-reqs` | Fill `official_min_reqs` / `official_rec_reqs` from Steam. Store API is rate-limited — use `--delay-ms=2500`, `--limit=30`, re-run to resume (`--dry-run`, `--force`) |
 | `npm run reingest:covers` | Refresh covers and media |
 
 The catalog grows in two phases: **skeleton rows** are inserted fast (seeds, bulk import, queues), then **enriched in the background** with IGDB/Steam/PCGamingWiki metadata, covers, screenshots, and requirements. The app stays usable while large catalogs process; failed rows stay visible in the queue for retry.

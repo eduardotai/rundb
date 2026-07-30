@@ -10,6 +10,10 @@ import { getCatalogCover } from '@/lib/game-cover-catalog'
 import { igdbGameMatchesSeed, igdbHasSteamAppId } from '@/lib/igdb-game-match'
 import { steamLibraryCoverUrl } from '@/lib/cover-image-url'
 import { buildCoverCandidates } from './cover-candidates'
+import {
+  fetchSteamOfficialRequirements,
+  steamReqsToGameColumns,
+} from './steam-requirements'
 
 const RATE_LIMIT_MS = 300
 
@@ -32,6 +36,55 @@ export interface IngestGameResult {
   gameId?: string
   error?: string
   mediaUploaded?: number
+  /** Whether official min and/or rec were written from Steam pc_requirements. */
+  requirementsUpdated?: boolean
+}
+
+/**
+ * Fetch Steam store pc_requirements and merge into games row.
+ * Never clears existing official_* fields with nulls.
+ */
+async function applySteamOfficialRequirements(
+  client: SupabaseClient,
+  gameId: string,
+  steamAppId: string | undefined | null,
+  dryRun: boolean,
+  log: (msg: string) => void
+): Promise<boolean> {
+  if (!steamAppId) return false
+
+  log(`Fetching Steam official requirements for AppID ${steamAppId}...`)
+  const fetched = await fetchSteamOfficialRequirements(steamAppId)
+  if (!fetched.ok) {
+    log(`  Steam requirements skipped: ${fetched.error ?? 'unknown error'}`)
+    return false
+  }
+
+  const columns = steamReqsToGameColumns(fetched.reqs)
+  if (!columns.official_min_reqs && !columns.official_rec_reqs) {
+    log('  Steam returned no parseable PC min/recommended requirements')
+    return false
+  }
+
+  const sides = [
+    columns.official_min_reqs ? 'min' : null,
+    columns.official_rec_reqs ? 'rec' : null,
+  ]
+    .filter(Boolean)
+    .join('+')
+
+  if (dryRun) {
+    log(`  [dry-run] would set official_${sides}_reqs`)
+    return true
+  }
+
+  const { error } = await client.from('games').update(columns).eq('id', gameId)
+  if (error) {
+    log(`  Steam requirements update failed: ${error.message}`)
+    return false
+  }
+  log(`  Official requirements updated (${sides})`)
+  return true
 }
 
 let igdbToken: string | null = null
@@ -260,8 +313,25 @@ export async function ingestGame(
       gameId = `dry-${seed.slug}`
     }
 
+    // Official min/rec from Steam (independent of media). Non-fatal on failure.
+    let requirementsUpdated = false
+    if (gameId) {
+      requirementsUpdated = await applySteamOfficialRequirements(
+        client,
+        gameId,
+        steamAppId ?? null,
+        dryRun,
+        log
+      )
+    }
+
     if (skipMedia) {
-      return { ok: true, gameId: gameId ?? undefined, mediaUploaded: 0 }
+      return {
+        ok: true,
+        gameId: gameId ?? undefined,
+        mediaUploaded: 0,
+        requirementsUpdated,
+      }
     }
 
     const ATTRIB =
@@ -375,7 +445,12 @@ export async function ingestGame(
         .eq('id', gameId)
     }
 
-    return { ok: true, gameId: gameId ?? undefined, mediaUploaded: mediaCount }
+    return {
+      ok: true,
+      gameId: gameId ?? undefined,
+      mediaUploaded: mediaCount,
+      requirementsUpdated,
+    }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
     return { ok: false, error: msg }

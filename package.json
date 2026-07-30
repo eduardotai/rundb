@@ -13,6 +13,7 @@
     "seed:queue": "tsx scripts/seed-queue.ts",
     "ingest:worker": "tsx scripts/ingest-games-worker.ts",
     "import:latest": "tsx scripts/import-latest-games.ts",
+    "backfill:steam-reqs": "tsx scripts/backfill-steam-requirements.ts",
     "seed:games": "tsx scripts/seed-games-mock.ts",
     "setup:supabase": "tsx scripts/setup-supabase-real.ts",
     "reingest:covers": "tsx scripts/reingest-covers-all.ts",
