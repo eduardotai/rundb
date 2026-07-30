@@ -214,6 +214,33 @@ export interface PredictionResult {
   recommendedSettings: string;
 }
 
+// Official publisher min/rec check (separate from community PerformanceTier)
+export type ComponentCheck = 'pass' | 'borderline' | 'fail' | 'unknown';
+export type OfficialSpecVerdict =
+  | 'exceeds_recommended'
+  | 'meets_recommended'
+  | 'between_min_and_rec'
+  | 'meets_minimum'
+  | 'below_minimum'
+  | 'unknown';
+
+export interface SpecTierCheck {
+  cpu: ComponentCheck;
+  gpu: ComponentCheck;
+  ram: ComponentCheck;
+  overall: 'pass' | 'fail' | 'unknown';
+}
+
+export interface OfficialSpecCheckResult {
+  verdict: OfficialSpecVerdict;
+  min?: SpecTierCheck;
+  rec?: SpecTierCheck;
+  confidence: number;
+  explanation: string;
+  limitations: string[];
+  source: 'official_min_rec';
+}
+
 // Phase 2: Input shape for real report submission (Server Action / RPC)
 // Aligns exactly with what submit_report expects (minus computed fields like performance_tier, status)
 export interface SubmitReportInput {

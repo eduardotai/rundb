@@ -6,6 +6,7 @@
 ## Read This First
 - `report-card.tsx`: the central product component; dense, scannable benchmark evidence is the heart of RunDB.
 - `compatibility-checker.tsx`, `match-feed.tsx`, `my-rig-indicator.tsx`, `profile-rig-editor.tsx`: hardware-aware prediction and saved-rig surfaces.
+- `official-spec-check.tsx`: quick check of saved rig vs publisher min/recommended (not community FPS); used on game detail when reports are missing or as a compact secondary signal.
 - `submit-report-dialog.tsx`, `game-combobox.tsx`, `hardware-combobox.tsx`, `hardware-detect-button.tsx`, `paste-hardware-modal.tsx`, `detected-hardware-banner.tsx`: report submission and hardware identification flow. The detect -> review -> apply state machine is shared via `use-hardware-detection.ts` plus `applicableHardwareFields` in `lib/hardware-detector.ts`; new detection surfaces should use those instead of re-wiring state.
 - `game-card.tsx`, `game-cover-frame.tsx`, `performance-badge.tsx`, `charts/*`: catalog cards, cover handling, tiers, and performance summaries.
 - `dashboard/*`, `profile/*`, `my-reports/*`, `reports/*`: feature-specific component groups.

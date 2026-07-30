@@ -18,10 +18,12 @@ import {
   Game,
   ReportFilters,
   PredictionResult,
+  OfficialSpecCheckResult,
 } from './types';
 
 // Hardware-aware similarity engine (catalog-powered, Phase 6+)
 import { calculateHardwareAwareSimilarity } from './similarity';
+import { checkOfficialSpecsForRig as checkOfficialSpecsForRigImpl } from './official-spec-check';
 
 export function filterReports(reports: Report[], filters: ReportFilters): Report[] {
   return reports.filter((r) => {
@@ -34,14 +36,25 @@ export function filterReports(reports: Report[], filters: ReportFilters): Report
   });
 }
 
+/**
+ * Compare user rig to publisher min/recommended specs (not community FPS).
+ * Pure seam — UI should call this instead of inventing scoring.
+ */
+export function checkOfficialSpecsForRig(
+  userPC: UserPC,
+  game: Pick<Game, 'officialMinReqs' | 'officialRecReqs'>
+): OfficialSpecCheckResult {
+  return checkOfficialSpecsForRigImpl(userPC, game);
+}
+
 export function predictForUserRigFromReports(userPC: UserPC, gameReports: Report[]): PredictionResult {
   if (gameReports.length === 0) {
     return {
       predictedTier: 'Playable',
-      confidence: 0.3,
+      confidence: 0,
       matchingReports: [],
-      explanation: 'Not enough data for this game yet.',
-      recommendedSettings: 'Start on Medium 1080p and adjust.',
+      explanation: 'Not enough community data for this game yet.',
+      recommendedSettings: 'Check official min/recommended specs, or submit the first report.',
     };
   }
 

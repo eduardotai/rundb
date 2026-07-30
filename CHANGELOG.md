@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Official Spec Quick Check** — when a game has publisher min/recommended requirements, compare the user’s saved rig (CPU/GPU/RAM via catalog `perfIndex`) and show a clear verdict with component breakdown. Primary on game pages with **zero community reports**; compact secondary line when reports already exist.
+- Pure modules: `lib/parse-system-requirements.ts` (dual-vendor strings + Steam HTML fixtures), `lib/official-spec-check.ts` (OR-of-alternatives comparison), `components/official-spec-check.tsx` UI.
+- Unit tests for parser and verdict engine (`lib/*.test.ts`).
+
+### Changed
+
+- Empty community prediction no longer paints a fake “Playable” tier on the game page tier bar when there are no matching reports (`confidence` 0 + no marker).
+
+### Added (PR3 — Steam requirements ingest)
+
+- `lib/server/steam-requirements.ts` + `extractOfficialReqsFromPcRequirements` / `officialReqsDbPatch` — Steam `appdetails` → structured min/rec.
+- `ingestGame()` now writes `official_min_reqs` / `official_rec_reqs` when Steam returns parseable PC requirements (never clears existing values with nulls).
+- `npm run backfill:steam-reqs` (`scripts/backfill-steam-requirements.ts`) — rate-limited backfill for existing `steam_app_id` rows (`--dry-run`, `--limit=N`, `--force`, `--delay-ms`, stop-after consecutive 429s).
+
 ## [1.0.0] - 2026-07-08
 
 First public release of RunDB — community-driven PC performance data for games.
