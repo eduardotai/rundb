@@ -18,6 +18,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - Empty community prediction no longer paints a fake “Playable” tier on the game page tier bar when there are no matching reports (`confidence` 0 + no marker).
 - `ingestGame()` official-reqs write shared with lazy ensure (stamps cache status when columns exist).
+- **Official Spec Quick Check** no longer suggests “submit a community report” when publisher min/rec are missing. Empty/loading states describe Steam/publisher requirements only; community reports stay a separate surface. Lazy ensure runs whenever both official sides are empty (not gated on client `steamAppId` alone).
 
 ### Added (PR3 — Steam requirements ingest)
 

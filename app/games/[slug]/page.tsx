@@ -153,13 +153,31 @@ function GameDetailInner({ game }: { game: Game }) {
 
   const queryClient = useQueryClient();
 
-  // Lazy Steam official min/rec: only when missing and we have a Steam AppID.
-  // Server owns TTL/negative cache; RQ runs once per slug mount (no focus retry).
+  // Lazy Steam official min/rec whenever both sides are empty.
+  // Always call the server action (by slug) — server decides using DB steam_app_id + TTLs.
+  // Do NOT gate on community reports; this path is publisher-spec only.
+  const hasUsableMin =
+    Boolean(game.officialMinReqs) &&
+    !!(
+      (typeof game.officialMinReqs?.cpu === 'string' && game.officialMinReqs.cpu.trim()) ||
+      (typeof game.officialMinReqs?.gpu === 'string' && game.officialMinReqs.gpu.trim()) ||
+      (typeof game.officialMinReqs?.ram === 'number' && game.officialMinReqs.ram > 0)
+    );
+  const hasUsableRec =
+    Boolean(game.officialRecReqs) &&
+    !!(
+      (typeof game.officialRecReqs?.cpu === 'string' && game.officialRecReqs.cpu.trim()) ||
+      (typeof game.officialRecReqs?.gpu === 'string' && game.officialRecReqs.gpu.trim()) ||
+      (typeof game.officialRecReqs?.ram === 'number' && game.officialRecReqs.ram > 0)
+    );
   const needsOfficialReqsEnsure = Boolean(
-    game.steamAppId &&
-      !game.officialMinReqs &&
-      !game.officialRecReqs &&
-      game.officialReqsStatus !== 'ready'
+    game.slug &&
+      !hasUsableMin &&
+      !hasUsableRec &&
+      game.officialReqsStatus !== 'ready' &&
+      // After a confirmed empty Steam response, server TTL applies; still hit once per
+      // session only via staleTime — server will skip if within negative-cache window.
+      true
   );
 
   const officialReqsEnsureQuery = useQuery({
@@ -176,19 +194,31 @@ function GameDetailInner({ game }: { game: Game }) {
   useEffect(() => {
     const r = officialReqsEnsureQuery.data;
     if (!r) return;
-    if (r.officialMinReqs || r.officialRecReqs || r.status === 'empty' || r.status === 'ready') {
+    if (
+      r.officialMinReqs ||
+      r.officialRecReqs ||
+      r.status === 'empty' ||
+      r.status === 'ready' ||
+      r.status === 'skipped' ||
+      r.status === 'rate_limited' ||
+      r.status === 'error' ||
+      r.status === 'misconfigured'
+    ) {
       queryClient.setQueryData<Game | null>(['game', game.slug], (old) => {
         if (!old) return old;
+        const nextStatus: Game['officialReqsStatus'] =
+          r.status === 'ready' || r.status === 'empty'
+            ? r.status
+            : r.status === 'rate_limited' || r.status === 'error'
+              ? r.status
+              : r.status === 'skipped' && r.reason === 'no_steam_id'
+                ? old.officialReqsStatus
+                : (r.status as Game['officialReqsStatus']) ?? old.officialReqsStatus;
         return {
           ...old,
           officialMinReqs: r.officialMinReqs ?? old.officialMinReqs,
           officialRecReqs: r.officialRecReqs ?? old.officialRecReqs,
-          officialReqsStatus:
-            r.status === 'ready' || r.status === 'empty'
-              ? r.status
-              : r.status === 'skipped'
-                ? old.officialReqsStatus
-                : (r.status as Game['officialReqsStatus']) ?? old.officialReqsStatus,
+          officialReqsStatus: nextStatus ?? old.officialReqsStatus,
         };
       });
     }
@@ -200,12 +230,27 @@ function GameDetailInner({ game }: { game: Game }) {
 
   const officialReqsLoadError = (() => {
     const r = officialReqsEnsureQuery.data;
-    if (!r || r.ok) return null;
+    if (!r) return null;
+    if (r.status === 'empty') {
+      return 'Steam does not list parseable PC minimum/recommended requirements for this title.';
+    }
+    if (r.status === 'skipped' && (r.reason === 'no_steam_id' || r.message)) {
+      if (r.reason === 'no_steam_id' || r.message?.includes('Steam App ID')) {
+        return (
+          r.message ||
+          'This game is not linked to a Steam App ID, so publisher min/recommended specs cannot be loaded automatically.'
+        );
+      }
+    }
+    if (r.status === 'skipped' && r.reason === 'negative_cache') {
+      return 'Steam does not list parseable PC minimum/recommended requirements for this title.';
+    }
+    if (r.ok && (r.officialMinReqs || r.officialRecReqs)) return null;
     if (r.status === 'rate_limited') {
       return 'Couldn’t load publisher specs right now (Steam rate limit). Try again later.';
     }
     if (r.status === 'misconfigured') {
-      return null; // silent in mock/misconfig
+      return 'Server is missing configuration needed to load Steam requirements (service role).';
     }
     if (r.status === 'error' || r.status === 'not_found') {
       return r.message || 'Couldn’t load publisher specs right now. Try again later.';
@@ -403,18 +448,21 @@ function GameDetailInner({ game }: { game: Game }) {
                   OFFICIAL REQUIREMENTS
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Fetching official requirements from Steam…
+                  Loading Steam minimum and recommended requirements…
                 </p>
               </div>
             )}
 
-          {/* Primary official quick check when community data is missing */}
-          {!hasCommunityReports && !statsQuery.isLoading && (
+          {/*
+            Official hardware check is independent of community reports.
+            Always show: loading / empty reason / verdict vs saved rig.
+            Community reports live in the stats/list section below.
+          */}
+          {!statsQuery.isLoading && (
             <OfficialSpecCheck
               game={displayGame}
               myRig={myRig}
-              hasCommunityReports={false}
-              onSubmitReport={() => setShowSubmit(true)}
+              hasCommunityReports={hasCommunityReports}
               isLoadingReqs={isLoadingOfficialReqs}
               reqsLoadError={officialReqsLoadError}
             />

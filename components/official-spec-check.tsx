@@ -125,16 +125,27 @@ function TierTable({ min, rec }: { min?: SpecTierCheck; rec?: SpecTierCheck }) {
   );
 }
 
+function hasUsableOfficialSide(
+  side: Game['officialMinReqs'] | Game['officialRecReqs'] | null | undefined
+): boolean {
+  if (!side || typeof side !== 'object') return false;
+  const cpu = typeof side.cpu === 'string' ? side.cpu.trim() : '';
+  const gpu = typeof side.gpu === 'string' ? side.gpu.trim() : '';
+  const ram = typeof side.ram === 'number' ? side.ram : 0;
+  return Boolean(cpu || gpu || ram > 0);
+}
+
 export interface OfficialSpecCheckProps {
   game: Pick<Game, 'officialMinReqs' | 'officialRecReqs' | 'name'>;
   myRig: UserPC | null;
   hasCommunityReports: boolean;
   compact?: boolean;
+  /** @deprecated Official check never depends on report submit; kept for call-site compat. */
   onSubmitReport?: () => void;
   className?: string;
   /** True while lazy Steam ensure is in flight (non-blocking). */
   isLoadingReqs?: boolean;
-  /** Soft failure from lazy ensure (rate limit / error). */
+  /** Soft failure / empty reason from lazy ensure (rate limit, no Steam id, etc.). */
   reqsLoadError?: string | null;
 }
 
@@ -152,7 +163,8 @@ export function OfficialSpecCheck({
   isLoadingReqs = false,
   reqsLoadError = null,
 }: OfficialSpecCheckProps) {
-  const hasReqs = Boolean(game.officialMinReqs || game.officialRecReqs);
+  // Usable publisher specs only (empty {} does not count). Independent of community reports.
+  const hasReqs = hasUsableOfficialSide(game.officialMinReqs) || hasUsableOfficialSide(game.officialRecReqs);
 
   const result: OfficialSpecCheckResult | null = useMemo(() => {
     if (!myRig || !hasReqs) return null;
@@ -161,43 +173,47 @@ export function OfficialSpecCheck({
 
   // Lazy ensure in progress — only matters when we still have nothing to show
   if (!hasReqs && isLoadingReqs) {
-    if (hasCommunityReports && compact) return null;
     return (
       <div className={cn('rounded-2xl border border-border bg-card p-4 text-sm', className)}>
-        <div className="text-sm font-medium text-muted-foreground mb-1">QUICK CHECK</div>
-        <p className="text-muted-foreground">Fetching official requirements from Steam…</p>
-      </div>
-    );
-  }
-
-  // No official requirements on file
-  if (!hasReqs) {
-    if (hasCommunityReports) return null;
-    return (
-      <div className={cn('rounded-2xl border border-border bg-card p-4 text-sm', className)}>
-        <div className="text-sm font-medium text-muted-foreground mb-1">QUICK CHECK</div>
+        <div className="text-sm font-medium text-muted-foreground mb-1">
+          QUICK CHECK — OFFICIAL SPECS
+        </div>
         <p className="text-muted-foreground">
-          {reqsLoadError
-            ? reqsLoadError
-            : 'No official min/recommended specs on file for this game yet.'}
-          {!reqsLoadError && !hasCommunityReports && ' Be the first to submit a community report.'}
+          Loading this game’s Steam minimum and recommended requirements…
         </p>
-        {onSubmitReport && !hasCommunityReports && (
-          <Button size="sm" className="mt-3" onClick={onSubmitReport}>
-            Submit a report
-          </Button>
-        )}
       </div>
     );
   }
 
-  // No saved rig
+  // No official requirements on file — never imply community reports are required for this check
+  if (!hasReqs) {
+    const emptyCopy =
+      reqsLoadError ||
+      'Publisher min/recommended specs are not available for this title yet (Steam listing may omit PC requirements, or the game is not linked to a Steam App ID).';
+    return (
+      <div className={cn('rounded-2xl border border-border bg-card p-4 text-sm', className)}>
+        <div className="text-sm font-medium text-muted-foreground mb-1">
+          QUICK CHECK — OFFICIAL SPECS
+        </div>
+        <p className="text-muted-foreground">{emptyCopy}</p>
+        <p className="text-muted-foreground/80 mt-2 text-xs">
+          This check compares your saved rig to the publisher’s Steam requirements. It does not
+          use community FPS reports.
+        </p>
+      </div>
+    );
+  }
+
+  // No saved rig — still show that this is hardware-vs-publisher, not reports
   if (!myRig) {
     return (
       <div className={cn('rounded-2xl border border-border bg-card p-4 text-sm', className)}>
-        <div className="text-sm font-medium text-muted-foreground mb-1">QUICK CHECK</div>
+        <div className="text-sm font-medium text-muted-foreground mb-1">
+          QUICK CHECK — OFFICIAL SPECS
+        </div>
         <p className="text-foreground/90 mb-2">
-          Save your rig to compare it against this game’s official minimum and recommended specs.
+          Save your rig to compare it against this game’s official Steam minimum and recommended
+          requirements.
         </p>
         <Button asChild size="sm" variant="outline">
           <Link href="/compatibility">Set up my rig</Link>
