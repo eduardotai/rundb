@@ -28,6 +28,7 @@ import { cn } from '@/lib/utils';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
+import { ensureGameOfficialRequirementsAction } from '@/app/actions/steam-requirements';
 
 export default function GameDetailPage() {
   const params = useParams<{ slug: string }>();
@@ -151,6 +152,77 @@ function GameDetailInner({ game }: { game: Game }) {
   const predictionQuery = usePrediction((myRig ?? undefined) as UserPC, game.id);
 
   const queryClient = useQueryClient();
+
+  // Lazy Steam official min/rec: only when missing and we have a Steam AppID.
+  // Server owns TTL/negative cache; RQ runs once per slug mount (no focus retry).
+  const needsOfficialReqsEnsure = Boolean(
+    game.steamAppId &&
+      !game.officialMinReqs &&
+      !game.officialRecReqs &&
+      game.officialReqsStatus !== 'ready'
+  );
+
+  const officialReqsEnsureQuery = useQuery({
+    queryKey: ['game-official-reqs-ensure', game.slug],
+    queryFn: () => ensureGameOfficialRequirementsAction(game.slug),
+    enabled: needsOfficialReqsEnsure,
+    staleTime: Infinity,
+    gcTime: 1000 * 60 * 30,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+
+  // Patch the game cache when ensure returns new min/rec (or status).
+  useEffect(() => {
+    const r = officialReqsEnsureQuery.data;
+    if (!r) return;
+    if (r.officialMinReqs || r.officialRecReqs || r.status === 'empty' || r.status === 'ready') {
+      queryClient.setQueryData<Game | null>(['game', game.slug], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          officialMinReqs: r.officialMinReqs ?? old.officialMinReqs,
+          officialRecReqs: r.officialRecReqs ?? old.officialRecReqs,
+          officialReqsStatus:
+            r.status === 'ready' || r.status === 'empty'
+              ? r.status
+              : r.status === 'skipped'
+                ? old.officialReqsStatus
+                : (r.status as Game['officialReqsStatus']) ?? old.officialReqsStatus,
+        };
+      });
+    }
+  }, [officialReqsEnsureQuery.data, game.slug, queryClient]);
+
+  const isLoadingOfficialReqs =
+    needsOfficialReqsEnsure &&
+    (officialReqsEnsureQuery.isLoading || officialReqsEnsureQuery.isFetching);
+
+  const officialReqsLoadError = (() => {
+    const r = officialReqsEnsureQuery.data;
+    if (!r || r.ok) return null;
+    if (r.status === 'rate_limited') {
+      return 'Couldn’t load publisher specs right now (Steam rate limit). Try again later.';
+    }
+    if (r.status === 'misconfigured') {
+      return null; // silent in mock/misconfig
+    }
+    if (r.status === 'error' || r.status === 'not_found') {
+      return r.message || 'Couldn’t load publisher specs right now. Try again later.';
+    }
+    return null;
+  })();
+
+  // Prefer ensure result when cache not yet patched (first paint after fetch).
+  const displayGame: Game = useMemo(() => {
+    const r = officialReqsEnsureQuery.data;
+    if (!r?.officialMinReqs && !r?.officialRecReqs) return game;
+    return {
+      ...game,
+      officialMinReqs: r.officialMinReqs ?? game.officialMinReqs,
+      officialRecReqs: r.officialRecReqs ?? game.officialRecReqs,
+    };
+  }, [game, officialReqsEnsureQuery.data]);
 
   const unfilteredReportsData = unfilteredReportsQuery.data;
   const allReports: Report[] = useMemo(() => unfilteredReportsData || [], [unfilteredReportsData]);
@@ -282,28 +354,28 @@ function GameDetailInner({ game }: { game: Game }) {
             )}
           </div>
 
-          {/* Official Requirements (publisher list) */}
-          {(game.officialMinReqs || game.officialRecReqs) && (
+          {/* Official Requirements (publisher list) — may appear after lazy Steam ensure */}
+          {(displayGame.officialMinReqs || displayGame.officialRecReqs) && (
             <div className="rounded-2xl border border-border bg-card p-5">
               <div className="text-sm font-medium text-muted-foreground mb-3">OFFICIAL REQUIREMENTS</div>
               <div className="grid grid-cols-2 gap-4 text-sm">
-                {game.officialMinReqs && (
+                {displayGame.officialMinReqs && (
                   <div>
                     <div className="font-medium mb-1 text-amber-400">Minimum</div>
                     <div className="space-y-0.5 text-muted-foreground">
-                      <div>CPU: {game.officialMinReqs.cpu}</div>
-                      <div>GPU: {game.officialMinReqs.gpu}</div>
-                      <div>RAM: {game.officialMinReqs.ram} GB</div>
+                      <div>CPU: {displayGame.officialMinReqs.cpu}</div>
+                      <div>GPU: {displayGame.officialMinReqs.gpu}</div>
+                      <div>RAM: {displayGame.officialMinReqs.ram} GB</div>
                     </div>
                   </div>
                 )}
-                {game.officialRecReqs && (
+                {displayGame.officialRecReqs && (
                   <div>
                     <div className="font-medium mb-1 text-emerald-400">Recommended</div>
                     <div className="space-y-0.5 text-muted-foreground">
-                      <div>CPU: {game.officialRecReqs.cpu}</div>
-                      <div>GPU: {game.officialRecReqs.gpu}</div>
-                      <div>RAM: {game.officialRecReqs.ram} GB</div>
+                      <div>CPU: {displayGame.officialRecReqs.cpu}</div>
+                      <div>GPU: {displayGame.officialRecReqs.gpu}</div>
+                      <div>RAM: {displayGame.officialRecReqs.ram} GB</div>
                     </div>
                   </div>
                 )}
@@ -312,7 +384,7 @@ function GameDetailInner({ game }: { game: Game }) {
               {hasCommunityReports && (
                 <div className="mt-3 pt-3 border-t border-border">
                   <OfficialSpecCheck
-                    game={game}
+                    game={displayGame}
                     myRig={myRig}
                     hasCommunityReports
                     compact
@@ -322,13 +394,29 @@ function GameDetailInner({ game }: { game: Game }) {
             </div>
           )}
 
+          {/* Loading skeleton while first-time Steam ensure runs (no specs yet) */}
+          {isLoadingOfficialReqs &&
+            !displayGame.officialMinReqs &&
+            !displayGame.officialRecReqs && (
+              <div className="rounded-2xl border border-border bg-card p-5">
+                <div className="text-sm font-medium text-muted-foreground mb-3">
+                  OFFICIAL REQUIREMENTS
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Fetching official requirements from Steam…
+                </p>
+              </div>
+            )}
+
           {/* Primary official quick check when community data is missing */}
           {!hasCommunityReports && !statsQuery.isLoading && (
             <OfficialSpecCheck
-              game={game}
+              game={displayGame}
               myRig={myRig}
               hasCommunityReports={false}
               onSubmitReport={() => setShowSubmit(true)}
+              isLoadingReqs={isLoadingOfficialReqs}
+              reqsLoadError={officialReqsLoadError}
             />
           )}
 

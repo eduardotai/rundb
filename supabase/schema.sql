@@ -15,6 +15,9 @@ CREATE TABLE IF NOT EXISTS games (
   publisher text,
   official_min_reqs jsonb,
   official_rec_reqs jsonb,
+  -- Lazy Steam ensure negative cache (see incremental-game-official-reqs-cache.sql)
+  official_reqs_checked_at timestamptz,
+  official_reqs_status text, -- pending | ready | empty | error | rate_limited
   steam_app_id bigint,
   igdb_id bigint,
   external_id_attribution text,
