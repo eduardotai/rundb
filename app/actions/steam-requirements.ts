@@ -63,6 +63,14 @@ export async function ensureGameOfficialRequirementsAction(
         (result.reason ? ` reason=${result.reason}` : '') +
         (result.fetched ? ' fetched=1' : ' fetched=0')
     )
+    // Surface no-Steam-id clearly for the game-detail UI (not a hard failure).
+    if (result.status === 'skipped' && result.reason === 'no_steam_id') {
+      return {
+        ...result,
+        message:
+          'This game is not linked to a Steam App ID, so publisher min/recommended specs cannot be loaded automatically.',
+      }
+    }
     return result
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
