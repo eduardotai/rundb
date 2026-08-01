@@ -23,6 +23,7 @@ function baseRow(over: Partial<OfficialReqsGameRow> = {}): OfficialReqsGameRow {
   return {
     id: 'g1',
     slug: 'test-game',
+    name: 'Test Game',
     steam_app_id: 12345,
     official_min_reqs: null,
     official_rec_reqs: null,
@@ -391,4 +392,41 @@ test('ensure: second call within empty TTL skips fetch', async () => {
   assert.equal(fetchCalls, 0)
   assert.equal(result.status, 'empty')
   assert.equal(result.reason, 'negative_cache')
+})
+
+test('ensure: missing steam_app_id is resolved then requirements fetched', async () => {
+  let fetchAppId: string | null = null
+  let resolveCalls = 0
+  const { client, getRow } = mockClient(
+    baseRow({ steam_app_id: null, name: 'Red Dead Redemption 2', slug: 'red-dead-redemption-2' })
+  )
+  const result = await ensureGameOfficialRequirements(client, 'red-dead-redemption-2', {
+    resolveSteamAppIdFn: async () => {
+      resolveCalls++
+      return { steamAppId: '1174180', confidence: 0.96, source: 'static-map' }
+    },
+    fetchFn: async (appId) => {
+      fetchAppId = String(appId)
+      return okFetch(sample, sampleRec)
+    },
+  })
+  assert.equal(resolveCalls, 1)
+  assert.equal(fetchAppId, '1174180')
+  assert.equal(result.status, 'ready')
+  assert.equal(String(getRow()?.steam_app_id), '1174180')
+})
+
+test('ensure: unresolved steam_app_id skips without fetch', async () => {
+  let fetchCalls = 0
+  const { client } = mockClient(baseRow({ steam_app_id: null, name: 'VALORANT', slug: 'valorant' }))
+  const result = await ensureGameOfficialRequirements(client, 'valorant', {
+    resolveSteamAppIdFn: async () => null,
+    fetchFn: async () => {
+      fetchCalls++
+      return okFetch(sample, null)
+    },
+  })
+  assert.equal(fetchCalls, 0)
+  assert.equal(result.status, 'skipped')
+  assert.equal(result.reason, 'no_steam_id')
 })

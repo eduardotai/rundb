@@ -217,6 +217,7 @@ npm run test    # Node test runner
 | `npm run ingest:games` | Run direct game ingestion |
 | `npm run ingest:worker -- --batch=50` | Process queued ingestion in batches |
 | `npm run import:latest` | Import latest game candidates |
+| `npm run backfill:steam-appids` | Fill missing `steam_app_id` via Steam-first resolver (`--dry-run`, `--limit=N`) |
 | `npm run backfill:steam-reqs` | Optional warm-cache of `official_min_reqs` / `official_rec_reqs` from Steam. Game detail also lazy-fills on first open (preferred for 10k+ catalogs). Store API is rate-limited — use `--delay-ms=2500`, `--limit=30`, re-run to resume (`--dry-run`, `--force`). Apply `supabase/incremental-game-official-reqs-cache.sql` first. |
 | `npm run reingest:covers` | Refresh covers and media |
 
