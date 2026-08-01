@@ -82,6 +82,14 @@ export interface Game {
   publisher?: string;
   officialMinReqs?: HardwareSpec;
   officialRecReqs?: HardwareSpec;
+  /**
+   * Lazy Steam ensure cache status (games.official_reqs_status).
+   * ready = at least one of min/rec stored; empty = Steam had nothing parseable;
+   * rate_limited / error / pending control re-fetch cooldowns.
+   */
+  officialReqsStatus?: 'pending' | 'ready' | 'empty' | 'error' | 'rate_limited';
+  /** ISO timestamp of last Steam official-reqs attempt (games.official_reqs_checked_at). */
+  officialReqsCheckedAt?: string;
   // Phase 5 / Agent 5: Public API Resilience Layer — external IDs from cached resolver (Steam-first + fallbacks)
   // Populated for demo seeds, bulk import, and runtime enrichment. Matches supabase games.steam_app_id / igdb_id.
   steamAppId?: string;

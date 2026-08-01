@@ -227,6 +227,8 @@ function mapDbGameToGame(row: any): Game {
     publisher: row.publisher,
     officialMinReqs: row.official_min_reqs,
     officialRecReqs: row.official_rec_reqs,
+    officialReqsStatus: row.official_reqs_status || undefined,
+    officialReqsCheckedAt: row.official_reqs_checked_at || undefined,
     // Agent 5 / PR 5: external IDs via cached resolver (populated at ingest or runtime enrichment)
     steamAppId: row.steam_app_id || undefined,
     igdbId: row.igdb_id || undefined,

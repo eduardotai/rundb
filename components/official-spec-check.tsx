@@ -132,6 +132,10 @@ export interface OfficialSpecCheckProps {
   compact?: boolean;
   onSubmitReport?: () => void;
   className?: string;
+  /** True while lazy Steam ensure is in flight (non-blocking). */
+  isLoadingReqs?: boolean;
+  /** Soft failure from lazy ensure (rate limit / error). */
+  reqsLoadError?: string | null;
 }
 
 /**
@@ -145,6 +149,8 @@ export function OfficialSpecCheck({
   compact = false,
   onSubmitReport,
   className,
+  isLoadingReqs = false,
+  reqsLoadError = null,
 }: OfficialSpecCheckProps) {
   const hasReqs = Boolean(game.officialMinReqs || game.officialRecReqs);
 
@@ -153,6 +159,17 @@ export function OfficialSpecCheck({
     return checkOfficialSpecsForRig(myRig, game);
   }, [myRig, game, hasReqs]);
 
+  // Lazy ensure in progress — only matters when we still have nothing to show
+  if (!hasReqs && isLoadingReqs) {
+    if (hasCommunityReports && compact) return null;
+    return (
+      <div className={cn('rounded-2xl border border-border bg-card p-4 text-sm', className)}>
+        <div className="text-sm font-medium text-muted-foreground mb-1">QUICK CHECK</div>
+        <p className="text-muted-foreground">Fetching official requirements from Steam…</p>
+      </div>
+    );
+  }
+
   // No official requirements on file
   if (!hasReqs) {
     if (hasCommunityReports) return null;
@@ -160,8 +177,10 @@ export function OfficialSpecCheck({
       <div className={cn('rounded-2xl border border-border bg-card p-4 text-sm', className)}>
         <div className="text-sm font-medium text-muted-foreground mb-1">QUICK CHECK</div>
         <p className="text-muted-foreground">
-          No official min/recommended specs on file for this game yet.
-          {!hasCommunityReports && ' Be the first to submit a community report.'}
+          {reqsLoadError
+            ? reqsLoadError
+            : 'No official min/recommended specs on file for this game yet.'}
+          {!reqsLoadError && !hasCommunityReports && ' Be the first to submit a community report.'}
         </p>
         {onSubmitReport && !hasCommunityReports && (
           <Button size="sm" className="mt-3" onClick={onSubmitReport}>

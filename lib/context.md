@@ -15,7 +15,8 @@
 - `hardware-catalog*.ts`, `normalize-hardware.ts`, `hardware-detector.ts`, `hardware-similarity-heuristics.ts`, `similarity.ts`: hardware catalog, aliases, detection, normalization, and similarity.
 - `game-cover-*`, `game-id-resolver.ts`, `cover-image-url.ts`, `server/game-media.ts`: cover, media, and external ID resilience.
 - `server/*`: service-role and server-only helpers for ingest, queues, dashboard data, profiles, and cover candidates.
-- `server/steam-requirements.ts`: fetch Steam store `pc_requirements` and map to `official_min_reqs` / `official_rec_reqs` (used by ingest + backfill).
+- `server/steam-requirements.ts`: fetch Steam store `pc_requirements` and map to `official_min_reqs` / `official_rec_reqs` (used by ingest + backfill + lazy ensure).
+- `server/ensure-steam-requirements.ts`: lazy ensure decision/merge/claim + shared `applySteamOfficialRequirements` for ingest; negative cache TTLs; called from `app/actions/steam-requirements.ts` on game detail.
 
 ## Main Responsibilities
 - Centralize data access so app and component code can stay thin and resilient.

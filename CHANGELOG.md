@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Lazy Steam official requirements on game detail** — opening a game with a `steam_app_id` but empty min/rec triggers a one-shot server ensure (no full-catalog backfill). Results persist to Supabase; negative cache columns `official_reqs_checked_at` / `official_reqs_status` avoid re-hitting Steam on empty/429. Non-blocking UI (“Fetching official requirements from Steam…”). Migration: `supabase/incremental-game-official-reqs-cache.sql`.
+- Server Action `ensureGameOfficialRequirementsAction` + `lib/server/ensure-steam-requirements.ts` (decision matrix, merge, claim, unit tests).
 - **Official Spec Quick Check** — when a game has publisher min/recommended requirements, compare the user’s saved rig (CPU/GPU/RAM via catalog `perfIndex`) and show a clear verdict with component breakdown. Primary on game pages with **zero community reports**; compact secondary line when reports already exist.
 - Pure modules: `lib/parse-system-requirements.ts` (dual-vendor strings + Steam HTML fixtures), `lib/official-spec-check.ts` (OR-of-alternatives comparison), `components/official-spec-check.tsx` UI.
 - Unit tests for parser and verdict engine (`lib/*.test.ts`).
@@ -15,6 +17,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Changed
 
 - Empty community prediction no longer paints a fake “Playable” tier on the game page tier bar when there are no matching reports (`confidence` 0 + no marker).
+- `ingestGame()` official-reqs write shared with lazy ensure (stamps cache status when columns exist).
 
 ### Added (PR3 — Steam requirements ingest)
 
