@@ -229,13 +229,37 @@ async function trySteamPublicSearch(name: string): Promise<Partial<ExternalIdRes
 
     if (!items.length) return null;
 
-    // Prefer exact name match, else first result (Steam ranks relevance well)
-    const lower = name.toLowerCase().trim();
-    let chosen: { id?: unknown; name?: unknown } = items[0];
+    // Require a tight name match — first-result fallback links wrong games
+    // (e.g. "Alan Wake 2" → Beat Saber Alan Walker DLC; "League of Legends" → Convergence).
+    const normalizeTitle = (s: string) =>
+      s
+        .toLowerCase()
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[™®©:'".,!?]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const want = normalizeTitle(name);
+    let chosen: { id?: unknown; name?: unknown } | null = null;
     for (const it of items) {
-      if (typeof it.name === 'string' && it.name.toLowerCase().trim() === lower) {
+      if (typeof it.name !== 'string') continue;
+      const got = normalizeTitle(it.name);
+      if (got === want) {
         chosen = it;
         break;
+      }
+    }
+    // Allow "Name: subtitle" only when the left side matches exactly
+    if (!chosen) {
+      for (const it of items) {
+        if (typeof it.name !== 'string') continue;
+        const got = normalizeTitle(it.name);
+        if (got.startsWith(want + ' ') || got.startsWith(want + ':')) {
+          // Reject obvious DLC / soundtrack / pack suffixes
+          if (/\b(dlc|soundtrack|ost|pack|mixtape|demo|trailer)\b/i.test(it.name)) continue;
+          chosen = it;
+          break;
+        }
       }
     }
     if (chosen?.id != null) {

@@ -41,12 +41,16 @@ export type EnsureDecision =
 export interface OfficialReqsGameRow {
   id: string
   slug: string
+  name?: string | null
   steam_app_id: number | string | null
   official_min_reqs: unknown
   official_rec_reqs: unknown
   official_reqs_checked_at: string | null
   official_reqs_status: string | null
 }
+
+/** Minimum resolver confidence before we persist a Steam AppID onto a game row. */
+export const STEAM_APP_ID_RESOLVE_MIN_CONFIDENCE = 0.8
 
 export interface EnsureOfficialReqsResult {
   ok: boolean
@@ -205,10 +209,17 @@ export type SteamFetchFn = (
   opts?: FetchSteamOfficialReqsOptions
 ) => Promise<FetchSteamOfficialReqsResult>
 
+export type ResolveSteamAppIdFn = (
+  name: string,
+  slug?: string
+) => Promise<{ steamAppId?: string; confidence?: number; source?: string; attribution?: string } | null>
+
 export interface EnsureGameOfficialRequirementsOptions {
   /** Interactive defaults: maxRetries 1, low delay. */
   fetchOpts?: FetchSteamOfficialReqsOptions
   fetchFn?: SteamFetchFn
+  /** Resolve missing steam_app_id (default: game-id-resolver). */
+  resolveSteamAppIdFn?: ResolveSteamAppIdFn
   now?: number
   log?: (msg: string) => void
 }
@@ -246,13 +257,77 @@ async function loadGameBySlug(
   const { data, error } = await client
     .from('games')
     .select(
-      'id, slug, steam_app_id, official_min_reqs, official_rec_reqs, official_reqs_checked_at, official_reqs_status'
+      'id, slug, name, steam_app_id, official_min_reqs, official_rec_reqs, official_reqs_checked_at, official_reqs_status'
     )
     .eq('slug', slug)
     .maybeSingle()
 
   if (error) throw new Error(`Load game: ${error.message}`)
   return (data as OfficialReqsGameRow | null) ?? null
+}
+
+async function defaultResolveSteamAppId(
+  name: string,
+  slug?: string
+): Promise<{ steamAppId?: string; confidence?: number; source?: string; attribution?: string } | null> {
+  const { resolveGameExternalIds } = await import('@/lib/game-id-resolver')
+  const r = await resolveGameExternalIds(name, slug)
+  if (!r.steamAppId) return null
+  return {
+    steamAppId: r.steamAppId,
+    confidence: r.confidence,
+    source: r.source,
+    attribution: r.attribution,
+  }
+}
+
+/**
+ * When the games row has no steam_app_id, resolve via Steam-first resolver and persist.
+ * Returns the AppID string if known after this step, else null.
+ */
+export async function linkSteamAppIdIfMissing(
+  client: SupabaseClient,
+  row: OfficialReqsGameRow,
+  opts: {
+    resolveFn?: ResolveSteamAppIdFn
+    log?: (msg: string) => void
+    minConfidence?: number
+  } = {}
+): Promise<string | null> {
+  const existing = row.steam_app_id != null ? String(row.steam_app_id).trim() : ''
+  if (existing) return existing
+
+  const log = opts.log ?? (() => {})
+  const resolveFn = opts.resolveFn ?? defaultResolveSteamAppId
+  const minConf = opts.minConfidence ?? STEAM_APP_ID_RESOLVE_MIN_CONFIDENCE
+  const name = (row.name && String(row.name).trim()) || row.slug
+
+  const resolved = await resolveFn(name, row.slug)
+  const appId = resolved?.steamAppId ? String(resolved.steamAppId).trim() : ''
+  const conf = resolved?.confidence ?? 0
+  if (!appId || conf < minConf) {
+    log(
+      `[ensure-steam-reqs] slug=${row.slug} could not resolve Steam AppID` +
+        (resolved ? ` (conf=${conf})` : '')
+    )
+    return null
+  }
+
+  // Only write steam_app_id — external_id_attribution may not exist on all deployments.
+  const patch: Record<string, unknown> = {
+    steam_app_id: Number.isFinite(Number(appId)) ? Number(appId) : appId,
+  }
+
+  const { error } = await client.from('games').update(patch).eq('id', row.id)
+  if (error) {
+    log(`[ensure-steam-reqs] slug=${row.slug} failed to persist steam_app_id: ${error.message}`)
+    // Still return appId so this request can fetch reqs even if write failed
+    return appId
+  }
+  log(
+    `[ensure-steam-reqs] slug=${row.slug} linked steam_app_id=${appId} source=${resolved?.source ?? '?'}`
+  )
+  return appId
 }
 
 /**
@@ -328,9 +403,19 @@ async function ensureOnce(
   const fetchFn = opts.fetchFn ?? fetchSteamOfficialRequirements
   const fetchOpts = { ...INTERACTIVE_FETCH_OPTS, ...opts.fetchOpts }
 
-  const row = await loadGameBySlug(client, slug)
+  let row = await loadGameBySlug(client, slug)
   if (!row) {
     return { ok: false, status: 'not_found', message: 'Game not found' }
+  }
+
+  // Link Steam AppID when missing (popular starter seeds often lack DB steam_app_id
+  // even though catalog/cover URLs know it). Without this, official min/rec never load.
+  const linkedAppId = await linkSteamAppIdIfMissing(client, row, {
+    resolveFn: opts.resolveSteamAppIdFn,
+    log,
+  })
+  if (linkedAppId) {
+    row = { ...row, steam_app_id: linkedAppId }
   }
 
   const decision = shouldEnsureOfficialReqs(row, now)
@@ -382,7 +467,20 @@ async function ensureOnce(
     }
   }
 
-  const appId = String(row.steam_app_id).trim()
+  const appId = String(row.steam_app_id ?? '').trim()
+  if (!appId) {
+    return {
+      ok: true,
+      status: 'skipped',
+      reason: 'no_steam_id',
+      message:
+        'This game is not linked to a Steam App ID, so publisher min/recommended specs cannot be loaded automatically.',
+      officialMinReqs: asHardwareSpec(row.official_min_reqs),
+      officialRecReqs: asHardwareSpec(row.official_rec_reqs),
+      fetched: false,
+    }
+  }
+
   log(`[ensure-steam-reqs] slug=${slug} fetch appId=${appId}`)
   const fetched = await fetchFn(appId, fetchOpts)
 
