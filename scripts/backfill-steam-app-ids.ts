@@ -63,13 +63,12 @@ async function main() {
   const rows: Array<{ id: string; slug: string; name: string }> = []
   let from = 0
   for (;;) {
-    let q = client
+    const { data, error } = await client
       .from('games')
       .select('id, slug, name')
       .is('steam_app_id', null)
       .order('slug')
       .range(from, from + pageSize - 1)
-    const { data, error } = await q
     if (error) throw new Error(error.message)
     const batch = data || []
     if (!batch.length) break
