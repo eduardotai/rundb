@@ -8,6 +8,7 @@
 - `providers.tsx`: client providers, especially TanStack React Query defaults.
 - `page.tsx`, `games/page.tsx`, `games/[slug]/page.tsx`, `compatibility/page.tsx`, `reports/page.tsx`, `submit/page.tsx`: main public product surfaces.
 - `actions/reports.ts`, `actions/ingest-queue.ts`, `actions/hardware-catalog.ts`, `actions/resolver.ts`: server actions for protected writes and operational flows.
+- `actions/admin.ts`: staff-checked admin moderation actions (reports, report images, hardware aliases, bulk import). Moderator+ for moderation, admin-only for deletes and game import; each action resolves `getStaffAccess()` before using the service client and passes the verified user id to the audited RPCs.
 - `auth/**` and `api/**/route.ts`: auth callbacks, Steam linking, and small route-handler APIs.
 - `admin/**` and `dashboard/**`: privileged and internal operational surfaces.
 - `globals.css`: global theme tokens, tier colors, report card polish, and app-wide utility classes.
@@ -40,7 +41,7 @@
 ## Common Changes
 - Adding a page: add the App Router file, compose existing components, fetch through `@/lib/data`, and update navigation only if the route is user-facing.
 - Adding a report field: update `lib/types.ts`, `lib/data.ts` mappers, `supabase/schema.sql` and RPCs, `app/actions/reports.ts`, the submit UI, display components, and tests.
-- Adding a protected admin operation: add or update an action, verify role checks through `lib/admin-access.ts` or RLS, then expose it in `app/admin/page.tsx`.
+- Adding a protected admin operation: add a helper in `lib/server/admin-moderation.ts` (client-injectable, unit-testable), wrap it in `app/actions/admin.ts` with `getStaffAccess()` checks, expose it through `lib/admin.ts` (with a demo fallback in `lib/admin-demo.ts`), then wire it in `app/admin/page.tsx` via React Query (`['admin', ...]` keys).
 - Changing auth behavior: update the relevant `auth/**` page/route, Supabase wrapper expectations, and any profile/header components that react to session state.
 - Changing global theme or tier visuals: update `globals.css` and verify `components/report-card.tsx`, `components/performance-badge.tsx`, charts, and dashboard surfaces.
 

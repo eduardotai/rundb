@@ -8,6 +8,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Real admin moderation** — `/admin` now persists to Supabase in real-data mode: approve/reject/flag/re-pend reports (single + bulk with row selection), hardware alias CRUD, report image review (approve/reject/delete, single + bulk), admin-only bulk report delete, and admin-only bulk game import (skeleton rows for the ingest worker). Demo mode (no Supabase keys) still uses the localStorage-backed `lib/admin-demo.ts`.
+- `supabase/incremental-admin-moderation.sql` — `report_images.status/moderated_by/moderated_at` + RLS (only approved images public), `public.is_admin()`, append-only `public.moderation_log`, and SECURITY DEFINER RPCs `moderate_reports`, `delete_reports`, `moderate_report_images`, `delete_report_images` (moderator+ / admin-only, actor resolved from `auth.uid()` or the verified server actor for service_role).
+- `app/actions/admin.ts` (staff-checked Server Actions), `lib/server/admin-moderation.ts` (client-injectable helpers), `lib/admin.ts` (dual-mode client adapter), `lib/admin-logic.ts` (pure validation/mappers/bulk-import parsing) with unit tests in `lib/admin-logic.test.ts` and `tests/admin-moderation.test.ts`.
+
+### Changed
+
+- `moderateReportAction` routes through the audited `moderate_reports` RPC.
+- Hardware alias deletion is admin-only at the RLS level (was moderator+); alias `raw_string` is unique case-insensitively.
+
 - **Lazy Steam official requirements on game detail** — opening a game with a `steam_app_id` but empty min/rec triggers a one-shot server ensure (no full-catalog backfill). Results persist to Supabase; negative cache columns `official_reqs_checked_at` / `official_reqs_status` avoid re-hitting Steam on empty/429. Non-blocking UI (“Fetching official requirements from Steam…”). Migration: `supabase/incremental-game-official-reqs-cache.sql`.
 - Server Action `ensureGameOfficialRequirementsAction` + `lib/server/ensure-steam-requirements.ts` (decision matrix, merge, claim, unit tests).
 - **Official Spec Quick Check** — when a game has publisher min/recommended requirements, compare the user’s saved rig (CPU/GPU/RAM via catalog `perfIndex`) and show a clear verdict with component breakdown. Primary on game pages with **zero community reports**; compact secondary line when reports already exist.

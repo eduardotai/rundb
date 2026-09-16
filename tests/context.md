@@ -8,6 +8,7 @@
 - `cover-candidates.test.ts`: cover/media candidate selection behavior.
 - `discover-steam-games.test.ts`: Steam discovery helper behavior.
 - `igdb-game-match.test.ts`: IGDB/game matching behavior.
+- `admin-moderation.test.ts`: drives `lib/server/admin-moderation.ts` with an in-memory Supabase stub (RPC payloads, dedup, audit rows, bulk import) and guards the security shape of `supabase/incremental-admin-moderation.sql`.
 - Also check colocated `lib/*.test.ts` files for auth redirect, hardware detection, normalization-adjacent behavior, report notes, sanitization, similarity, Steam helpers, and trending.
 
 ## Main Responsibilities
