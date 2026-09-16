@@ -79,9 +79,11 @@ export function SiteFooter() {
         </p>
 
         <nav aria-label="Footer links" className="flex items-center gap-0.5">
-          <FooterLink href="/dashboard" label="Build dashboard">
-            <LayoutDashboard className="h-3 w-3" aria-hidden="true" />
-          </FooterLink>
+          {process.env.NODE_ENV === 'development' && (
+            <FooterLink href="/dashboard" label="Build dashboard">
+              <LayoutDashboard className="h-3 w-3" aria-hidden="true" />
+            </FooterLink>
+          )}
           <FooterLink href="https://github.com/eduardotai/rundb" label="GitHub" external>
             <GitHubIcon className="h-3 w-3" />
           </FooterLink>
