@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { bulkImportGames, parseCSV } from '@/lib/admin-demo';
+import { bulkImportGames, parseCSV } from '@/lib/admin';
 import type { BulkImportResult } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -72,7 +72,7 @@ export function AdminBulkImportDialog({ open, onOpenChange, onImportComplete }: 
     setIsImporting(true);
     try {
       const rows = importTab === 'json' ? JSON.parse(importText) : parseCSV(importText);
-      const result = bulkImportGames(Array.isArray(rows) ? rows : [rows]);
+      const result = await bulkImportGames(Array.isArray(rows) ? rows : [rows]);
       setImportResult(result);
 
       if (result.success > 0) {
