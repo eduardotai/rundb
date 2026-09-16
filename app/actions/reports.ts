@@ -503,32 +503,12 @@ export async function moderateReportAction(
 ): Promise<void> {
   const status = assertReportStatus(newStatus)
   const moderatorId = await requireModerationAccess()
-  const supabase = createServiceClient()
 
-  const updatePayload: {
-    status: ReportStatus
-    moderated_by: string
-    moderated_at: string
-    moderator_notes?: string | null
-  } = {
-    status,
-    moderated_by: moderatorId,
-    moderated_at: new Date().toISOString(),
-  }
-  if (moderatorNotes !== undefined) {
-    updatePayload.moderator_notes = moderatorNotes.trim() || null
-  }
-
-  const { data: updated, error: updateErr } = await supabase
-    .from('reports')
-    .update(updatePayload)
-    .eq('id', reportId)
-    .select('id')
-    .single()
-
-  if (updateErr || !updated) {
-    console.error('[moderateReportAction] update error', updateErr)
-    throw new Error(updateErr?.message || 'Failed to update report status.')
+  // Routed through the audited moderate_reports RPC (supabase/incremental-admin-moderation.sql).
+  const { moderateReports } = await import('@/lib/server/admin-moderation')
+  const updated = await moderateReports(createServiceClient(), moderatorId, [reportId], status, moderatorNotes)
+  if (updated === 0) {
+    throw new Error('Report not found.')
   }
 }
 
