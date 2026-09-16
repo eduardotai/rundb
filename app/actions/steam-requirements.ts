@@ -7,14 +7,33 @@
  * - Never accepts a client-supplied Steam AppID (uses DB row only).
  * - Soft-fails on rate limits / misconfiguration so the page stays usable.
  * - Service role write for official_* + negative-cache columns.
+ * - Unauthenticated by design (anonymous visitors trigger it), so it is throttled
+ *   per client IP and per slug before any service-role / Steam work happens.
  */
 
+import { headers } from 'next/headers'
 import {
   ensureGameOfficialRequirements,
   type EnsureOfficialReqsResult,
 } from '@/lib/server/ensure-steam-requirements'
+import { clientIpFromHeaders, createRateLimiter } from '@/lib/server/rate-limit'
 
 export type { EnsureOfficialReqsResult }
+
+// Per-IP: generous enough for a user browsing many game pages; blocks tight loops.
+const ipLimiter = createRateLimiter({ limit: 30, windowMs: 60_000 })
+// Per-slug: the ensure has an in-flight dedupe + DB negative cache, so a handful of
+// calls per minute is plenty for legitimate traffic on one title.
+const slugLimiter = createRateLimiter({ limit: 10, windowMs: 60_000 })
+
+function rateLimitedResult(retryAfterMs: number): EnsureOfficialReqsResult {
+  return {
+    ok: false,
+    status: 'rate_limited',
+    reason: 'client_rate_limited',
+    message: `Too many requests. Try again in ${Math.ceil(retryAfterMs / 1000)}s.`,
+  }
+}
 
 function isValidSlug(slug: string): boolean {
   if (!slug || slug.length > 200) return false
@@ -28,6 +47,18 @@ export async function ensureGameOfficialRequirementsAction(
   const normalized = typeof slug === 'string' ? slug.trim() : ''
   if (!isValidSlug(normalized)) {
     return { ok: false, status: 'error', message: 'Invalid game slug' }
+  }
+
+  const ip = clientIpFromHeaders(await headers())
+  const ipCheck = ipLimiter.check(`ip:${ip}`)
+  if (!ipCheck.ok) {
+    console.warn(`[ensure-steam-reqs] ip rate limit hit ip=${ip} slug=${normalized}`)
+    return rateLimitedResult(ipCheck.retryAfterMs)
+  }
+  const slugCheck = slugLimiter.check(`slug:${normalized.toLowerCase()}`)
+  if (!slugCheck.ok) {
+    console.warn(`[ensure-steam-reqs] slug rate limit hit slug=${normalized}`)
+    return rateLimitedResult(slugCheck.retryAfterMs)
   }
 
   // Match lib/data.ts USE_REAL: default on unless explicitly 'false' (or mock-only mode).
