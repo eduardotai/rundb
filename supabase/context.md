@@ -5,7 +5,8 @@
 
 ## Read This First
 - `schema.sql`: source of truth for tables, enums, indexes, RLS, triggers, functions, RPCs, and phase-added columns.
-- `incremental-*.sql`: additive SQL changes for security, username uniqueness, game media, ingest queue, hardware catalog, reputation/voting, and RLS performance.
+- `incremental-*.sql`: additive SQL changes for security, username uniqueness, game media, ingest queue, hardware catalog, reputation/voting, RLS performance, and admin moderation.
+- `incremental-admin-moderation.sql`: `report_images` moderation columns + RLS (only approved images public), `public.is_admin()`, append-only `public.moderation_log`, and SECURITY DEFINER RPCs (`moderate_reports`, `delete_reports`, `moderate_report_images`, `delete_report_images`). RPCs trust `p_actor` only for service_role callers; authenticated callers must pass `is_moderator_or_admin()` / `is_admin()`. Apply after the RLS performance and hardware catalog migrations.
 - `secure-profile-role.sql`: role-hardening helper for profile security.
 - `email-templates/README.md`, `confirm-signup.html`, `reset-password.html`: Supabase Auth email templates.
 
@@ -36,7 +37,7 @@
 
 ## Common Changes
 - Adding a report column: update table definition, RPC signature/defaults, insert logic, mapper, type, form, ReportCard display if visible, and tests.
-- Adding moderation behavior: update report status fields or policy logic, admin actions/UI, and any queue or notification scripts.
+- Adding moderation behavior: extend the RPCs in `incremental-admin-moderation.sql` (keep the `private.resolve_moderation_actor` guard and `moderation_log` insert), then `lib/server/admin-moderation.ts`, `app/actions/admin.ts`, `lib/admin.ts`, the admin UI, and `tests/admin-moderation.test.ts`.
 - Adding ingest metadata: update `games`, `game_media`, or queue SQL plus scripts and server ingest helpers.
 - Changing profile or user rig behavior: update auth trigger/profile policies, `user_rigs`, profile page components, saved-rig adapter logic, and auth tests if relevant.
 - Adding hardware catalog fields: update SQL, import/seed/verify scripts, catalog mapper, combobox display, and normalization logic.

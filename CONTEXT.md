@@ -34,7 +34,7 @@ RunDB is a community-driven database of real PC hardware configurations, measure
 - Hardware catalog, comboboxes, browser/paste detection, and normalization are live.
 - Games and game media can come from ingestion; cover enrichment is layered and defensive.
 - React Query and batched adapters are in place for home, games, and detail surfaces.
-- Some admin moderation, aliases, image moderation, and bulk-management helpers still delegate to mock behavior (now isolated in `lib/admin-demo.ts`, bundled only with `/admin`); queue triggers and hardware-catalog admin paths are more real.
+- Admin moderation (reports, report images, hardware aliases, bulk actions, bulk game import) is real in real-data mode: `app/admin` -> `lib/admin.ts` -> `app/actions/admin.ts` -> audited RPCs/RLS from `supabase/incremental-admin-moderation.sql`. The localStorage demo layer (`lib/admin-demo.ts`) is only loaded when Supabase keys are absent.
 - Defensive Supabase wrappers prevent missing or dead projects from hanging local development.
 
 ## Golden Rules

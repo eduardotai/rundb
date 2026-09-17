@@ -1,29 +1,29 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getAdminOverviewStats,
   getModerationQueue,
-  updateReportStatus,
+  moderateReports,
+  deleteReports,
   getHardwareAliases,
-  addHardwareAlias,
+  createHardwareAlias,
   updateHardwareAlias,
   deleteHardwareAlias,
   getAllGamesForAdmin,
   bulkImportGames,
   parseCSV,
   getReportImages,
-  updateImageStatus,
-  deleteReportImage,
-} from '@/lib/admin-demo';
-import type { AdminReport, HardwareAlias, ReportStatus, BulkImportResult } from '@/lib/types';
-import {
-  getModerationQueueAction,
-  moderateReportAction,
-  triggerIngestionAction,
-} from '@/app/actions/reports';  // Agent 4 protected Server Action
+  moderateReportImages,
+  deleteReportImages,
+  type ImageStatus,
+} from '@/lib/admin';
+import { EMPTY_ADMIN_STATS, parseBulkGameRows } from '@/lib/admin-logic';
+import type { Game, HardwareAlias, ReportStatus, BulkImportResult } from '@/lib/types';
+import { triggerIngestionAction } from '@/app/actions/reports';
 import {
   getIngestQueueStatsAction,
   runIngestBatchAction,
@@ -70,6 +70,8 @@ import { gameMediaLoader } from '@/lib/utils';
 import { sanitizeFullName } from '@/lib/sanitize';
 import { getHardwareCatalogStats } from '@/lib/hardware-catalog';
 
+const EMPTY_GAMES: Game[] = [];
+
 type DemoRole = 'user' | 'moderator' | 'admin';
 
 const ROLE_LABELS: Record<DemoRole, string> = {
@@ -86,14 +88,16 @@ export default function AdminPage() {
     return (saved && ['user', 'moderator', 'admin'].includes(saved)) ? saved : 'admin';
   });
 
-  // Data states — compute via memos from pure getters to avoid setState-in-effect
+  const queryClient = useQueryClient();
   const [reportFilter, setReportFilter] = useState<ReportStatus | 'all'>('pending');
-  const [realReports, setRealReports] = useState<AdminReport[]>([]);
-  const [isReportsLoading, setIsReportsLoading] = useState(false);
   const [isModeratingReport, setIsModeratingReport] = useState(false);
+  const [selectedReportIds, setSelectedReportIds] = useState<Set<string>>(() => new Set());
+  const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(() => new Set());
+  const [isModeratingImages, setIsModeratingImages] = useState(false);
+  const [isSavingAlias, setIsSavingAlias] = useState(false);
   const [aliasSearch, setAliasSearch] = useState('');
   const [gameSearch, setGameSearch] = useState('');
-  const [imageFilter, setImageFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
+  const [imageFilter, setImageFilter] = useState<ImageStatus | 'all'>('pending');
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Phase 1 Ingestion trigger support (simple admin UI for CLI + simulation, no new files)
@@ -143,15 +147,53 @@ export default function AdminPage() {
     toast.success(`Switched to ${ROLE_LABELS[role]} (demo only)`);
   };
 
-  // Reactive data via useMemo (avoids setState inside effects).
-  // The getters read mutable mock-admin state, so each memo reads refreshKey to
-  // recompute after mutations bump it.
-  const stats = useMemo(() => { void refreshKey; return getAdminOverviewStats(); }, [refreshKey]);
-  const mockReports = useMemo(() => { void refreshKey; return getModerationQueue(reportFilter); }, [reportFilter, refreshKey]);
-  const reports = USE_REAL ? realReports : mockReports;
-  const aliases = useMemo(() => { void refreshKey; return getHardwareAliases(aliasSearch); }, [aliasSearch, refreshKey]);
-  const games = useMemo(() => { void refreshKey; return getAllGamesForAdmin(); }, [refreshKey]);
-  const images = useMemo(() => { void refreshKey; return getReportImages(imageFilter); }, [imageFilter, refreshKey]);
+  // All admin data flows through the dual-mode adapter (@/lib/admin) via React Query.
+  // Mutations call invalidateAdmin() which refetches every ['admin', ...] query.
+  const invalidateAdmin = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['admin'] });
+    setRefreshKey((k) => k + 1);
+  }, [queryClient]);
+
+  const statsQuery = useQuery({
+    queryKey: ['admin', 'stats'],
+    queryFn: getAdminOverviewStats,
+    staleTime: 30_000,
+  });
+  const stats = statsQuery.data ?? EMPTY_ADMIN_STATS;
+
+  const reportsQuery = useQuery({
+    queryKey: ['admin', 'reports', reportFilter],
+    queryFn: () => getModerationQueue(reportFilter),
+    staleTime: 15_000,
+  });
+  const reports = reportsQuery.data ?? [];
+  const isReportsLoading = reportsQuery.isPending;
+
+  const aliasesQuery = useQuery({
+    queryKey: ['admin', 'aliases', aliasSearch],
+    queryFn: () => getHardwareAliases(aliasSearch),
+    staleTime: 30_000,
+  });
+  const aliases = aliasesQuery.data ?? [];
+
+  const gamesQuery = useQuery({
+    queryKey: ['admin', 'games'],
+    queryFn: getAllGamesForAdmin,
+    staleTime: 60_000,
+  });
+  const games = gamesQuery.data ?? EMPTY_GAMES;
+
+  const imagesQuery = useQuery({
+    queryKey: ['admin', 'images', imageFilter],
+    queryFn: () => getReportImages(imageFilter),
+    staleTime: 15_000,
+  });
+  const images = imagesQuery.data ?? [];
+
+  React.useEffect(() => {
+    const err = statsQuery.error ?? reportsQuery.error ?? aliasesQuery.error ?? imagesQuery.error;
+    if (err) showUserError(err instanceof Error ? err.message : 'Failed to load admin data.');
+  }, [statsQuery.error, reportsQuery.error, aliasesQuery.error, imagesQuery.error]);
 
   // Filtered games
   const filteredGames = useMemo(() => {
@@ -203,19 +245,19 @@ export default function AdminPage() {
     setIsImporting(true);
     try {
       const rows = importTab === 'json' ? JSON.parse(importText) : parseCSV(importText);
-      const result = bulkImportGames(Array.isArray(rows) ? rows : [rows]);
+      const result = await bulkImportGames(Array.isArray(rows) ? rows : [rows]);
       setImportResult(result);
 
       if (result.success > 0) {
         toast.success(`Imported ${result.success} game(s)`, {
           description: result.errors.length ? `${result.errors.length} row(s) had errors` : undefined,
         });
-        setRefreshKey((k) => k + 1);
+        invalidateAdmin();
       } else {
         showUserError('Import finished with some issues. Check the list.');
       }
-    } catch {
-      showUserError('Import failed. Please try again.');
+    } catch (e: unknown) {
+      showUserError(e instanceof Error ? e.message : 'Import failed. Please try again.');
     } finally {
       setIsImporting(false);
     }
@@ -265,12 +307,13 @@ export default function AdminPage() {
     try {
       const rows = JSON.parse(phase1SeedText);
       const arr = Array.isArray(rows) ? rows : [rows];
-      // Reuse existing bulk import (demo / mock path) to "trigger" format validation
-      const result = bulkImportGames(arr);
-      const msg = `Simulated Phase 1 seed: ${result.success} games would import (mock). ${result.errors.length ? result.errors.length + ' issues' : 'Clean.'}`;
+      // Validation-only preview (no writes): reuses the shared bulk-import row parser.
+      const parsed = parseBulkGameRows(arr);
+      const ok = parsed.filter((p) => p.ok).length;
+      const issues = parsed.length - ok;
+      const msg = `Seed preview: ${ok} row(s) valid. ${issues ? issues + ' issue(s).' : 'Clean.'}`;
       setPhase1SimResult(msg);
-      toast.success('Phase 1 simulation complete (uses bulkImportGames for preview)');
-      setRefreshKey((k) => k + 1);
+      toast.success('Seed preview complete (no data written)');
     } catch (e: any) {
       toast.error('Invalid JSON seed for simulation', { description: e.message });
       setPhase1SimResult(null);
@@ -306,33 +349,6 @@ export default function AdminPage() {
       cancelled = true;
     };
   }, [refreshKey, canAdmin]);
-
-  React.useEffect(() => {
-    if (!USE_REAL) return;
-
-    let cancelled = false;
-    queueMicrotask(() => {
-      if (cancelled) return;
-      setIsReportsLoading(true);
-      getModerationQueueAction(reportFilter)
-        .then((rows) => {
-          if (!cancelled) setRealReports(rows);
-        })
-        .catch((e: unknown) => {
-          if (!cancelled) {
-            setRealReports([]);
-            showUserError(e instanceof Error ? e.message : 'Failed to load moderation queue.');
-          }
-        })
-        .finally(() => {
-          if (!cancelled) setIsReportsLoading(false);
-        });
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [reportFilter, refreshKey]);
 
   const handleRunIngestBatch = async (batchSize = 10) => {
     setIsRunningIngestBatch(true);
@@ -443,40 +459,82 @@ export default function AdminPage() {
     setShowNotesDialog(true);
   };
 
-  const performModerationAction = async (reportId: string, status: ReportStatus, notes?: string) => {
+  const performModerationAction = async (reportIds: string[], status: ReportStatus, notes?: string) => {
     if (!canModerate) {
       toast.error('Insufficient permissions (demo role)');
       return;
     }
-    if (USE_REAL) {
-      setIsModeratingReport(true);
-      try {
-        await moderateReportAction(reportId, status, notes);
-        toast.success(`Report ${status}`, { description: notes ? 'Notes saved' : undefined });
-        setRefreshKey((k) => k + 1);
-      } catch (e: unknown) {
-        showUserError(e instanceof Error ? e.message : 'Failed to update status');
-      } finally {
-        setIsModeratingReport(false);
-        setShowNotesDialog(false);
-        setActiveReportId('');
-      }
-      return;
+    if (reportIds.length === 0) return;
+    setIsModeratingReport(true);
+    try {
+      const updated = await moderateReports(reportIds, status, notes);
+      toast.success(
+        reportIds.length === 1 ? `Report ${status}` : `${updated} report(s) ${status}`,
+        { description: notes ? 'Notes saved' : undefined }
+      );
+      setSelectedReportIds((prev) => {
+        const next = new Set(prev);
+        for (const id of reportIds) next.delete(id);
+        return next;
+      });
+      invalidateAdmin();
+    } catch (e: unknown) {
+      showUserError(e instanceof Error ? e.message : 'Failed to update status');
+    } finally {
+      setIsModeratingReport(false);
+      setShowNotesDialog(false);
+      setActiveReportId('');
     }
-
-    const ok = updateReportStatus(reportId, status, notes);
-    if (ok) {
-      toast.success(`Report ${status}`, { description: notes ? 'Notes saved' : undefined });
-      setRefreshKey((k) => k + 1);
-    } else {
-      toast.error('Failed to update status');
-    }
-    setShowNotesDialog(false);
-    setActiveReportId('');
   };
 
   const quickModerate = (reportId: string, status: ReportStatus) => {
-    void performModerationAction(reportId, status);
+    void performModerationAction([reportId], status);
+  };
+
+  const bulkModerateSelected = (status: ReportStatus) => {
+    void performModerationAction(Array.from(selectedReportIds), status);
+  };
+
+  const bulkDeleteSelectedReports = async () => {
+    if (!canAdmin) {
+      toast.error('Only admins can delete reports');
+      return;
+    }
+    const ids = Array.from(selectedReportIds);
+    if (ids.length === 0) return;
+    if (!confirm(`Permanently delete ${ids.length} report(s)? This cannot be undone.`)) return;
+    setIsModeratingReport(true);
+    try {
+      const deleted = await deleteReports(ids);
+      toast.success(`${deleted} report(s) deleted`);
+      setSelectedReportIds(new Set());
+      invalidateAdmin();
+    } catch (e: unknown) {
+      showUserError(e instanceof Error ? e.message : 'Failed to delete reports');
+    } finally {
+      setIsModeratingReport(false);
+    }
+  };
+
+  const visibleReports = reports.slice(0, 50);
+  const allVisibleReportsSelected =
+    visibleReports.length > 0 && visibleReports.every((r) => selectedReportIds.has(r.id));
+
+  const toggleReportSelected = (id: string) => {
+    setSelectedReportIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllVisibleReports = () => {
+    setSelectedReportIds((prev) => {
+      if (allVisibleReportsSelected) return new Set();
+      const next = new Set(prev);
+      for (const r of visibleReports) next.add(r.id);
+      return next;
+    });
   };
 
   // ===== HARDWARE ALIASES =====
@@ -496,7 +554,11 @@ export default function AdminPage() {
     setShowAliasDialog(true);
   };
 
-  const saveAlias = () => {
+  const saveAlias = async () => {
+    if (!canModerate) {
+      toast.error('Moderator+ required');
+      return;
+    }
     const safeRaw = sanitizeFullName(aliasForm.rawString);
     const safeCanonical = sanitizeFullName(aliasForm.canonical);
     const safeVendor = sanitizeFullName(aliasForm.vendor || '');
@@ -507,66 +569,100 @@ export default function AdminPage() {
       return;
     }
 
-    if (editingAlias) {
-      const ok = updateHardwareAlias(editingAlias.id, {
-        rawString: safeRaw,
-        canonical: safeCanonical,
-        vendor: safeVendor || undefined,
-        series: safeSeries || undefined,
-      });
-      if (ok) toast.success('Alias updated');
-    } else {
-      const created = addHardwareAlias(
-        safeRaw,
-        safeCanonical,
-        safeVendor || undefined,
-        safeSeries || undefined
-      );
-      if (created) {
-        toast.success('Alias added');
+    const input = {
+      rawString: safeRaw,
+      canonical: safeCanonical,
+      vendor: safeVendor || null,
+      series: safeSeries || null,
+    };
+
+    setIsSavingAlias(true);
+    try {
+      if (editingAlias) {
+        await updateHardwareAlias(editingAlias.id, input);
+        toast.success('Alias updated');
       } else {
-        toast.error('Alias already exists for that raw string');
-        return;
+        await createHardwareAlias(input);
+        toast.success('Alias added');
       }
+      setShowAliasDialog(false);
+      invalidateAdmin();
+    } catch (e: unknown) {
+      showUserError(e instanceof Error ? e.message : 'Failed to save alias');
+    } finally {
+      setIsSavingAlias(false);
     }
-    setShowAliasDialog(false);
-    setRefreshKey((k) => k + 1);
   };
 
-  const handleDeleteAlias = (id: string, raw: string) => {
+  const handleDeleteAlias = async (id: string, raw: string) => {
     if (!canAdmin) {
       toast.error('Only admins can delete aliases');
       return;
     }
     if (!confirm(`Delete alias for "${raw}"?`)) return;
-    if (deleteHardwareAlias(id)) {
-      toast.success('Alias deleted');
-      setRefreshKey((k) => k + 1);
+    try {
+      const ok = await deleteHardwareAlias(id);
+      if (ok) {
+        toast.success('Alias deleted');
+        invalidateAdmin();
+      } else {
+        toast.error('Alias not found');
+      }
+    } catch (e: unknown) {
+      showUserError(e instanceof Error ? e.message : 'Failed to delete alias');
     }
   };
 
   // ===== IMAGES =====
-  const handleImageAction = (imageId: string, status: 'approved' | 'rejected' | 'pending') => {
+  const handleImageAction = async (imageIds: string[], status: ImageStatus) => {
     if (!canModerate) {
       toast.error('Moderator+ required');
       return;
     }
-    if (updateImageStatus(imageId, status)) {
-      toast.success(`Image ${status}`);
-      setRefreshKey((k) => k + 1);
+    if (imageIds.length === 0) return;
+    setIsModeratingImages(true);
+    try {
+      const updated = await moderateReportImages(imageIds, status);
+      toast.success(imageIds.length === 1 ? `Image ${status}` : `${updated} image(s) ${status}`);
+      setSelectedImageIds((prev) => {
+        const next = new Set(prev);
+        for (const id of imageIds) next.delete(id);
+        return next;
+      });
+      invalidateAdmin();
+    } catch (e: unknown) {
+      showUserError(e instanceof Error ? e.message : 'Failed to update image status');
+    } finally {
+      setIsModeratingImages(false);
     }
   };
 
-  const handleDeleteImage = (imageId: string) => {
+  const handleDeleteImages = async (imageIds: string[]) => {
     if (!canAdmin) {
       toast.error('Admin only');
       return;
     }
-    if (!confirm('Delete this image reference?')) return;
-    if (deleteReportImage(imageId)) {
-      toast.success('Image removed');
-      setRefreshKey((k) => k + 1);
+    if (imageIds.length === 0) return;
+    if (!confirm(imageIds.length === 1 ? 'Delete this image reference?' : `Delete ${imageIds.length} image references?`)) return;
+    setIsModeratingImages(true);
+    try {
+      const deleted = await deleteReportImages(imageIds);
+      toast.success(`${deleted} image(s) removed`);
+      setSelectedImageIds(new Set());
+      invalidateAdmin();
+    } catch (e: unknown) {
+      showUserError(e instanceof Error ? e.message : 'Failed to delete images');
+    } finally {
+      setIsModeratingImages(false);
     }
+  };
+
+  const toggleImageSelected = (id: string) => {
+    setSelectedImageIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   };
 
   return (
@@ -578,12 +674,15 @@ export default function AdminPage() {
             <Shield className="h-8 w-8 text-primary" />
             <div>
               <h1 className="text-3xl font-semibold tracking-tight">Admin Tools</h1>
-              <p className="text-muted-foreground">Phase 4 • RunDB Migration • Role-based tools</p>
+              <p className="text-muted-foreground">
+                {USE_REAL ? 'Live moderation • Supabase RLS + audited RPCs' : 'Demo mode • localStorage-backed tools'}
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Demo Role Switcher (visual + functional guard) */}
+        {/* Demo Role Switcher (demo mode only; real mode enforces profiles.role server-side) */}
+        {!USE_REAL && (
         <div className="flex flex-col items-end gap-2">
           <div className="flex items-center gap-2 rounded-full border border-border bg-card px-1 py-1 text-xs">
             <span className="pl-2 text-muted-foreground">Demo role:</span>
@@ -604,19 +703,32 @@ export default function AdminPage() {
             {canModerate ? 'Can moderate reports & images' : 'Read-only in this role (demo)'}
           </div>
         </div>
+        )}
       </div>
 
-      {/* Warning banner */}
-      <div className="mb-6 rounded-lg border border-amber-900/60 bg-amber-950/30 p-3 text-sm text-amber-200">
-        <div className="flex items-start gap-2">
-          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-          <div>
-            <strong>Demo mode:</strong> All changes persist in your browser (localStorage). 
-            In production this page would enforce <code>profiles.role IN (&apos;moderator&apos;,&apos;admin&apos;)</code> via Supabase RLS + server checks.
-            No real database writes occur yet.
+      {/* Mode banner */}
+      {USE_REAL ? (
+        <div className="mb-6 rounded-lg border border-emerald-900/60 bg-emerald-950/30 p-3 text-sm text-emerald-200">
+          <div className="flex items-start gap-2">
+            <Shield className="mt-0.5 h-4 w-4 flex-shrink-0" />
+            <div>
+              <strong>Live mode:</strong> moderation, alias and image changes are written to Supabase through
+              staff-checked Server Actions and <code>SECURITY DEFINER</code> RPCs, and every change is recorded in{' '}
+              <code>moderation_log</code>. Requires <code>supabase/incremental-admin-moderation.sql</code>.
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="mb-6 rounded-lg border border-amber-900/60 bg-amber-950/30 p-3 text-sm text-amber-200">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+            <div>
+              <strong>Demo mode:</strong> All changes persist in your browser (localStorage).
+              With Supabase keys configured this page enforces <code>profiles.role IN (&apos;moderator&apos;,&apos;admin&apos;)</code> via RLS + server checks.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats Overview */}
       <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
@@ -658,7 +770,7 @@ export default function AdminPage() {
               <h2 className="text-xl font-semibold">Moderation Queue</h2>
               <p className="text-sm text-muted-foreground">Review, approve, reject or flag user-submitted reports.</p>
             </div>
-            <Button variant="outline" size="sm" onClick={() => setRefreshKey((k) => k + 1)} disabled={isReportsLoading}>
+            <Button variant="outline" size="sm" onClick={invalidateAdmin} disabled={isReportsLoading}>
               <RefreshCw className="mr-2 h-4 w-4" /> Refresh
             </Button>
           </div>
@@ -677,10 +789,44 @@ export default function AdminPage() {
             ))}
           </div>
 
+          {selectedReportIds.size > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+              <span className="font-medium">{selectedReportIds.size} selected</span>
+              <Button size="sm" variant="outline" disabled={!canModerate || isModeratingReport} onClick={() => bulkModerateSelected('approved')}>
+                <Check className="mr-1 h-3.5 w-3.5" /> Approve
+              </Button>
+              <Button size="sm" variant="outline" disabled={!canModerate || isModeratingReport} onClick={() => bulkModerateSelected('rejected')}>
+                <X className="mr-1 h-3.5 w-3.5" /> Reject
+              </Button>
+              <Button size="sm" variant="outline" disabled={!canModerate || isModeratingReport} onClick={() => bulkModerateSelected('flagged')}>
+                <Flag className="mr-1 h-3.5 w-3.5" /> Flag
+              </Button>
+              <Button size="sm" variant="outline" disabled={!canModerate || isModeratingReport} onClick={() => bulkModerateSelected('pending')}>
+                Back to pending
+              </Button>
+              {canAdmin && (
+                <Button size="sm" variant="destructive" disabled={isModeratingReport} onClick={() => void bulkDeleteSelectedReports()}>
+                  <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" onClick={() => setSelectedReportIds(new Set())}>Clear</Button>
+            </div>
+          )}
+
           <div className="rounded-xl border border-border bg-card overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all visible reports"
+                      className="h-4 w-4 accent-primary"
+                      checked={allVisibleReportsSelected}
+                      onChange={toggleAllVisibleReports}
+                      disabled={visibleReports.length === 0}
+                    />
+                  </TableHead>
                   <TableHead>Game</TableHead>
                   <TableHead>Hardware</TableHead>
                   <TableHead className="text-right">FPS</TableHead>
@@ -693,13 +839,22 @@ export default function AdminPage() {
               <TableBody>
                 {(isReportsLoading || reports.length === 0) && (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                       {isReportsLoading ? 'Loading moderation queue...' : 'No reports match the current filter.'}
                     </TableCell>
                   </TableRow>
                 )}
-                {reports.slice(0, 50).map((r) => (
-                  <TableRow key={r.id} className="hover:bg-muted/30">
+                {visibleReports.map((r) => (
+                  <TableRow key={r.id} className="hover:bg-muted/30" data-state={selectedReportIds.has(r.id) ? 'selected' : undefined}>
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select report ${r.gameName || r.id}`}
+                        className="h-4 w-4 accent-primary"
+                        checked={selectedReportIds.has(r.id)}
+                        onChange={() => toggleReportSelected(r.id)}
+                      />
+                    </TableCell>
                     <TableCell className="font-medium">
                       <Link href={`/games/${r.gameId}`} className="hover:underline text-primary">
                         {r.gameName || 'Unknown Game'}
@@ -791,7 +946,7 @@ export default function AdminPage() {
               onChange={(e) => setGameSearch(sanitizeFullName(e.target.value))}
               className="max-w-md"
             />
-            <Button variant="outline" onClick={() => setRefreshKey((k) => k + 1)} size="icon"><RefreshCw className="h-4 w-4" /></Button>
+            <Button variant="outline" onClick={invalidateAdmin} size="icon"><RefreshCw className="h-4 w-4" /></Button>
           </div>
 
           {USE_REAL && (
@@ -985,7 +1140,9 @@ export default function AdminPage() {
               </TableBody>
             </Table>
           </div>
-          <p className="text-xs text-muted-foreground">Showing up to 30 matches. Preview thumbnails added (Agent 4). Imported games persist in this browser. Use Protected Action or ingest script for real Supabase covers.</p>
+          <p className="text-xs text-muted-foreground">
+            Showing up to 30 matches. {USE_REAL ? 'Bulk-imported games are inserted as skeleton rows (admin only) and enriched by the ingest worker.' : 'Imported games persist in this browser.'}
+          </p>
         </TabsContent>
 
         {/* HARDWARE NORMALIZATION WORKBENCH */}
@@ -995,7 +1152,7 @@ export default function AdminPage() {
               <h2 className="text-xl font-semibold">Hardware Normalization Workbench</h2>
               <p className="text-sm text-muted-foreground">Map raw user-entered strings (GPU/CPU) to canonical names for better matching.</p>
             </div>
-            <Button onClick={() => openAliasDialog()} disabled={!canAdmin} className="gap-2">
+            <Button onClick={() => openAliasDialog()} disabled={!canModerate} className="gap-2">
               <Plus className="h-4 w-4" /> Add Alias
             </Button>
           </div>
@@ -1019,7 +1176,7 @@ export default function AdminPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {aliases.length === 0 && <TableRow><TableCell colSpan={5} className="text-center py-8">No aliases.</TableCell></TableRow>}
+                {aliases.length === 0 && <TableRow><TableCell colSpan={5} className="text-center py-8">{aliasesQuery.isPending ? 'Loading aliases...' : 'No aliases.'}</TableCell></TableRow>}
                 {aliases.map((a) => (
                   <TableRow key={a.id}>
                     <TableCell className="font-mono text-sm">{a.rawString}</TableCell>
@@ -1028,8 +1185,8 @@ export default function AdminPage() {
                     <TableCell className="text-xs text-muted-foreground">{new Date(a.createdAt).toLocaleDateString()}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button size="sm" variant="ghost" className="h-8 w-8 hover:bg-accent/70" onClick={() => openAliasDialog(a)}><Edit2 className="h-3.5 w-3.5" /></Button>
-                        <Button size="sm" variant="ghost" className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={!canAdmin} onClick={() => handleDeleteAlias(a.id, a.rawString)}>
+                        <Button size="sm" variant="ghost" className="h-8 w-8 hover:bg-accent/70" disabled={!canModerate} onClick={() => openAliasDialog(a)}><Edit2 className="h-3.5 w-3.5" /></Button>
+                        <Button size="sm" variant="ghost" className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={!canAdmin} onClick={() => void handleDeleteAlias(a.id, a.rawString)}>
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
@@ -1057,13 +1214,38 @@ export default function AdminPage() {
             </div>
           </div>
 
+          {selectedImageIds.size > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+              <span className="font-medium">{selectedImageIds.size} selected</span>
+              <Button size="sm" variant="outline" disabled={!canModerate || isModeratingImages} onClick={() => void handleImageAction(Array.from(selectedImageIds), 'approved')}>Approve</Button>
+              <Button size="sm" variant="outline" disabled={!canModerate || isModeratingImages} onClick={() => void handleImageAction(Array.from(selectedImageIds), 'rejected')}>Reject</Button>
+              {canAdmin && (
+                <Button size="sm" variant="destructive" disabled={isModeratingImages} onClick={() => void handleDeleteImages(Array.from(selectedImageIds))}>
+                  <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" onClick={() => setSelectedImageIds(new Set())}>Clear</Button>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {images.length === 0 && (
-              <div className="col-span-full rounded-xl border border-dashed p-12 text-center text-muted-foreground">No images for this filter.</div>
+              <div className="col-span-full rounded-xl border border-dashed p-12 text-center text-muted-foreground">
+                {imagesQuery.isPending ? 'Loading images...' : 'No images for this filter.'}
+              </div>
             )}
             {images.map((img) => (
               <div key={img.id} className="group overflow-hidden rounded-xl border border-border bg-card">
                 <div className="relative aspect-video bg-black">
+                  <label className="absolute top-2 left-2 z-10 flex h-6 w-6 items-center justify-center rounded bg-black/60">
+                    <input
+                      type="checkbox"
+                      aria-label="Select image"
+                      className="h-4 w-4 accent-primary"
+                      checked={selectedImageIds.has(img.id)}
+                      onChange={() => toggleImageSelected(img.id)}
+                    />
+                  </label>
                   {/* Phase 1 image strategy: Next Image + custom loader (WebP/AVIF/responsive via Supabase transforms or optimized files) */}
                   <Image
                     loader={gameMediaLoader}
@@ -1083,9 +1265,9 @@ export default function AdminPage() {
                   <div className="line-clamp-1 font-medium">{img.caption || 'No caption'}</div>
                   <div className="text-xs text-muted-foreground mt-0.5">Report #{img.reportId.slice(0, 8)}</div>
                   <div className="mt-3 flex gap-2">
-                    <Button size="sm" variant="outline" disabled={!canModerate} onClick={() => handleImageAction(img.id, 'approved')} className="flex-1">Approve</Button>
-                    <Button size="sm" variant="outline" disabled={!canModerate} onClick={() => handleImageAction(img.id, 'rejected')} className="flex-1">Reject</Button>
-                    <Button size="sm" variant="destructive" disabled={!canAdmin} onClick={() => handleDeleteImage(img.id)}>
+                    <Button size="sm" variant="outline" disabled={!canModerate || isModeratingImages} onClick={() => void handleImageAction([img.id], 'approved')} className="flex-1">Approve</Button>
+                    <Button size="sm" variant="outline" disabled={!canModerate || isModeratingImages} onClick={() => void handleImageAction([img.id], 'rejected')} className="flex-1">Reject</Button>
+                    <Button size="sm" variant="destructive" disabled={!canAdmin || isModeratingImages} onClick={() => void handleDeleteImages([img.id])}>
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
@@ -1109,8 +1291,9 @@ export default function AdminPage() {
               <li><strong>Image Review</strong> — Lightweight moderation for user-submitted proof images.</li>
             </ul>
             <p className="text-xs text-muted-foreground mt-6">
-              Full implementation aligns with the Master Implementation Plan (schema: reports.status, hardware_aliases, report_images, profiles.role).
-              Future steps: Server Actions + Supabase RLS for real moderation, audit logs, and bulk job queues.
+              Real mode: Server Actions in <code>app/actions/admin.ts</code> verify <code>profiles.role</code> (or the server-only
+              <code> ADMIN_EMAILS</code> allowlist) and call the audited RPCs from <code>supabase/incremental-admin-moderation.sql</code>
+              (<code>moderate_reports</code>, <code>moderate_report_images</code>, admin-only deletes). Every change lands in <code>moderation_log</code>.
             </p>
           </div>
         </TabsContent>
@@ -1263,10 +1446,11 @@ export default function AdminPage() {
           <DialogFooter>
             <Button variant="ghost" className="hover:bg-accent/70" onClick={() => setShowAliasDialog(false)}>Cancel</Button>
             <Button 
-              onClick={saveAlias}
+              onClick={() => void saveAlias()}
+              disabled={isSavingAlias}
               className="bg-white text-black font-medium hover:bg-white/90"
             >
-              {editingAlias ? 'Save Changes' : 'Add Alias'}
+              {isSavingAlias ? 'Saving...' : editingAlias ? 'Save Changes' : 'Add Alias'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1291,7 +1475,7 @@ export default function AdminPage() {
             <Button variant="ghost" className="hover:bg-accent/70" onClick={() => setShowNotesDialog(false)}>Cancel</Button>
             <Button
               disabled={isModeratingReport || !activeReportId}
-              onClick={() => void performModerationAction(activeReportId, actionStatus, moderatorNotes || undefined)}
+              onClick={() => void performModerationAction([activeReportId], actionStatus, moderatorNotes || undefined)}
             >
               {isModeratingReport ? 'Saving...' : `Confirm ${actionStatus}`}
             </Button>

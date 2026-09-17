@@ -2,13 +2,11 @@
  * RunDB Admin Demo Adapter
  *
  * Mock/localStorage-backed admin tools (moderation queue, hardware aliases,
- * bulk import, image moderation) used by app/admin/page.tsx while the real
- * Supabase-backed equivalents are still being migrated (real paths live in
- * app/actions/*).
+ * bulk import, image moderation). Only reached through lib/admin.ts when
+ * USE_REAL is false; the real Supabase paths live in app/actions/admin.ts.
  *
- * Split out of lib/data.ts so public pages do not bundle the demo fixture and
- * localStorage admin state — this module statically imports mock-data and is
- * only pulled into the /admin route chunk.
+ * This module statically imports mock-data, so lib/admin.ts loads it with a
+ * dynamic import to keep the demo fixture out of real-mode bundles.
  */
 
 import * as mock from './mock-data'
@@ -43,6 +41,25 @@ export function updateReportStatus(
   return mock.updateReportStatus(reportId, status, moderatorNotes, moderatorName)
 }
 
+/**
+ * Demo approximation of the admin-only hard delete: user-created reports are removed
+ * from localStorage; immutable seed reports are marked rejected instead.
+ */
+export function deleteReports(reportIds: string[]): number {
+  if (!ALLOW_MOCK_DATA) return 0
+  const ids = new Set(reportIds)
+  const userReports = mock.loadUserReports()
+  const remaining = userReports.filter((r) => !ids.has(r.id))
+  if (remaining.length !== userReports.length) mock.saveUserReports(remaining)
+  const removedUser = new Set(userReports.filter((r) => ids.has(r.id)).map((r) => r.id))
+  let count = removedUser.size
+  for (const id of ids) {
+    if (removedUser.has(id)) continue
+    if (mock.updateReportStatus(id, 'rejected', '[deleted in demo]')) count++
+  }
+  return count
+}
+
 export function getHardwareAliases(search?: string) {
   return ALLOW_MOCK_DATA ? mock.getHardwareAliases(search) : []
 }
@@ -66,7 +83,7 @@ export function getAllGamesForAdmin() {
   return enrichGamesWithCoversSync(mock.getAllGames())
 }
 
-export function bulkImportGames(rows: any[]): BulkImportResult {
+export function bulkImportGames(rows: Record<string, unknown>[]): BulkImportResult {
   if (!ALLOW_MOCK_DATA) {
     return {
       success: 0,

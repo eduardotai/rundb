@@ -8,7 +8,10 @@
 - `data-logic.ts`: shared pure helpers (filterReports, computeGameStatsFromReports, predictForUserRigFromReports, checkOfficialSpecsForRig, formatRelativeTime, parseCSV) used by both real and mock paths. No fetches, no localStorage.
 - `parse-system-requirements.ts`, `official-spec-check.ts`: publisher min/rec string parsing + pure “can my rig meet official specs?” evaluation (separate from community `PerformanceTier`).
 - `starter-games.ts`: the canonical 18-game starter catalog (data only). Source for `game-cover-catalog.ts` and re-exported by `mock-data.ts` for scripts.
-- `admin-demo.ts`: mock/localStorage-backed admin tools (moderation queue, aliases, bulk import, image moderation) used only by `app/admin`; keeps mock state out of public bundles.
+- `admin.ts`: client-safe dual-mode admin adapter used by `app/admin`. Real mode calls `app/actions/admin.ts`; demo mode lazily imports `admin-demo.ts`.
+- `admin-logic.ts`: pure admin helpers (status guards, bulk id validation, alias/image row mappers, alias input validation, bulk game-import row parsing). Tested in `admin-logic.test.ts`.
+- `admin-demo.ts`: mock/localStorage-backed admin tools (moderation queue, aliases, bulk import, image moderation); only reached through `admin.ts` when `USE_REAL` is false so mock state stays out of real bundles.
+- `server/admin-moderation.ts`: server-only moderation helpers taking an explicit Supabase client (service role from actions, stubs in tests); calls the audited moderation RPCs and writes `moderation_log` rows for direct table writes.
 - `types.ts`: source-of-truth TypeScript shapes that mirror Postgres concepts and UI payloads.
 - `mock-data.ts`: demo seed reports, localStorage persistence, and mock admin state (games fixture and pure helpers now live in `starter-games.ts` / `data-logic.ts` and are re-exported here for compat).
 - `supabase/client.ts`, `supabase/server.ts`, `supabase/service.ts`, `supabase/query-stub.ts`, `supabase/auth-timeout.ts`: defensive Supabase clients and auth timeout behavior.
