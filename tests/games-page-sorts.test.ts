@@ -15,7 +15,13 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 // Force starter/mock data path before importing the module under test.
-process.env.NODE_ENV = 'development'
+// NODE_ENV is typed readonly in @types/node; process.env is a plain mutable object at runtime.
+Object.defineProperty(process.env, 'NODE_ENV', {
+  value: 'development',
+  writable: true,
+  enumerable: true,
+  configurable: true,
+})
 process.env.NEXT_PUBLIC_ALLOW_MOCK_DATA = 'true'
 process.env.NEXT_PUBLIC_USE_REAL_DATA = 'false'
 

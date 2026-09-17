@@ -60,16 +60,18 @@ export function SiteNav({
           >
             Admin
           </Link>
-          <Link
-            href="/dashboard"
-            className="theme-nav-link hidden shrink-0 font-medium text-amber-400 transition hover:text-amber-300 sm:inline-flex"
-            aria-current={isActive('/dashboard') ? 'page' : undefined}
-          >
-            <span className="inline-flex items-center gap-1">
-              <LayoutDashboard className="h-3.5 w-3.5" aria-hidden />
-              Dashboard
-            </span>
-          </Link>
+          {process.env.NODE_ENV === 'development' && (
+            <Link
+              href="/dashboard"
+              className="theme-nav-link hidden shrink-0 font-medium text-amber-400 transition hover:text-amber-300 sm:inline-flex"
+              aria-current={isActive('/dashboard') ? 'page' : undefined}
+            >
+              <span className="inline-flex items-center gap-1">
+                <LayoutDashboard className="h-3.5 w-3.5" aria-hidden />
+                Dashboard
+              </span>
+            </Link>
+          )}
         </>
       )}
     </nav>

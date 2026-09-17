@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { getStaffAccess } from '@/lib/admin-access'
 
 export default async function DashboardLayout({
@@ -6,6 +6,9 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
+  // Development-only surface (see app/dashboard/page.tsx).
+  if (process.env.NODE_ENV !== 'development') notFound()
+
   const { user, isAdmin } = await getStaffAccess()
 
   if (!user) {

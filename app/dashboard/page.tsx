@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { getDashboardData } from '@/lib/server/dashboard';
+import { notFound } from 'next/navigation';
 import { DashboardClient } from '@/components/dashboard/dashboard-client';
 import './dashboard.css';
 
@@ -18,7 +18,14 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{ tab?: string }>;
 }) {
-  const [data, params] = await Promise.all([getDashboardData(), searchParams]);
-  const tab = TABS.includes(params.tab as (typeof TABS)[number]) ? params.tab! : 'overview';
-  return <DashboardClient data={data} defaultTab={tab} />;
+  // Development-only: the data layer shells out to git and reads plans/ + docs/,
+  // which do not exist on serverless deploys. Keeping the import inside the env
+  // branch lets Turbopack drop the git/fs module from production bundles and traces.
+  if (process.env.NODE_ENV === 'development') {
+    const { getDashboardData } = await import('@/lib/server/dashboard');
+    const [data, params] = await Promise.all([getDashboardData(), searchParams]);
+    const tab = TABS.includes(params.tab as (typeof TABS)[number]) ? params.tab! : 'overview';
+    return <DashboardClient data={data} defaultTab={tab} />;
+  }
+  notFound();
 }

@@ -1,6 +1,6 @@
 // Server/Node only. Accepts user-provided image uploads, decodes them with Sharp,
 // strips metadata, and stores a normalized WebP avatar in Supabase Storage.
-import sharp from 'sharp';
+import sharp, { type Metadata } from 'sharp';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 const AVATAR_BUCKET = 'profile-avatars';
@@ -69,7 +69,7 @@ export async function optimizeAndUploadProfileAvatar(
     throw new AvatarUploadError('That file does not look like a valid JPEG, PNG, or WebP image.');
   }
 
-  let metadata: sharp.Metadata;
+  let metadata: Metadata;
   try {
     metadata = await sharp(buffer, {
       limitInputPixels: AVATAR_SIZE * AVATAR_SIZE * 64,

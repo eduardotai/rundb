@@ -6,6 +6,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-16
+
+### Security
+
+- Upgraded `sharp` to 0.35.x (libvips/libheif advisories) and pinned Next's nested copy via an npm override.
+- `ensureGameOfficialRequirementsAction` (unauthenticated, service-role, hits Steam) is now rate limited per IP and per slug (`lib/server/rate-limit.ts`).
+
+### Fixed
+
+- `npx tsc --noEmit` is clean again: tests no longer assign to the read-only `process.env.NODE_ENV` typing.
+- `/dashboard` (git + `plans/` reader) is development-only and 404s in production; the git/fs module is no longer bundled or traced in production builds.
+
+### Changed
+
+- CI runs typecheck (`tsc --noEmit`) and `npm test` before the build.
+- `npm run copy:sql:hardware` is cross-platform (was PowerShell-only).
+- Added `.env.example` documenting every environment variable.
+
 ### Added
 
 - **Lazy Steam official requirements on game detail** — opening a game with a `steam_app_id` but empty min/rec triggers a one-shot server ensure (no full-catalog backfill). Results persist to Supabase; negative cache columns `official_reqs_checked_at` / `official_reqs_status` avoid re-hitting Steam on empty/429. Non-blocking UI (“Fetching official requirements from Steam…”). Migration: `supabase/incremental-game-official-reqs-cache.sql`.

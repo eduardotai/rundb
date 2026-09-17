@@ -14,6 +14,15 @@ import { enqueueSeeds, discoverFreshCandidates, markQueueRowFailed, readExisting
 import { discoverAndEnqueueLatestAction } from '../app/actions/ingest-queue'
 import type { SeedGame } from '../lib/server/discover-steam-games'
 
+// NODE_ENV is typed readonly in @types/node; process.env is a plain mutable object at runtime.
+function setNodeEnv(value: string | undefined) {
+  if (value === undefined) {
+    Reflect.deleteProperty(process.env, 'NODE_ENV')
+    return
+  }
+  Object.defineProperty(process.env, 'NODE_ENV', { value, writable: true, enumerable: true, configurable: true })
+}
+
 // A minimal stub client recorder. Implements only the .from paths used by the fns under test.
 function makeRecordingClient(initialGames: Array<{id: string, slug: string, steam_app_id?: string|null}> = [], initialPending = 0) {
   const gamesTable = [...initialGames].map(g => ({...g}))
@@ -230,7 +239,7 @@ test('discoverFreshCandidates integrates with filter (shape only; net discovery 
 
 test('discoverAndEnqueueLatestAction (with bypass + injected client) reports raw vs fresh and pending increase (drives shipped action)', async () => {
   const previousNodeEnv = process.env.NODE_ENV
-  process.env.NODE_ENV = 'test'
+  setNodeEnv('test')
   process.env.NODE_TEST_BYPASS_ADMIN = '1'
 
   try {
@@ -264,11 +273,7 @@ test('discoverAndEnqueueLatestAction (with bypass + injected client) reports raw
       message: res.message
     }))
   } finally {
-    if (previousNodeEnv === undefined) {
-      delete process.env.NODE_ENV
-    } else {
-      process.env.NODE_ENV = previousNodeEnv
-    }
+    setNodeEnv(previousNodeEnv)
     delete process.env.NODE_TEST_BYPASS_ADMIN
   }
 })
