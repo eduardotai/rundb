@@ -8,6 +8,9 @@
 - `cover-candidates.test.ts`: cover/media candidate selection behavior.
 - `discover-steam-games.test.ts`: Steam discovery helper behavior.
 - `igdb-game-match.test.ts`: IGDB/game matching behavior.
+- `report-input.test.ts`: the shared report schema (`lib/report-input.ts`): ranges, types, enums, unknown keys, sanitizing, auto-review reasons.
+- `report-write.test.ts`: `lib/server/report-write.ts` with fakes: tampered payloads, auth, ownership, rate limit, duplicates, pending/approved decisions on submit and edit.
+- `report-public-reads.test.ts`: static guard that public report reads in `lib/data.ts` filter `status = 'approved'`.
 - `admin-moderation.test.ts`: drives `lib/server/admin-moderation.ts` with an in-memory Supabase stub (RPC payloads, dedup, audit rows, bulk import) and guards the security shape of `supabase/migrations/20261109000400_admin_moderation.sql`.
 - Also check colocated `lib/*.test.ts` files for auth redirect, hardware detection, normalization-adjacent behavior, report notes, sanitization, similarity, Steam helpers, and trending.
 

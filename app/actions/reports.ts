@@ -4,8 +4,9 @@
  * RunDB Phase 2 Real Reports Server Actions
  * Aligned strictly with Master Implementation Plan + approved schema in supabase/migrations
  *
- * - Submission: registered users only, status='approved', authoritative performance_tier calc
- * - Anti-abuse: rate limiting (5/hr) + duplicate detection (exact hardware match, 24h); service-role insert
+ * - Submission/edit: lib/server/report-write.ts (strict zod schema from lib/report-input.ts,
+ *   auth, ownership, 5/hr rate limit, 24h duplicate check, auto-review to 'pending' for
+ *   implausible reports); service-role writes
  * - Upvoting: uses report_votes (RLS + unique + trigger for helpful_votes maintained in schema)
  * - Moderation: role-checked updates for /admin/reports
  *
@@ -18,9 +19,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { getStaffAccess } from '@/lib/admin-access'
 import { createServiceClient } from '@/lib/supabase/service'
-import type { AdminReport, Report, SubmitReportInput, PerformanceTier, ReportStatus, GraphicsPreset } from '@/lib/types'
+import type { AdminReport, Report, PerformanceTier, ReportStatus, GraphicsPreset } from '@/lib/types'
 import { normalizeSlug } from '@/lib/utils'
-import { normalizeHardwareSync } from '@/lib/normalize-hardware'
+import { submitReport, updateReport, type ReportWriteDeps } from '@/lib/server/report-write'
 import { cleanPublicReportNotes } from '@/lib/report-notes'
 import type { User } from '@supabase/supabase-js'
 
@@ -39,14 +40,6 @@ async function requireModerationAccess(): Promise<string> {
     throw new Error('Access denied. Moderator or admin role required.')
   }
   return access.user.id
-}
-
-function calculatePerformanceTier(avgFps: number): PerformanceTier {
-  if (avgFps >= 90) return 'Excellent'
-  if (avgFps >= 60) return 'Good'
-  if (avgFps >= 40) return 'Playable'
-  if (avgFps >= 25) return 'Struggling'
-  return 'Unplayable'
 }
 
 function isRegisteredUser(user: User | null): boolean {
@@ -92,347 +85,160 @@ function mapDbReportToReport(row: any): Report {
   }
 }
 
+/** Expected-failure result. Next.js hides thrown messages in production, so actions return errors. */
+export type ReportActionResult = { ok: true; report: Report } | { ok: false; error: string }
+
 /**
- * Submit a performance report.
- * Registered users only. Anti-abuse: 5/hr rate limit + 24h exact-hardware de-dupe.
- * Insert uses createServiceClient() because client INSERT on reports is revoked (RLS).
+ * Wire lib/server/report-write.ts to real clients. Reads that must respect the caller's
+ * RLS (game lookup, own-report ownership, rate-limit counts) use the cookie client; writes use
+ * the service client because client INSERT/UPDATE on reports is revoked (see
+ * supabase/migrations/20261109000500_security_hardening.sql). The service writes are always
+ * scoped to the authenticated user's id.
  */
-export async function submitReportAction(input: SubmitReportInput): Promise<Report> {
-  try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+async function buildReportWriteDeps(): Promise<{ deps: ReportWriteDeps<any>; getAuthUser: () => User | null }> {
+  const supabase = await createClient()
+  const service = createServiceClient()
+  let authUser: User | null = null
 
-    if (!isRegisteredUser(user)) {
-      throw new Error('You must sign in to submit a report.')
-    }
-    const userId = user.id
-
-    // 1. Validate game exists + get denormalized name
-    const { data: game, error: gameErr } = await supabase
-      .from('games')
-      .select('id, name')
-      .eq('id', input.gameId)
-      .single()
-
-    if (gameErr || !game) {
-      throw new Error('Game not found. Cannot submit report.')
-    }
-
-    const avgFps = input.avgFps
-    if (typeof avgFps !== 'number' || !Number.isFinite(avgFps) || avgFps < 1 || avgFps > 600) {
-      throw new Error('Average FPS must be a number between 1 and 600.')
-    }
-    const tier = calculatePerformanceTier(avgFps)
-
-    // Hardware Catalog normalization (server-safe). Used ONLY for the moderator
-    // "unknown hardware" hint below — we deliberately persist the user's EXACT typed
-    // CPU/GPU strings so reports display the hardware exactly as the reporter entered
-    // it. The similarity engine normalizes on the fly (getPerfIndexForRaw), so matching
-    // is unaffected by storing the raw values rather than the canonical form.
-    const cpuNorm = normalizeHardwareSync(input.cpu)
-    const gpuNorm = normalizeHardwareSync(input.gpu)
-    const storedCpu = input.cpu.trim()
-    const storedGpu = input.gpu.trim()
-
-    // Basic plausibility note (future: full validation using perfIndex)
-    let moderatorNotePrefix = ''
-    if (cpuNorm.method === 'none' || gpuNorm.method === 'none') {
-      moderatorNotePrefix = '[Catalog: unknown hardware]'
-    }
-
-    // 2. Anti-abuse: always apply for registered submitters (guests are rejected above)
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-    const { count: recentCount } = await supabase
-      .from('reports')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .gte('created_at', oneHourAgo)
-
-    if ((recentCount ?? 0) >= 5) {
-      throw new Error('Rate limit exceeded: You can submit a maximum of 5 reports per hour.')
-    }
-
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-    const { count: dupCount } = await supabase
-      .from('reports')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('game_id', input.gameId)
-      .eq('cpu', storedCpu)
-      .eq('gpu', storedGpu)
-      .eq('ram', input.ram)
-      .eq('resolution', input.resolution)
-      .gte('created_at', oneDayAgo)
-
-    if ((dupCount ?? 0) > 0) {
-      throw new Error('Duplicate report detected: You submitted a nearly identical report for this game + hardware combination within the last 24 hours.')
-    }
-
-    // 3. Insert via service role (client INSERT revoked). Reports publish automatically.
-    const insertPayload = {
-      game_id: input.gameId,
-      user_id: userId,
-      game_name: game.name,
-      cpu: storedCpu,
-      gpu: storedGpu,
-      ram: input.ram,
-      ram_speed: input.ramSpeed ?? null,
-      resolution: input.resolution,
-      refresh_rate: input.refreshRate ?? null,
-      settings_preset: input.settingsPreset,
-      custom_settings_notes: input.customSettingsNotes ?? null,
-      avg_fps: avgFps,
-      fps_1_percent_low: input.fps1PercentLow ?? null,
-      performance_tier: tier,
-      notes: input.notes?.trim() || null,
-      tweaks: input.tweaks ?? null,
-      issues: input.issues ?? null,
-      driver_version: input.driverVersion ?? null,
-      moderator_notes: moderatorNotePrefix || null,
-      // Hardware catalog denorm (future indexes + validation)
-      // Note: columns are optional in current schema; safe to send
-      // canonical_cpu: cpuNorm.canonical,
-      // canonical_gpu: gpuNorm.canonical,
-      status: 'approved' as ReportStatus,
-      // created_at, vote counters, moderated_* defaulted by schema / DB
-    }
-
-    const service = createServiceClient()
-    const { data: inserted, error: insertErr } = await service
-      .from('reports')
-      .insert(insertPayload)
-      .select('*')
-      .single()
-
-    if (insertErr || !inserted) {
-      console.error('[submitReportAction] insert error', insertErr)
-      throw new Error(insertErr?.message || 'Failed to submit report. Please try again.')
-    }
-
-    // Ensure the public nickname is available for report attribution.
-    // Sign-up stores username in auth user_metadata; profiles.username may still be empty
-    // until the user edits their profile. Sync it so ReportCard enrichment can show "by Nick".
-    const metaUsername =
-      typeof (user.user_metadata as { username?: unknown } | undefined)?.username === 'string'
-        ? String((user.user_metadata as { username?: string }).username).trim()
-        : ''
-    let reporterUsername: string | null = metaUsername || null
-    let reporterAvatar: string | null =
-      typeof (user.user_metadata as { avatar_url?: unknown } | undefined)?.avatar_url === 'string'
-        ? String((user.user_metadata as { avatar_url?: string }).avatar_url)
-        : null
-    let reporterBadge: import('@/lib/types').CredibilityBadge | null = null
-    try {
-      const { data: existingProf } = await service
-        .from('profiles')
-        .select('username, avatar_url, credibility_badge')
-        .eq('id', userId)
+  const deps: ReportWriteDeps<any> = {
+    async getUser() {
+      const { data: { user } } = await supabase.auth.getUser()
+      authUser = user ?? null
+      return user ? { id: user.id, email: user.email ?? null, is_anonymous: user.is_anonymous ?? null } : null
+    },
+    async isStaff() {
+      const access = await getStaffAccess()
+      return Boolean(access.user && access.canModerate)
+    },
+    async findGame(gameId) {
+      const { data, error } = await supabase.from('games').select('id, name').eq('id', gameId).maybeSingle()
+      if (error) console.error('[reports] game lookup error', error)
+      return data ? { id: String(data.id), name: String(data.name) } : null
+    },
+    async countReportsSince(userId, sinceIso) {
+      const { count, error } = await supabase
+        .from('reports')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .gte('created_at', sinceIso)
+      if (error) throw new Error(`rate-limit count failed: ${error.message}`)
+      return count ?? 0
+    },
+    async countDuplicates(q) {
+      const { count, error } = await supabase
+        .from('reports')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', q.userId)
+        .eq('game_id', q.gameId)
+        .eq('cpu', q.cpu)
+        .eq('gpu', q.gpu)
+        .eq('ram', q.ram)
+        .eq('resolution', q.resolution)
+        .gte('created_at', q.sinceIso)
+      if (error) throw new Error(`duplicate count failed: ${error.message}`)
+      return count ?? 0
+    },
+    async insertReport(row) {
+      const { data, error } = await service.from('reports').insert(row).select('*').single()
+      if (error) console.error('[reports] insert error', error)
+      return data ?? null
+    },
+    async findReport(reportId) {
+      const { data, error } = await supabase
+        .from('reports')
+        .select('id, user_id, status, moderator_notes')
+        .eq('id', reportId)
         .maybeSingle()
-      const existingName =
-        typeof existingProf?.username === 'string' ? existingProf.username.trim() : ''
-      if (existingName) {
-        reporterUsername = existingName
-      } else if (metaUsername) {
-        await service.from('profiles').upsert({ id: userId, username: metaUsername })
-        reporterUsername = metaUsername
-      }
-      if (existingProf?.avatar_url) reporterAvatar = String(existingProf.avatar_url)
-      if (existingProf?.credibility_badge) {
-        reporterBadge = existingProf.credibility_badge as import('@/lib/types').CredibilityBadge
-      }
-    } catch (syncErr: any) {
-      console.warn('[submitReportAction] profile username sync failed (non-fatal):', syncErr?.message || syncErr)
-    }
+      if (error) throw new Error(`report lookup failed: ${error.message}`)
+      return data ?? null
+    },
+    async updateOwnReport(reportId, userId, row) {
+      const { data, error } = await service
+        .from('reports')
+        .update(row)
+        .eq('id', reportId)
+        .eq('user_id', userId)
+        .select('*')
+        .single()
+      if (error) console.error('[reports] update error', error)
+      return data ?? null
+    },
+    now: () => Date.now(),
+  }
+  return { deps, getAuthUser: () => authUser }
+}
 
-    // 4. Return mapped (status is live immediately unless DB-side automation changes it)
-    const mapped = mapDbReportToReport(inserted)
-    mapped.reporter = {
-      id: userId,
-      username: reporterUsername,
-      avatarUrl: reporterAvatar,
-      credibilityBadge: reporterBadge,
+/**
+ * Make sure the reporter's public nickname exists so report cards can show "by Nick".
+ * Sign-up stores username in auth user_metadata; profiles.username may still be empty.
+ */
+async function syncReporter(user: User): Promise<NonNullable<Report['reporter']>> {
+  const service = createServiceClient()
+  const meta = (user.user_metadata ?? {}) as { username?: unknown; avatar_url?: unknown }
+  const metaUsername = typeof meta.username === 'string' ? meta.username.trim() : ''
+  const reporter: NonNullable<Report['reporter']> = {
+    id: user.id,
+    username: metaUsername || null,
+    avatarUrl: typeof meta.avatar_url === 'string' ? meta.avatar_url : null,
+    credibilityBadge: null,
+  }
+  try {
+    const { data: existingProf } = await service
+      .from('profiles')
+      .select('username, avatar_url, credibility_badge')
+      .eq('id', user.id)
+      .maybeSingle()
+    const existingName = typeof existingProf?.username === 'string' ? existingProf.username.trim() : ''
+    if (existingName) {
+      reporter.username = existingName
+    } else if (metaUsername) {
+      await service.from('profiles').upsert({ id: user.id, username: metaUsername })
     }
-    return mapped
-  } catch (err: any) {
-    // Ensure every code path results in a thrown Error with message (never raw unhandled
-    // exception or rejected promise from supabase fetch). This prevents Next.js from
-    // returning opaque 500 for the server action, which manifests as "Failed to fetch"
-    // + 500 resource errors (and SW-uncaught variants) on the client.
+    if (existingProf?.avatar_url) reporter.avatarUrl = String(existingProf.avatar_url)
+    if (existingProf?.credibility_badge) {
+      reporter.credibilityBadge = existingProf.credibility_badge as import('@/lib/types').CredibilityBadge
+    }
+  } catch (syncErr: any) {
+    console.warn('[submitReportAction] profile username sync failed (non-fatal):', syncErr?.message || syncErr)
+  }
+  return reporter
+}
+
+/**
+ * Submit a performance report (public endpoint: everything is re-validated server-side).
+ * See lib/server/report-write.ts for the order of checks and the auto-review rule.
+ * Returns `status: 'pending'` when the report was held for moderator review.
+ */
+export async function submitReportAction(input: unknown): Promise<ReportActionResult> {
+  try {
+    const { deps, getAuthUser } = await buildReportWriteDeps()
+    const result = await submitReport(deps, input)
+    if (!result.ok) return result
+    const mapped = mapDbReportToReport(result.value)
+    const user = getAuthUser()
+    if (user) mapped.reporter = await syncReporter(user)
+    return { ok: true, report: mapped }
+  } catch (err) {
     console.error('[submitReportAction] error', err)
-    if (err?.message && (
-      err.message.includes('sign in') ||
-      err.message.includes('Game not found') ||
-      err.message.includes('Rate limit') ||
-      err.message.includes('Duplicate') ||
-      err.message.includes('Average FPS')
-    )) {
-      throw err
-    }
-    throw new Error(err?.message || 'Failed to submit report. Please try again.')
+    return { ok: false, error: 'Failed to submit report. Please try again.' }
   }
 }
 
 /**
- * Editable subset of a report. Owners may correct these after submission (e.g. the game
- * patched and FPS changed, or they fixed a typo). Identity-bound fields (game, user,
- * status, vote counts, moderation) are deliberately excluded.
+ * Edit one of the caller's own reports (post-submission corrections).
+ * Ownership is checked with the RLS-scoped client, then the write uses the service client
+ * scoped to `user_id`. game_id / user_id / vote counters are never touched; status only
+ * moves approved -> pending when the edit fails auto-review.
  */
-export interface UpdateReportInput {
-  cpu: string
-  gpu: string
-  ram: number
-  ramSpeed?: string | null
-  resolution: string
-  refreshRate?: number | null
-  settingsPreset: GraphicsPreset
-  customSettingsNotes?: string | null
-  avgFps: number
-  fps1PercentLow?: number | null
-  notes?: string | null
-  tweaks?: string | null
-  issues?: string | null
-  driverVersion?: string | null
-}
-
-const GRAPHICS_PRESETS: GraphicsPreset[] = ['Low', 'Medium', 'High', 'Ultra', 'Custom']
-
-/** Trim a free-text field to a null-or-value, capped at `max` chars (defense in depth). */
-function cleanText(value: string | null | undefined, max: number): string | null {
-  if (value == null) return null
-  const t = String(value).trim()
-  if (!t) return null
-  return t.slice(0, max)
-}
-
-/**
- * Edit one of the current user's own reports (post-submission corrections).
- *
- * Ownership is verified in-code before any write, then the update is performed with the
- * service client constrained by `user_id`. This is required because reports publish as
- * `status='approved'` while the owner-update RLS policy only covers `status='pending'`
- * (supabase/migrations) — so a user-scoped update would silently match zero rows for live reports.
- * The same "verify-then-service-write" pattern is used by moderateReportAction.
- *
- * performance_tier is always recomputed server-side from the (possibly new) avgFps so the
- * authoritative tier can never drift from the number. game_id / game_name / user_id /
- * status / vote counters / moderation fields are never touched.
- */
-export async function updateReportAction(reportId: string, input: UpdateReportInput): Promise<Report> {
+export async function updateReportAction(reportId: unknown, input: unknown): Promise<ReportActionResult> {
   try {
-    if (!reportId || typeof reportId !== 'string') {
-      throw new Error('Missing report id.')
-    }
-
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      throw new Error('You must sign in to edit a report.')
-    }
-
-    // Ownership check via the user-scoped client (RLS lets a user read their own reports
-    // at any status). A missing row here means "not yours / doesn't exist" — same opaque
-    // message either way so we never confirm the existence of someone else's report.
-    const { data: existing, error: readErr } = await supabase
-      .from('reports')
-      .select('id, user_id')
-      .eq('id', reportId)
-      .maybeSingle()
-
-    if (readErr) {
-      console.error('[updateReportAction] read error', readErr)
-      throw new Error('Could not load the report to edit. Please try again.')
-    }
-    if (!existing || existing.user_id !== user.id) {
-      throw new Error('You can only edit your own reports.')
-    }
-
-    // Validate + recompute authoritative tier (mirrors submitReportAction).
-    const avgFps = Number(input.avgFps)
-    if (!Number.isFinite(avgFps) || avgFps < 1 || avgFps > 600) {
-      throw new Error('Average FPS must be a number between 1 and 600.')
-    }
-    const tier = calculatePerformanceTier(avgFps)
-
-    const ram = Number(input.ram)
-    if (!Number.isFinite(ram) || ram < 2 || ram > 256) {
-      throw new Error('RAM must be between 2 and 256 GB.')
-    }
-
-    const storedCpu = String(input.cpu ?? '').trim()
-    const storedGpu = String(input.gpu ?? '').trim()
-    if (storedCpu.length < 2 || storedGpu.length < 2) {
-      throw new Error('CPU and GPU are required.')
-    }
-
-    if (!GRAPHICS_PRESETS.includes(input.settingsPreset)) {
-      throw new Error('Invalid graphics preset.')
-    }
-
-    const onePctLow = input.fps1PercentLow != null && input.fps1PercentLow !== ('' as unknown)
-      ? Number(input.fps1PercentLow)
-      : null
-    if (onePctLow != null && (!Number.isFinite(onePctLow) || onePctLow <= 0)) {
-      throw new Error('1% low FPS must be a positive number.')
-    }
-
-    const refreshRate = input.refreshRate != null && input.refreshRate !== ('' as unknown)
-      ? Number(input.refreshRate)
-      : null
-    if (refreshRate != null && (!Number.isFinite(refreshRate) || refreshRate < 30 || refreshRate > 1000)) {
-      throw new Error('Refresh rate must be between 30 and 1000 Hz.')
-    }
-
-    const updatePayload = {
-      cpu: storedCpu,
-      gpu: storedGpu,
-      ram,
-      ram_speed: cleanText(input.ramSpeed, 20),
-      resolution: String(input.resolution ?? '').trim(),
-      refresh_rate: refreshRate,
-      settings_preset: input.settingsPreset,
-      // Custom notes only meaningful for the Custom preset; clear otherwise.
-      custom_settings_notes: input.settingsPreset === 'Custom' ? cleanText(input.customSettingsNotes, 300) : null,
-      avg_fps: avgFps,
-      fps_1_percent_low: onePctLow,
-      performance_tier: tier,
-      notes: cleanText(input.notes, 500),
-      tweaks: cleanText(input.tweaks, 300),
-      issues: cleanText(input.issues, 500),
-      driver_version: cleanText(input.driverVersion, 40),
-    }
-
-    // Service-client write, still scoped to this user's row as defense in depth.
-    const service = createServiceClient()
-    const { data: updated, error: updateErr } = await service
-      .from('reports')
-      .update(updatePayload)
-      .eq('id', reportId)
-      .eq('user_id', user.id)
-      .select('*')
-      .single()
-
-    if (updateErr || !updated) {
-      console.error('[updateReportAction] update error', updateErr)
-      throw new Error(updateErr?.message || 'Failed to save changes. Please try again.')
-    }
-
-    return mapDbReportToReport(updated)
-  } catch (err: any) {
+    const { deps } = await buildReportWriteDeps()
+    const result = await updateReport(deps, reportId, input)
+    if (!result.ok) return result
+    return { ok: true, report: mapDbReportToReport(result.value) }
+  } catch (err) {
     console.error('[updateReportAction] error', err)
-    if (err?.message && (
-      err.message.includes('sign in') ||
-      err.message.includes('own reports') ||
-      err.message.includes('Average FPS') ||
-      err.message.includes('RAM must') ||
-      err.message.includes('required') ||
-      err.message.includes('preset') ||
-      err.message.includes('1% low') ||
-      err.message.includes('Refresh rate') ||
-      err.message.includes('report id')
-    )) {
-      throw err
-    }
-    throw new Error(err?.message || 'Failed to save changes. Please try again.')
+    return { ok: false, error: 'Failed to save changes. Please try again.' }
   }
 }
 
