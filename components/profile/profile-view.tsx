@@ -193,6 +193,9 @@ export function ProfileView({ user, data, steamLinked }: ProfileViewProps) {
     try {
       const supabase = createClient();
       await supabase.auth.signOut();
+      // Deliberate full page load (not router.push): drops every client cache that may
+      // still hold the signed-out user's data (React Query, rig state).
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
       window.location.href = '/';
     } catch {
       showUserError('Failed to sign out. Please try again.');
