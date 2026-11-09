@@ -223,8 +223,19 @@ BEGIN
   END IF;
 END $$;
 
-INSERT INTO public.games (id, slug, name)
-VALUES ('00000000-0000-0000-0000-0000000000b1', 'smoke-game', 'Smoke Game');
+INSERT INTO public.games (id, slug, name, attribution)
+VALUES ('00000000-0000-0000-0000-0000000000b1', 'smoke-game', 'Smoke Game', 'Cover art: smoke credit');
+
+-- games.attribution (cover-art credit written by the admin bulk import) is capped at 300 chars.
+DO $$
+BEGIN
+  BEGIN
+    UPDATE public.games SET attribution = repeat('x', 301) WHERE id = '00000000-0000-0000-0000-0000000000b1';
+    RAISE EXCEPTION 'games.attribution should reject more than 300 characters';
+  EXCEPTION WHEN check_violation THEN
+    NULL;
+  END;
+END $$;
 
 INSERT INTO public.reports (game_id, user_id, game_name, cpu, gpu, ram, resolution, settings_preset, avg_fps, performance_tier, status)
 VALUES
@@ -246,6 +257,12 @@ BEGIN
   SELECT count(*) INTO n FROM public.reports WHERE game_id = '00000000-0000-0000-0000-0000000000b1';
   IF n <> 1 THEN
     RAISE EXCEPTION 'anon should see only the approved report, saw %', n;
+  END IF;
+END $$;
+DO $$
+BEGIN
+  IF (SELECT attribution FROM public.games WHERE id = '00000000-0000-0000-0000-0000000000b1') IS DISTINCT FROM 'Cover art: smoke credit' THEN
+    RAISE EXCEPTION 'anon should read games.attribution';
   END IF;
 END $$;
 RESET ROLE;
