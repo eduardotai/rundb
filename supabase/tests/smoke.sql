@@ -186,12 +186,24 @@ BEGIN
     AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')
     AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
     AND p.oid::regprocedure::text NOT IN (
-      'is_username_taken(text)', 'is_admin()', 'is_moderator_or_admin()', 'get_my_profile()',
-      'moderate_reports(uuid[],report_status,text,uuid)', 'delete_reports(uuid[],uuid)',
-      'moderate_report_images(uuid[],text,uuid)', 'delete_report_images(uuid[],uuid)'
+      'is_username_taken(text)', 'is_admin()', 'is_moderator_or_admin()', 'get_my_profile()'
     );
   IF bad IS NOT NULL THEN
     RAISE EXCEPTION 'authenticated can execute: %', bad;
+  END IF;
+
+  -- Moderation RPCs are service-role only (server actions call them after getStaffAccess()).
+  SELECT string_agg(f, ', ') INTO bad
+  FROM unnest(ARRAY[
+    'public.moderate_reports(uuid[], public.report_status, text, uuid)',
+    'public.delete_reports(uuid[], uuid)',
+    'public.moderate_report_images(uuid[], text, uuid)',
+    'public.delete_report_images(uuid[], uuid)'
+  ]) AS f
+  WHERE NOT has_function_privilege('service_role', f, 'EXECUTE')
+     OR has_function_privilege('authenticated', f, 'EXECUTE');
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'moderation RPCs must be executable by service_role only: %', bad;
   END IF;
 END $$;
 
