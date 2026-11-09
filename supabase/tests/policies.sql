@@ -558,6 +558,30 @@ BEGIN
   END;
   RAISE EXCEPTION 'expected failure: owner cannot call internal trigger helper';
 END $t$;
+DO $t$
+BEGIN
+  BEGIN
+    EXECUTE 'SELECT * FROM public.report_edits';
+  EXCEPTION
+    -- Only denials count: privilege/RLS (42501), CHECK (23514), trigger RAISE (P0001).
+    -- Any other error (typo, missing column) propagates and fails the run.
+    WHEN insufficient_privilege OR check_violation OR raise_exception THEN
+      RETURN;
+  END;
+  RAISE EXCEPTION 'expected failure: owner cannot read the edit log';
+END $t$;
+DO $t$
+BEGIN
+  BEGIN
+    EXECUTE 'INSERT INTO public.report_edits (report_id, user_id) VALUES (''00000000-0000-0000-0000-0000000a1a01'', ''00000000-0000-0000-0000-00000000a11c'')';
+  EXCEPTION
+    -- Only denials count: privilege/RLS (42501), CHECK (23514), trigger RAISE (P0001).
+    -- Any other error (typo, missing column) propagates and fails the run.
+    WHEN insufficient_privilege OR check_violation OR raise_exception THEN
+      RETURN;
+  END;
+  RAISE EXCEPTION 'expected failure: owner cannot forge edit log rows';
+END $t$;
 
 -- ===== bob (other user) =====
 RESET ROLE;

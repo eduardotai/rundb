@@ -161,6 +161,20 @@ async function buildReportWriteDeps(): Promise<{ deps: ReportWriteDeps<any>; get
       if (error) console.error('[reports] update error', error)
       return data ?? null
     },
+    async countEditsSince(userId, sinceIso) {
+      // report_edits is service-role only (migration 20261109000800).
+      const { count, error } = await service
+        .from('report_edits')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .gte('edited_at', sinceIso)
+      if (error) throw new Error(`edit-limit count failed: ${error.message}`)
+      return count ?? 0
+    },
+    async recordEdit(reportId, userId) {
+      const { error } = await service.from('report_edits').insert({ report_id: reportId, user_id: userId })
+      if (error) throw new Error(`edit log insert failed: ${error.message}`)
+    },
     now: () => Date.now(),
   }
   return { deps, getAuthUser: () => authUser }

@@ -14,7 +14,7 @@ BEGIN
   FROM unnest(ARRAY[
     'games', 'game_ingest_queue', 'game_media', 'profiles', 'user_rigs', 'reports',
     'report_votes', 'report_images', 'hardware_aliases', 'hardware_catalog',
-    'linked_accounts', 'moderation_log'
+    'linked_accounts', 'moderation_log', 'report_edits'
   ]) AS t
   WHERE to_regclass('public.' || t) IS NULL;
   IF missing IS NOT NULL THEN
@@ -204,6 +204,21 @@ BEGIN
      OR has_function_privilege('authenticated', f, 'EXECUTE');
   IF bad IS NOT NULL THEN
     RAISE EXCEPTION 'moderation RPCs must be executable by service_role only: %', bad;
+  END IF;
+END $$;
+
+-- 5b. report_edits (edit rate limit) is server-only.
+DO $$
+BEGIN
+  IF has_table_privilege('anon', 'public.report_edits', 'SELECT')
+     OR has_table_privilege('authenticated', 'public.report_edits', 'SELECT')
+     OR has_table_privilege('authenticated', 'public.report_edits', 'INSERT')
+     OR has_table_privilege('authenticated', 'public.report_edits', 'DELETE') THEN
+    RAISE EXCEPTION 'public.report_edits must not be accessible to anon/authenticated';
+  END IF;
+  IF NOT has_table_privilege('service_role', 'public.report_edits', 'INSERT')
+     OR NOT has_table_privilege('service_role', 'public.report_edits', 'SELECT') THEN
+    RAISE EXCEPTION 'service_role must read and insert public.report_edits';
   END IF;
 END $$;
 

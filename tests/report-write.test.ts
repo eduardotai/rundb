@@ -10,6 +10,7 @@ import { test } from 'node:test'
 
 import {
   REPORTS_PER_HOUR,
+  REPORT_EDITS_PER_HOUR,
   submitReport,
   updateReport,
   type OwnReport,
@@ -28,7 +29,9 @@ const NOW = Date.parse('2026-11-09T12:00:00Z')
 type Fake = ReportWriteDeps<{ id: string } & Record<string, unknown>> & {
   inserts: ReportInsertRow[]
   updates: { id: string; userId: string; row: ReportUpdateRow }[]
+  edits: { reportId: string; userId: string }[]
   lastSince?: string
+  lastEditSince?: string
 }
 
 function fake(opts: {
@@ -38,10 +41,13 @@ function fake(opts: {
   dups?: number
   report?: OwnReport | null
   failWrite?: boolean
+  editsLastHour?: number
+  failEditLog?: boolean
 } = {}): Fake {
   const f: Fake = {
     inserts: [],
     updates: [],
+    edits: [],
     getUser: async () => (opts.user === undefined ? USER : opts.user),
     isStaff: async () => opts.staff ?? false,
     findGame: async (id) => (id === GAME.id ? GAME : null),
@@ -58,6 +64,14 @@ function fake(opts: {
     updateOwnReport: async (id, userId, row) => {
       f.updates.push({ id, userId, row })
       return opts.failWrite ? null : { id, ...row }
+    },
+    countEditsSince: async (_u, since) => {
+      f.lastEditSince = since
+      return opts.editsLastHour ?? 0
+    },
+    recordEdit: async (reportId, userId) => {
+      if (opts.failEditLog) throw new Error('log down')
+      f.edits.push({ reportId, userId })
     },
     now: () => NOW,
   }
@@ -247,4 +261,34 @@ test('update: staff keep their own approved report live after an outlier edit', 
   const f = fake({ staff: true })
   await updateReport(f, REPORT_ID, editPayload({ avgFps: 599, fps1PercentLow: 400 }))
   assert.equal(f.updates[0].row.status, undefined)
+})
+
+test('update: edit rate limit per user per hour, counted before writing', async () => {
+  const under = fake({ editsLastHour: REPORT_EDITS_PER_HOUR - 1 })
+  assert.equal((await updateReport(under, REPORT_ID, editPayload())).ok, true)
+  assert.deepEqual(under.edits, [{ reportId: REPORT_ID, userId: USER.id }])
+  assert.equal(under.lastEditSince, new Date(NOW - 3600_000).toISOString())
+
+  const over = fake({ editsLastHour: REPORT_EDITS_PER_HOUR })
+  const r = await updateReport(over, REPORT_ID, editPayload())
+  assert.equal(r.ok, false)
+  if (!r.ok) assert.match(r.error, /Edit limit reached/)
+  assert.equal(over.updates.length, 0)
+  assert.equal(over.edits.length, 0)
+})
+
+test('update: failed edits are not logged; a failing log write does not undo a saved edit', async () => {
+  const failed = fake({ failWrite: true })
+  assert.equal((await updateReport(failed, REPORT_ID, editPayload())).ok, false)
+  assert.equal(failed.edits.length, 0)
+
+  const orig = console.error
+  console.error = () => {}
+  try {
+    const logDown = fake({ failEditLog: true })
+    assert.equal((await updateReport(logDown, REPORT_ID, editPayload())).ok, true)
+    assert.equal(logDown.updates.length, 1)
+  } finally {
+    console.error = orig
+  }
 })
