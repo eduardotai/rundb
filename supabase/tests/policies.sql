@@ -727,6 +727,61 @@ BEGIN
   RAISE EXCEPTION 'expected failure: moderator cannot call delete RPC directly (service role only)';
 END $t$;
 
+-- ===== service_role (Steam OpenID callback write path) =====
+RESET ROLE;
+SELECT set_config('request.jwt.claims', '{"role": "service_role"}', true);
+SET LOCAL ROLE service_role;
+DO $t$
+DECLARE n bigint;
+BEGIN
+  EXECUTE 'INSERT INTO public.linked_accounts (user_id, provider, provider_user_id, provider_data) VALUES (''00000000-0000-0000-0000-00000000a11c'', ''steam'', ''76561190000000001'', ''{}''::jsonb) ON CONFLICT (user_id, provider) DO UPDATE SET provider_user_id = EXCLUDED.provider_user_id, provider_data = EXCLUDED.provider_data';
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 1 THEN RAISE EXCEPTION 'expected 1 rows (got %): same user re-linking the same Steam id is idempotent', n; END IF;
+EXCEPTION WHEN OTHERS THEN
+  RAISE EXCEPTION 'unexpected error in "same user re-linking the same Steam id is idempotent": %', SQLERRM;
+END $t$;
+DO $t$
+BEGIN
+  IF NOT ((SELECT count(*) FROM (SELECT 1 FROM public.linked_accounts WHERE provider_user_id = '76561190000000001' AND user_id = '00000000-0000-0000-0000-00000000a11c') s) = 1) THEN RAISE EXCEPTION 'assertion failed: re-link keeps exactly one link for that Steam id, owned by alice (expected 1)'; END IF;
+END $t$;
+DO $t$
+BEGIN
+  BEGIN
+    EXECUTE 'INSERT INTO public.linked_accounts (user_id, provider, provider_user_id, provider_data) VALUES (''00000000-0000-0000-0000-000000000b0b'', ''steam'', ''76561190000000001'', ''{}''::jsonb) ON CONFLICT (user_id, provider) DO UPDATE SET provider_user_id = EXCLUDED.provider_user_id, provider_data = EXCLUDED.provider_data';
+  EXCEPTION
+    -- Only a unique violation (23505) counts; anything else propagates.
+    WHEN unique_violation THEN
+      RETURN;
+  END;
+  RAISE EXCEPTION 'expected unique violation: second user cannot link a Steam id already linked (callback upsert)';
+END $t$;
+DO $t$
+BEGIN
+  BEGIN
+    EXECUTE 'INSERT INTO public.linked_accounts (user_id, provider, provider_user_id) VALUES (''00000000-0000-0000-0000-000000000b0b'', ''steam'', ''76561190000000001'')';
+  EXCEPTION
+    -- Only a unique violation (23505) counts; anything else propagates.
+    WHEN unique_violation THEN
+      RETURN;
+  END;
+  RAISE EXCEPTION 'expected unique violation: second user cannot link a Steam id already linked (plain insert)';
+END $t$;
+DO $t$
+BEGIN
+  IF NOT ((SELECT count(*) FROM (SELECT 1 FROM public.linked_accounts WHERE provider_user_id = '76561190000000001' AND user_id = '00000000-0000-0000-0000-00000000a11c') s) = 1) THEN RAISE EXCEPTION 'assertion failed: the existing link was not overwritten (expected 1)'; END IF;
+END $t$;
+DO $t$
+BEGIN
+  BEGIN
+    EXECUTE 'UPDATE public.profiles SET steam_id = ''76561190000000001'' WHERE id = ''00000000-0000-0000-0000-000000000b0b''';
+  EXCEPTION
+    -- Only a unique violation (23505) counts; anything else propagates.
+    WHEN unique_violation THEN
+      RETURN;
+  END;
+  RAISE EXCEPTION 'expected unique violation: profiles.steam_id mirror is unique too';
+END $t$;
+
 -- ===== side effects (as postgres) =====
 RESET ROLE;
 DO $t$
