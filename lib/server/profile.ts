@@ -227,11 +227,10 @@ export async function getProfileData(userId: string): Promise<ProfileData> {
 
     const [profileRes, reportsRes] = await Promise.all([
       supabase
-        .from('profiles')
+        .rpc('get_my_profile')
         .select(
           'username, avatar_url, role, created_at, main_cpu, main_gpu, main_ram, preferred_resolution'
         )
-        .eq('id', userId)
         .maybeSingle(),
       supabase
         .from('reports')

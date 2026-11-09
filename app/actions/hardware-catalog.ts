@@ -19,9 +19,8 @@ export async function upsertHardwareCatalogEntry(entry: Partial<HardwareCatalogE
 
   // Verify role
   const { data: profile } = await supabase
-    .from('profiles')
+    .rpc('get_my_profile')
     .select('role')
-    .eq('id', user.id)
     .single()
 
   if (!profile || !['moderator', 'admin'].includes(profile.role)) {
@@ -58,9 +57,8 @@ export async function deleteHardwareCatalogEntry(canonical: string) {
   if (!user) throw new Error('Authentication required')
 
   const { data: profile } = await supabase
-    .from('profiles')
+    .rpc('get_my_profile')
     .select('role')
-    .eq('id', user.id)
     .single()
 
   if (!profile || !['moderator', 'admin'].includes(profile.role)) {
@@ -88,9 +86,8 @@ export async function seedStaticCatalogIntoDatabase() {
   if (!user) throw new Error('Authentication required')
 
   const { data: profile } = await supabase
-    .from('profiles')
+    .rpc('get_my_profile')
     .select('role')
-    .eq('id', user.id)
     .single()
 
   if (!profile || profile.role !== 'admin') {
@@ -145,9 +142,8 @@ export async function bulkUpsertHardwareCatalogEntries(
   if (!user) throw new Error('Authentication required')
 
   const { data: profile } = await supabase
-    .from('profiles')
+    .rpc('get_my_profile')
     .select('role')
-    .eq('id', user.id)
     .single()
 
   if (!profile || !['moderator', 'admin'].includes(profile.role)) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
 import {
   STEAM_LINK_STATE_COOKIE,
   verifySteamOpenIDCallback,
@@ -10,7 +11,8 @@ import {
 /**
  * Steam OpenID callback for account linking.
  * Expects the user to already have a valid Supabase session (cookie) when Steam redirects back.
- * Verifies the OpenID response, fetches public profile (if API key present), upserts linked_accounts + denorms profile.
+ * Verifies the OpenID response, fetches public profile (if API key present), then upserts linked_accounts +
+ * the profiles.steam_* denorms with the service role (clients cannot write either).
  */
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
@@ -70,8 +72,11 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Upsert into linked_accounts
-  const { error: linkErr } = await supabase.from('linked_accounts').upsert({
+  // Write the verified link with the service role: clients cannot insert/update linked_accounts
+  // or the profiles.steam_* denorms (RLS + column grants), so a link can only come from this
+  // server-side OpenID verification. Scoped to the session user checked above.
+  const service = createServiceClient();
+  const { error: linkErr } = await service.from('linked_accounts').upsert({
     user_id: user.id,
     provider: 'steam',
     provider_user_id: steamId,
@@ -84,7 +89,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Denorm onto profiles for fast display (avatar, persona)
-  const { error: profErr } = await supabase.from('profiles').upsert({
+  const { error: profErr } = await service.from('profiles').upsert({
     id: user.id,
     steam_id: steamId,
     steam_persona: profileData.personaname || null,
