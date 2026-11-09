@@ -25,6 +25,10 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: react-dom
         update-types: ["version-update:semver-major"]
+      # typescript-eslint does not support TS 7 yet (CI: "typescript-eslint does not support TS 7.0").
+      # Revisit when typescript-eslint ships TS 7 support; Next 16.3+ can use native tsc CLI.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
