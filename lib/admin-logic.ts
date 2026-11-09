@@ -246,7 +246,8 @@ export function parseBulkGameRows(rows: unknown[]): BulkGameRowResult[] {
         name,
         slug,
         coverUrl,
-        attribution: (pick(row, ['coverAttribution', 'cover_attribution', 'attribution']) as string | undefined)?.toString().trim() || null,
+        // Cover-art credit line; games.attribution has a 300-char CHECK (migration 0700).
+        attribution: (pick(row, ['coverAttribution', 'cover_attribution', 'attribution']) as string | undefined)?.toString().trim().slice(0, 300) || null,
         genres: toGenres(pick(row, ['genres', 'Genres', 'genre'])),
         releaseYear: toYear(pick(row, ['releaseYear', 'release_year', 'year', 'Year'])),
         developer: (pick(row, ['developer', 'Developer']) as string | undefined)?.toString().trim() || null,

@@ -131,3 +131,17 @@ test('parseBulkGameRows normalizes loose CSV/JSON rows and reports per-row probl
 
   assert.deepEqual(results[4], { ok: false, row: 6, message: 'Row is not an object' })
 })
+
+test('parseBulkGameRows keeps the cover-art credit (any alias) capped to the DB limit', () => {
+  const [a, b, c] = parseBulkGameRows([
+    { name: 'A', coverAttribution: '  © Valve Corporation. Steam CDN library art.  ' },
+    { name: 'B', cover_attribution: 'x'.repeat(400) },
+    { name: 'C' },
+  ])
+  assert.ok(a.ok && b.ok && c.ok)
+  if (a.ok && b.ok && c.ok) {
+    assert.equal(a.game.attribution, '© Valve Corporation. Steam CDN library art.')
+    assert.equal(b.game.attribution?.length, 300)
+    assert.equal(c.game.attribution, null)
+  }
+})
