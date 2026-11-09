@@ -1714,16 +1714,18 @@ export async function saveMyRigAsync(rig: UserPC): Promise<void> {
           throw new Error(`Failed to save rig: ${rigErr.message}`)
         }
 
-        // Mirror to profiles for compatibility with existing ProfileRigEditor + profile display
+        // Mirror to profiles for compatibility with existing ProfileRigEditor + profile display.
+        // UPDATE, not upsert: ON CONFLICT DO UPDATE needs SELECT on the updated columns, and the
+        // rig columns are not client-readable (column grants). The row always exists (signup trigger).
         const { error: profErr } = await supabase
           .from('profiles')
-          .upsert({
-            id: user.id,
+          .update({
             main_cpu: rig.cpu,
             main_gpu: rig.gpu,
             main_ram: rig.ram,
             preferred_resolution: rig.resolution || null,
           })
+          .eq('id', user.id)
 
         if (profErr) {
           console.warn('[data] saveMyRigAsync profiles mirror failed:', profErr.message)
