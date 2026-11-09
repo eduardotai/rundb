@@ -38,6 +38,7 @@
 - Reports submit through `app/actions/reports.ts`, which uses normalization helpers and Supabase RPCs.
 - Server-only ingestion and admin maintenance use `lib/server/*` and service-role Supabase, not the public adapter.
 - Hardware flows from catalog/static data plus optional live `hardware_catalog` rows into comboboxes, normalization, detection review, reports, rigs, and similarity scoring.
+- Report auto-review (`server/report-write.ts`) treats a CPU/GPU as known when the static catalog matches or, failing that, an exact case-insensitive `hardware_catalog.canonical` / `hardware_aliases.raw_string` row exists (`isKnownHardware`, fails closed). Moderators unstick new hardware by adding an alias in the admin workbench; catalog rows can be added with `upsertHardwareCatalogEntry` (`app/actions/hardware-catalog.ts`, no admin UI yet).
 - Cover flows layer static catalog, DB cover fields, resolvers, and batched `game_media` queries to avoid N+1 fetches.
 
 ## AI Rules

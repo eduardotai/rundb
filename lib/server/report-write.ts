@@ -10,7 +10,10 @@
  * 3. game exists (submit) / caller owns the report (edit)
  * 4. anti-abuse: submit max REPORTS_PER_HOUR per user + 24h exact-duplicate check;
  *    edit max REPORT_EDITS_PER_HOUR per user (public.report_edits)
- * 5. auto-review: plausible reports publish immediately; implausible ones wait as 'pending'
+ * 5. auto-review: plausible reports publish immediately; implausible ones wait as 'pending'.
+ *    CPU/GPU names count as known when the static catalog matches OR the live DB catalog /
+ *    hardware_aliases has them (deps.isKnownHardware), so a moderator adding an alias or a
+ *    catalog entry unsticks future reports without a deploy.
  *
  * Expected failures are returned as `{ ok: false, error }` (never thrown) because Next.js
  * hides thrown error messages from the client in production builds.
@@ -103,7 +106,48 @@ export interface ReportWriteDeps<Row> {
   countEditsSince(userId: string, sinceIso: string): Promise<number>
   /** Record a successful edit (feeds the edit rate limit). */
   recordEdit(reportId: string, userId: string): Promise<void>
+  /**
+   * Live catalog check for a CPU/GPU name the static catalog does not know: true when
+   * public.hardware_catalog.canonical or public.hardware_aliases.raw_string matches it
+   * (case-insensitive). Must fail closed (false) on errors.
+   */
+  isKnownHardware(name: string): Promise<boolean>
   now(): number
+}
+
+/**
+ * ILIKE pattern for an exact, case-insensitive hardware-name lookup: LIKE wildcards and the
+ * escape char are escaped so user text can never widen the match. null when too short.
+ */
+export function hardwareLookupPattern(name: string): string | null {
+  const trimmed = name.trim()
+  if (trimmed.length < 2) return null
+  return trimmed.replace(/[\\%_]/g, '\\$&')
+}
+
+const HARDWARE_REASONS = [
+  ['cpu', 'CPU not in hardware catalog'],
+  ['gpu', 'GPU not in hardware catalog'],
+] as const
+
+/** Auto-review reasons, dropping "not in catalog" for names the live DB catalog/aliases know. */
+async function reviewReasons<Row>(
+  deps: ReportWriteDeps<Row>,
+  fields: { cpu: string; gpu: string; avgFps: number },
+  raw: unknown,
+): Promise<string[]> {
+  let reasons = assessReportPlausibility(fields, raw)
+  for (const [key, reason] of HARDWARE_REASONS) {
+    if (!reasons.includes(reason)) continue
+    let known = false
+    try {
+      known = await deps.isKnownHardware(fields[key])
+    } catch (err) {
+      console.error('[report-write] live hardware lookup failed', err)
+    }
+    if (known) reasons = reasons.filter((r) => r !== reason)
+  }
+  return reasons
 }
 
 function isRegistered(user: ReportWriter | null): user is ReportWriter {
@@ -178,7 +222,7 @@ export async function submitReport<Row>(deps: ReportWriteDeps<Row>, raw: unknown
     }
   }
 
-  const reasons = assessReportPlausibility(input, raw)
+  const reasons = await reviewReasons(deps, input, raw)
   const held = reasons.length > 0 && !(await deps.isStaff())
 
   const inserted = await deps.insertReport({
@@ -223,7 +267,7 @@ export async function updateReport<Row>(
 
   // An edit can turn a published report implausible (e.g. FPS -> 599, link added): send it back
   // to review. Edits never promote: pending/rejected/flagged keep their status.
-  const reasons = assessReportPlausibility(parsed.data, raw)
+  const reasons = await reviewReasons(deps, parsed.data, raw)
   if (existing.status === 'approved' && reasons.length > 0 && !(await deps.isStaff())) {
     const note = autoReviewNote(reasons)
     row.status = 'pending'

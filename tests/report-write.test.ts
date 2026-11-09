@@ -11,6 +11,7 @@ import { test } from 'node:test'
 import {
   REPORTS_PER_HOUR,
   REPORT_EDITS_PER_HOUR,
+  hardwareLookupPattern,
   submitReport,
   updateReport,
   type OwnReport,
@@ -30,6 +31,7 @@ type Fake = ReportWriteDeps<{ id: string } & Record<string, unknown>> & {
   inserts: ReportInsertRow[]
   updates: { id: string; userId: string; row: ReportUpdateRow }[]
   edits: { reportId: string; userId: string }[]
+  hardwareLookups: string[]
   lastSince?: string
   lastEditSince?: string
 }
@@ -43,11 +45,15 @@ function fake(opts: {
   failWrite?: boolean
   editsLastHour?: number
   failEditLog?: boolean
+  /** Names the live DB catalog/aliases know (case-insensitive). */
+  liveHardware?: string[]
+  failHardwareLookup?: boolean
 } = {}): Fake {
   const f: Fake = {
     inserts: [],
     updates: [],
     edits: [],
+    hardwareLookups: [],
     getUser: async () => (opts.user === undefined ? USER : opts.user),
     isStaff: async () => opts.staff ?? false,
     findGame: async (id) => (id === GAME.id ? GAME : null),
@@ -72,6 +78,11 @@ function fake(opts: {
     recordEdit: async (reportId, userId) => {
       if (opts.failEditLog) throw new Error('log down')
       f.edits.push({ reportId, userId })
+    },
+    isKnownHardware: async (name) => {
+      f.hardwareLookups.push(name)
+      if (opts.failHardwareLookup) throw new Error('db down')
+      return (opts.liveHardware ?? []).some((h) => h.toLowerCase() === name.trim().toLowerCase())
     },
     now: () => NOW,
   }
@@ -189,6 +200,50 @@ test('submit: implausible reports are held as pending with a moderator note', as
     assert.equal(f.inserts[0].status, 'pending', reason)
     assert.match(f.inserts[0].moderator_notes ?? '', new RegExp(`^\\[Auto-review: .*${reason}`))
   }
+})
+
+test('submit: hardware a moderator added to the live catalog/aliases publishes immediately', async () => {
+  const f = fake({ liveHardware: ['zzqx quantum 9000'] })
+  const r = await submitReport(f, payload({ cpu: 'Zzqx Quantum 9000' }))
+  assert.equal(r.ok, true)
+  assert.equal(f.inserts[0].status, 'approved')
+  assert.equal(f.inserts[0].moderator_notes, null)
+  assert.deepEqual(f.hardwareLookups, ['Zzqx Quantum 9000'])
+})
+
+test('submit: live lookup only runs for names the static catalog misses, and only clears that reason', async () => {
+  const known = fake({ liveHardware: ['Zzqx Quantum 9000'] })
+  await submitReport(known, payload())
+  assert.deepEqual(known.hardwareLookups, [], 'static-catalog hardware never hits the DB')
+
+  const f = fake({ liveHardware: ['Zzqx Quantum 9000'] })
+  await submitReport(f, payload({ cpu: 'Zzqx Quantum 9000', avgFps: 450, fps1PercentLow: 300 }))
+  assert.equal(f.inserts[0].status, 'pending')
+  assert.doesNotMatch(f.inserts[0].moderator_notes ?? '', /CPU not in hardware catalog/)
+  assert.match(f.inserts[0].moderator_notes ?? '', /average FPS above 360/)
+})
+
+test('submit: a failing live hardware lookup fails closed (report waits for review)', async () => {
+  const f = fake({ failHardwareLookup: true })
+  const r = await submitReport(f, payload({ gpu: 'Qxzv Mystery GPU 77' }))
+  assert.equal(r.ok, true)
+  assert.equal(f.inserts[0].status, 'pending')
+  assert.match(f.inserts[0].moderator_notes ?? '', /GPU not in hardware catalog/)
+})
+
+test('update: editing to hardware the live catalog knows keeps an approved report approved', async () => {
+  const f = fake({ liveHardware: ['Qxzv Mystery GPU 77'] })
+  const r = await updateReport(f, REPORT_ID, editPayload({ gpu: 'qxzv mystery gpu 77' }))
+  assert.equal(r.ok, true)
+  assert.equal('status' in f.updates[0].row, false)
+})
+
+test('hardwareLookupPattern: exact ILIKE pattern with wildcards escaped', () => {
+  assert.equal(hardwareLookupPattern('  RTX 5090 '), 'RTX 5090')
+  assert.equal(hardwareLookupPattern('%'), null)
+  assert.equal(hardwareLookupPattern('a'), null)
+  assert.equal(hardwareLookupPattern('Ryzen_%'), 'Ryzen\\_\\%')
+  assert.equal(hardwareLookupPattern('a\\b'), 'a\\\\b')
 })
 
 test('submit: moderators/admins publish implausible reports directly (note kept for context)', async () => {
