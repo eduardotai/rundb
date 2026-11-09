@@ -11,6 +11,7 @@
  * calls the RPC directly with its own session.
  */
 
+import { UserFacingError } from '@/lib/action-result'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { BulkImportResult, Game, HardwareAlias, ReportImage, ReportStatus } from '@/lib/types'
 import {
@@ -45,7 +46,7 @@ export async function moderateReports(
   status: ReportStatus,
   notes?: string | null
 ): Promise<number> {
-  if (!isReportStatus(status)) throw new Error('Invalid report status.')
+  if (!isReportStatus(status)) throw new UserFacingError('Invalid report status.')
   const ids = normalizeBulkIds(reportIds)
   const { data, error } = await client.rpc('moderate_reports', {
     p_report_ids: ids,
@@ -92,7 +93,7 @@ export async function listReportImages(
     .order('created_at', { ascending: false })
     .limit(LIST_LIMIT)
   if (filterStatus && filterStatus !== 'all') {
-    if (!isImageStatus(filterStatus)) throw new Error('Invalid image status.')
+    if (!isImageStatus(filterStatus)) throw new UserFacingError('Invalid image status.')
     query = query.eq('status', filterStatus)
   }
   const { data, error } = await query
@@ -109,7 +110,7 @@ export async function moderateReportImages(
   imageIds: string[],
   status: ImageStatus
 ): Promise<number> {
-  if (!isImageStatus(status)) throw new Error('Invalid image status.')
+  if (!isImageStatus(status)) throw new UserFacingError('Invalid image status.')
   const ids = normalizeBulkIds(imageIds)
   const { data, error } = await client.rpc('moderate_report_images', {
     p_image_ids: ids,
@@ -183,7 +184,7 @@ export async function createHardwareAlias(
     .select('id, raw_string, canonical, vendor, series, created_at')
     .single()
   if (error || !data) {
-    if (isUniqueViolation(error)) throw new Error('An alias already exists for that raw string.')
+    if (isUniqueViolation(error)) throw new UserFacingError('An alias already exists for that raw string.')
     console.error('[admin-moderation] hardware_aliases insert error', error)
     throw new Error(error?.message || 'Failed to add alias.')
   }
@@ -206,7 +207,7 @@ export async function updateHardwareAlias(
     .select('id, raw_string, canonical, vendor, series, created_at')
     .single()
   if (error || !data) {
-    if (isUniqueViolation(error)) throw new Error('An alias already exists for that raw string.')
+    if (isUniqueViolation(error)) throw new UserFacingError('An alias already exists for that raw string.')
     console.error('[admin-moderation] hardware_aliases update error', error)
     throw new Error(error?.message || 'Failed to update alias.')
   }

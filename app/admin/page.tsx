@@ -24,6 +24,7 @@ import {
 import { EMPTY_ADMIN_STATS, parseBulkGameRows } from '@/lib/admin-logic';
 import type { Game, HardwareAlias, ReportStatus, BulkImportResult } from '@/lib/types';
 import { triggerIngestionAction } from '@/app/actions/reports';
+import { unwrapAction } from '@/lib/action-result';
 import {
   getIngestQueueStatsAction,
   runIngestBatchAction,
@@ -437,7 +438,7 @@ export default function AdminPage() {
           seeds = [];
         }
       }
-      const res = await triggerIngestionAction(seeds);
+      const res = unwrapAction(await triggerIngestionAction(seeds));
       const msg = `Protected Action: ${res.message} | ${res.count} seeds normalized via normalizeSlug. Authorized: ${res.authorized}. (Run CLI ingest for full IGDB+Storage pipeline.)`;
       setIngestActionResult(msg);
       toast.success('Protected ingestion action succeeded', { description: `${res.count} seeds` });

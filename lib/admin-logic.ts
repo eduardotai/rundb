@@ -3,6 +3,7 @@
  * No fetches, no localStorage, no Supabase — everything here is unit-testable.
  */
 
+import { UserFacingError } from '@/lib/action-result'
 import type { HardwareAlias, ReportImage, ReportStatus } from './types'
 import { normalizeSlug } from './utils'
 
@@ -51,14 +52,14 @@ export function isUuid(value: unknown): value is string {
  * enforces the per-call cap. Throws with a user-friendly message.
  */
 export function normalizeBulkIds(ids: unknown): string[] {
-  if (!Array.isArray(ids)) throw new Error('Expected a list of ids.')
+  if (!Array.isArray(ids)) throw new UserFacingError('Expected a list of ids.')
   const unique = Array.from(new Set(ids.map((v) => String(v ?? '').trim()).filter(Boolean)))
-  if (unique.length === 0) throw new Error('Select at least one item.')
+  if (unique.length === 0) throw new UserFacingError('Select at least one item.')
   if (unique.length > MAX_BULK_IDS) {
-    throw new Error(`At most ${MAX_BULK_IDS} items can be processed per action.`)
+    throw new UserFacingError(`At most ${MAX_BULK_IDS} items can be processed per action.`)
   }
   const invalid = unique.find((id) => !isUuid(id))
-  if (invalid) throw new Error('One or more ids are not valid.')
+  if (invalid) throw new UserFacingError('One or more ids are not valid.')
   return unique
 }
 
@@ -135,10 +136,10 @@ export function validateHardwareAliasInput(input: HardwareAliasInput): CleanHard
   const raw = String(input.rawString ?? '').trim()
   const canonical = String(input.canonical ?? '').trim()
   if (raw.length < 2 || raw.length > 120) {
-    throw new Error('Raw string must be between 2 and 120 characters.')
+    throw new UserFacingError('Raw string must be between 2 and 120 characters.')
   }
   if (canonical.length < 2 || canonical.length > 120) {
-    throw new Error('Canonical name must be between 2 and 120 characters.')
+    throw new UserFacingError('Canonical name must be between 2 and 120 characters.')
   }
   const vendor = String(input.vendor ?? '').trim().slice(0, 60)
   const series = String(input.series ?? '').trim().slice(0, 60)

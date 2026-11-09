@@ -8,6 +8,9 @@
  * actions accept moderators + admins; destructive actions are admin only. Only
  * after that check do we touch the service-role client, and the moderation RPCs
  * receive the verified user id as the audited actor.
+ *
+ * Every action returns ActionResult<T> (lib/action-result.ts) instead of throwing:
+ * production Next.js hides thrown messages. lib/admin.ts unwraps on the client.
  */
 
 import { getStaffAccess } from '@/lib/admin-access'
@@ -15,11 +18,12 @@ import { createServiceClient } from '@/lib/supabase/service'
 import type { BulkImportResult, HardwareAlias, ReportImage, ReportStatus } from '@/lib/types'
 import type { AdminOverviewStats, HardwareAliasInput, ImageStatus } from '@/lib/admin-logic'
 import * as mod from '@/lib/server/admin-moderation'
+import { UserFacingError, runAction, type ActionResult } from '@/lib/action-result'
 
 async function requireModerator(): Promise<string> {
   const access = await getStaffAccess()
   if (!access.user || !access.canModerate) {
-    throw new Error('Access denied. Moderator or admin role required.')
+    throw new UserFacingError('Access denied. Moderator or admin role required.')
   }
   return access.user.id
 }
@@ -27,26 +31,18 @@ async function requireModerator(): Promise<string> {
 async function requireAdmin(): Promise<string> {
   const access = await getStaffAccess()
   if (!access.user || !access.isAdmin) {
-    throw new Error('Access denied. Admin role required.')
+    throw new UserFacingError('Access denied. Admin role required.')
   }
   return access.user.id
 }
 
-/** Re-throw with a stable, user-safe message (server actions must never leak raw 500s). */
-function friendly(err: unknown, fallback: string): never {
-  const message = err instanceof Error && err.message ? err.message : fallback
-  throw new Error(message)
-}
-
 // ---- Overview ---------------------------------------------------------------
 
-export async function getAdminOverviewStatsAction(): Promise<AdminOverviewStats> {
-  await requireModerator()
-  try {
+export async function getAdminOverviewStatsAction(): Promise<ActionResult<AdminOverviewStats>> {
+  return runAction('Failed to load admin stats.', async () => {
+    await requireModerator()
     return await mod.getAdminOverviewStats(createServiceClient())
-  } catch (err) {
-    friendly(err, 'Failed to load admin stats.')
-  }
+  }, '[admin:getAdminOverviewStatsAction]')
 }
 
 // ---- Reports ----------------------------------------------------------------
@@ -55,109 +51,89 @@ export async function bulkModerateReportsAction(
   reportIds: string[],
   status: ReportStatus,
   notes?: string
-): Promise<{ updated: number }> {
-  const actor = await requireModerator()
-  try {
+): Promise<ActionResult<{ updated: number }>> {
+  return runAction('Failed to update report status.', async () => {
+    const actor = await requireModerator()
     const updated = await mod.moderateReports(createServiceClient(), actor, reportIds, status, notes)
     return { updated }
-  } catch (err) {
-    friendly(err, 'Failed to update report status.')
-  }
+  }, '[admin:bulkModerateReportsAction]')
 }
 
-export async function bulkDeleteReportsAction(reportIds: string[]): Promise<{ deleted: number }> {
-  const actor = await requireAdmin()
-  try {
+export async function bulkDeleteReportsAction(reportIds: string[]): Promise<ActionResult<{ deleted: number }>> {
+  return runAction('Failed to delete reports.', async () => {
+    const actor = await requireAdmin()
     const deleted = await mod.deleteReports(createServiceClient(), actor, reportIds)
     return { deleted }
-  } catch (err) {
-    friendly(err, 'Failed to delete reports.')
-  }
+  }, '[admin:bulkDeleteReportsAction]')
 }
 
 // ---- Report images ----------------------------------------------------------
 
-export async function getReportImagesAction(filter?: ImageStatus | 'all'): Promise<ReportImage[]> {
-  await requireModerator()
-  try {
+export async function getReportImagesAction(filter?: ImageStatus | 'all'): Promise<ActionResult<ReportImage[]>> {
+  return runAction('Failed to load report images.', async () => {
+    await requireModerator()
     return await mod.listReportImages(createServiceClient(), filter)
-  } catch (err) {
-    friendly(err, 'Failed to load report images.')
-  }
+  }, '[admin:getReportImagesAction]')
 }
 
 export async function bulkModerateReportImagesAction(
   imageIds: string[],
   status: ImageStatus
-): Promise<{ updated: number }> {
-  const actor = await requireModerator()
-  try {
+): Promise<ActionResult<{ updated: number }>> {
+  return runAction('Failed to update image status.', async () => {
+    const actor = await requireModerator()
     const updated = await mod.moderateReportImages(createServiceClient(), actor, imageIds, status)
     return { updated }
-  } catch (err) {
-    friendly(err, 'Failed to update image status.')
-  }
+  }, '[admin:bulkModerateReportImagesAction]')
 }
 
-export async function bulkDeleteReportImagesAction(imageIds: string[]): Promise<{ deleted: number }> {
-  const actor = await requireAdmin()
-  try {
+export async function bulkDeleteReportImagesAction(imageIds: string[]): Promise<ActionResult<{ deleted: number }>> {
+  return runAction('Failed to delete images.', async () => {
+    const actor = await requireAdmin()
     const deleted = await mod.deleteReportImages(createServiceClient(), actor, imageIds)
     return { deleted }
-  } catch (err) {
-    friendly(err, 'Failed to delete images.')
-  }
+  }, '[admin:bulkDeleteReportImagesAction]')
 }
 
 // ---- Hardware aliases -------------------------------------------------------
 
-export async function getHardwareAliasesAction(search?: string): Promise<HardwareAlias[]> {
-  await requireModerator()
-  try {
+export async function getHardwareAliasesAction(search?: string): Promise<ActionResult<HardwareAlias[]>> {
+  return runAction('Failed to load hardware aliases.', async () => {
+    await requireModerator()
     return await mod.listHardwareAliases(createServiceClient(), search)
-  } catch (err) {
-    friendly(err, 'Failed to load hardware aliases.')
-  }
+  }, '[admin:getHardwareAliasesAction]')
 }
 
-export async function createHardwareAliasAction(input: HardwareAliasInput): Promise<HardwareAlias> {
-  const actor = await requireModerator()
-  try {
+export async function createHardwareAliasAction(input: HardwareAliasInput): Promise<ActionResult<HardwareAlias>> {
+  return runAction('Failed to add alias.', async () => {
+    const actor = await requireModerator()
     return await mod.createHardwareAlias(createServiceClient(), actor, input)
-  } catch (err) {
-    friendly(err, 'Failed to add alias.')
-  }
+  }, '[admin:createHardwareAliasAction]')
 }
 
 export async function updateHardwareAliasAction(
   id: string,
   input: HardwareAliasInput
-): Promise<HardwareAlias> {
-  const actor = await requireModerator()
-  try {
+): Promise<ActionResult<HardwareAlias>> {
+  return runAction('Failed to update alias.', async () => {
+    const actor = await requireModerator()
     return await mod.updateHardwareAlias(createServiceClient(), actor, id, input)
-  } catch (err) {
-    friendly(err, 'Failed to update alias.')
-  }
+  }, '[admin:updateHardwareAliasAction]')
 }
 
-export async function deleteHardwareAliasAction(id: string): Promise<{ deleted: boolean }> {
-  const actor = await requireAdmin()
-  try {
+export async function deleteHardwareAliasAction(id: string): Promise<ActionResult<{ deleted: boolean }>> {
+  return runAction('Failed to delete alias.', async () => {
+    const actor = await requireAdmin()
     const deleted = await mod.deleteHardwareAlias(createServiceClient(), actor, id)
     return { deleted }
-  } catch (err) {
-    friendly(err, 'Failed to delete alias.')
-  }
+  }, '[admin:deleteHardwareAliasAction]')
 }
 
 // ---- Bulk game import -------------------------------------------------------
 
-export async function bulkImportGamesAction(rows: unknown[]): Promise<BulkImportResult> {
-  const actor = await requireAdmin()
-  try {
+export async function bulkImportGamesAction(rows: unknown[]): Promise<ActionResult<BulkImportResult>> {
+  return runAction('Bulk import failed.', async () => {
+    const actor = await requireAdmin()
     return await mod.bulkImportGames(createServiceClient(), actor, rows)
-  } catch (err) {
-    friendly(err, 'Bulk import failed.')
-  }
+  }, '[admin:bulkImportGamesAction]')
 }
