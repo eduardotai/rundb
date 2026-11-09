@@ -8,7 +8,8 @@
  * 1. auth (registered, non-anonymous user)
  * 2. strict schema (lib/report-input.ts): types, ranges, enums, lengths, unknown keys rejected
  * 3. game exists (submit) / caller owns the report (edit)
- * 4. anti-abuse (submit): max REPORTS_PER_HOUR per user + 24h exact-duplicate check
+ * 4. anti-abuse: submit max REPORTS_PER_HOUR per user + 24h exact-duplicate check;
+ *    edit max REPORT_EDITS_PER_HOUR per user (public.report_edits)
  * 5. auto-review: plausible reports publish immediately; implausible ones wait as 'pending'
  *
  * Expected failures are returned as `{ ok: false, error }` (never thrown) because Next.js
@@ -26,6 +27,8 @@ import {
 } from '@/lib/report-input'
 
 export const REPORTS_PER_HOUR = 5
+/** Owner edits per user per hour (counted in public.report_edits, migration 0800). */
+export const REPORT_EDITS_PER_HOUR = 20
 const HOUR_MS = 60 * 60 * 1000
 const DAY_MS = 24 * HOUR_MS
 
@@ -96,6 +99,10 @@ export interface ReportWriteDeps<Row> {
   /** Reads a report the caller can see (RLS-scoped). null when missing/invisible. */
   findReport(reportId: string): Promise<OwnReport | null>
   updateOwnReport(reportId: string, userId: string, row: ReportUpdateRow): Promise<Row | null>
+  /** Successful edits by this user since `sinceIso` (public.report_edits). */
+  countEditsSince(userId: string, sinceIso: string): Promise<number>
+  /** Record a successful edit (feeds the edit rate limit). */
+  recordEdit(reportId: string, userId: string): Promise<void>
   now(): number
 }
 
@@ -204,6 +211,14 @@ export async function updateReport<Row>(
   const parsed = updateReportInputSchema.safeParse(raw)
   if (!parsed.success) return { ok: false, error: formatReportInputError(parsed.error) }
 
+  const edits = await deps.countEditsSince(user.id, new Date(deps.now() - HOUR_MS).toISOString())
+  if (edits >= REPORT_EDITS_PER_HOUR) {
+    return {
+      ok: false,
+      error: `Edit limit reached: you can edit reports up to ${REPORT_EDITS_PER_HOUR} times per hour. Please try again later.`,
+    }
+  }
+
   const row: ReportUpdateRow = contentRow(parsed.data)
 
   // An edit can turn a published report implausible (e.g. FPS -> 599, link added): send it back
@@ -217,5 +232,11 @@ export async function updateReport<Row>(
 
   const updated = await deps.updateOwnReport(id.data, user.id, row)
   if (!updated) return { ok: false, error: 'Failed to save changes. Please try again.' }
+  try {
+    await deps.recordEdit(id.data, user.id)
+  } catch (err) {
+    // The edit itself succeeded; a missing log row only makes the limit slightly looser.
+    console.error('[updateReport] could not record edit', err)
+  }
   return { ok: true, value: updated }
 }
