@@ -14,6 +14,7 @@ import { Game, GraphicsPreset, PerformanceTier } from '@/lib/types';
 import { addUserReport, isSupabaseConfigured } from '@/lib/data';
 import { showUserError, showUserSuccess } from '@/lib/toast';
 import { sanitizeFullName } from '@/lib/sanitize';
+import { reportFormSchema, calculatePerformanceTier } from '@/lib/report-input';
 import { HardwareCombobox } from '@/components/hardware-combobox';
 import { IgpuSuggestDialog } from '@/components/igpu-suggest-dialog';
 import { normalizeHardwareSync } from '@/lib/normalize-hardware';
@@ -29,57 +30,10 @@ import { shouldOfferIgpuOnEmptyGpu } from '@/lib/cpu-igpu';
 import { Cpu, Zap, Monitor } from 'lucide-react';
 import { upgradeCoverImageSrc } from '@/lib/cover-image-url';
 
-/** Empty optional number inputs must not fail validation ("" / NaN → undefined). */
-const optionalNumber = z.preprocess((val) => {
-  if (val === '' || val === null || val === undefined) return undefined
-  if (typeof val === 'number' && Number.isNaN(val)) return undefined
-  const n = typeof val === 'number' ? val : Number(val)
-  return Number.isFinite(n) ? n : undefined
-}, z.number().optional())
+// Shared with the server action (lib/report-input.ts): the server re-validates the same rules.
+const formSchema = reportFormSchema;
 
-const formSchema = z.object({
-  gameId: z.string().min(1),
-  cpu: z.string()
-    .min(3, 'CPU is required')
-    .max(80, 'CPU name is too long')
-    .transform((v) => sanitizeFullName(v)),
-  gpu: z.string()
-    .min(3, 'GPU is required')
-    .max(80, 'GPU name is too long')
-    .transform((v) => sanitizeFullName(v)),
-  ram: z.coerce.number().min(4, 'RAM must be at least 4 GB').max(128, 'RAM must be at most 128 GB'),
-  ramSpeed: z.string()
-    .max(20, 'RAM speed is too long')
-    .optional()
-    .transform((v) => (v ? sanitizeFullName(v) : undefined)),
-  resolution: z.string().min(3).max(20),
-  refreshRate: optionalNumber,
-  settingsPreset: z.enum(['Low', 'Medium', 'High', 'Ultra', 'Custom']),
-  customSettingsNotes: z.string()
-    .max(300, 'Custom settings notes are too long')
-    .optional()
-    .transform((v) => (v ? sanitizeFullName(v) : undefined)),
-  avgFps: z.coerce.number().min(1, 'Average FPS must be at least 1').max(600, 'Average FPS must be at most 600'),
-  fps1PercentLow: optionalNumber,
-  notes: z.string()
-    .max(500, 'Notes are too long')
-    .optional()
-    .transform((v) => v ? sanitizeFullName(v) : undefined),
-  issues: z.string()
-    .max(500, 'Issues are too long')
-    .optional()
-    .transform((v) => v ? sanitizeFullName(v) : undefined),
-  tweaks: z.string()
-    .max(300, 'Tweaks are too long')
-    .optional()
-    .transform((v) => v ? sanitizeFullName(v) : undefined),
-  driverVersion: z.string()
-    .max(40, 'Driver version is too long')
-    .optional()
-    .transform((v) => v ? sanitizeFullName(v) : undefined),
-});
-
-type FormValues = z.infer<typeof formSchema>;
+type FormValues = z.output<typeof formSchema>;
 
 interface SubmitReportDialogProps {
   open: boolean;
@@ -101,16 +55,10 @@ const RESOLUTION_OPTIONS: { value: string; label: string }[] = [
   { value: '3840x2160', label: '3840×2160 (4K)' },
 ];
 
-// Mirror of the server-side tier calc (app/actions/reports.ts) so the preview can show the
-// tier a given Average FPS will produce. Kept in sync intentionally — the authoritative
-// calculation stays server-side; this is a non-authoritative hint only.
+// Non-authoritative preview of the tier the server will compute (same function).
 function previewTier(avgFps: number): PerformanceTier | null {
   if (!Number.isFinite(avgFps) || avgFps < 1) return null;
-  if (avgFps >= 90) return 'Excellent';
-  if (avgFps >= 60) return 'Good';
-  if (avgFps >= 40) return 'Playable';
-  if (avgFps >= 25) return 'Struggling';
-  return 'Unplayable';
+  return calculatePerformanceTier(avgFps);
 }
 
 // Small section wrapper — gives the form clear, scannable groupings instead of one long list.
@@ -255,7 +203,7 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
       const cpuNorm = normalizeHardwareSync(values.cpu);
       const gpuNorm = normalizeHardwareSync(values.gpu);
 
-      await addUserReport({
+      const created = await addUserReport({
         gameId: values.gameId,
         cpu: values.cpu,
         gpu: values.gpu,
@@ -276,7 +224,11 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
         canonicalGpu: gpuNorm.canonical,
       });
 
-      showUserSuccess('Report submitted — thank you!');
+      showUserSuccess(
+        created?.status === 'pending'
+          ? 'Report submitted — a moderator will review it before it appears publicly.'
+          : 'Report submitted — thank you!'
+      );
 
       form.reset();
       onOpenChange(false);

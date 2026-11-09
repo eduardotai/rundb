@@ -549,7 +549,7 @@ async function fetchReportCountsByGameId(supabase: any): Promise<Map<string, num
   let from = 0
   for (;;) {
     const result = await withSupabaseReadTimeout<any>(
-      supabase.from('reports').select('game_id').range(from, from + chunk - 1),
+      supabase.from('reports').select('game_id').eq('status', 'approved').range(from, from + chunk - 1),
       'fetchReportCountsByGameId',
       8000
     )
@@ -997,6 +997,7 @@ export async function getReportsForGameAsync(
       const { data, error } = await supabase
         .from('reports')
         .select('*')
+        .eq('status', 'approved')
         .eq('game_id', gameId)
         .order('created_at', { ascending: false })
         .limit(limit)
@@ -1106,6 +1107,7 @@ export async function getReportsForGamesAsync(
       const { data, error } = await supabase
         .from('reports')
         .select('*')
+        .eq('status', 'approved')
         .in('game_id', ids)
         .order('created_at', { ascending: false })
         .limit(cap)
@@ -1183,6 +1185,7 @@ export async function getTrendingGamesAsync(limit: number = 6, windowDays: numbe
       supabase
         .from('reports')
         .select('game_id, created_at')
+        .eq('status', 'approved')
         .gte('created_at', cutoff)
         .order('created_at', { ascending: false })
         .limit(5000),
@@ -1206,6 +1209,7 @@ export async function getTrendingGamesAsync(limit: number = 6, windowDays: numbe
         supabase
           .from('reports')
           .select('game_id, created_at')
+          .eq('status', 'approved')
           .order('created_at', { ascending: false })
           .limit(200),
         'getTrendingGamesAsync.fallback',
@@ -1259,7 +1263,7 @@ export async function getGlobalCountsAsync(): Promise<{ totalGames: number; tota
 
       const [gamesRes, reportsRes] = await Promise.all([
         supabase.from('games').select('id', { count: 'exact', head: true }),
-        supabase.from('reports').select('id', { count: 'exact', head: true }),
+        supabase.from('reports').select('id', { count: 'exact', head: true }).eq('status', 'approved'),
       ])
 
       return {
@@ -1314,6 +1318,7 @@ export async function getAllReportsAsync(): Promise<Report[]> {
       const { data, error } = await supabase
         .from('reports')
         .select('*, game:games(id, slug, name, cover_url, genres, release_year, developer, publisher, steam_app_id, igdb_id)')
+        .eq('status', 'approved')
         .order('created_at', { ascending: false })
         .limit(200) // safety for MVP
 
@@ -1380,6 +1385,7 @@ export async function getFilteredGlobalReportsAsync(filters: {
       let q = supabase
         .from('reports')
         .select('*, game:games(id, slug, name, cover_url, genres, release_year, developer, publisher, steam_app_id, igdb_id)')
+        .eq('status', 'approved')
         .order('created_at', { ascending: false })
         .limit(300)
 
@@ -1466,6 +1472,7 @@ export async function computeGameStatsAsync(gameId: string): Promise<GameStats> 
       const { data, error } = await supabase
         .from('reports')
         .select('*')
+        .eq('status', 'approved')
         .eq('game_id', gameId)
         .order('created_at', { ascending: false })
 
@@ -1503,6 +1510,7 @@ export async function predictForUserRigAsync(
       const { data, error } = await supabase
         .from('reports')
         .select('*')
+        .eq('status', 'approved')
         .eq('game_id', gameId)
         .order('created_at', { ascending: false })
         .limit(sampleLimit)
@@ -1525,8 +1533,9 @@ export async function predictForUserRigAsync(
 // ============================================
 // USER REPORTS — Phase 2: real submission path via Server Action + RPC-ready
 // Master Plan: submission always goes through here. When NEXT_PUBLIC_USE_REAL_DATA=true
-// we use app/actions/reports.ts (submitReportAction) which enforces schema (pending status,
-// server-side performance_tier calc, moderation fields) + anti-abuse (rate limit + dup detect).
+// we use app/actions/reports.ts (submitReportAction), which re-validates with the shared schema
+// (lib/report-input.ts), computes performance_tier, applies anti-abuse (rate limit + dup detect)
+// and holds implausible reports as 'pending' for moderators (lib/server/report-write.ts).
 // Upvoting uses report_votes + trigger.
 // ============================================
 
@@ -1558,7 +1567,12 @@ export async function addUserReport(
       canonicalCpu: (report as any).canonicalCpu,
       canonicalGpu: (report as any).canonicalGpu,
     }
-    return submitReportAction(normalized)
+    const result = await submitReportAction(normalized)
+    // Expected failures (validation, rate limit, duplicate) come back as values because
+    // Next.js hides thrown server-action messages in production; rethrow here so callers
+    // can show the friendly message.
+    if (!result.ok) throw new Error(result.error)
+    return result.report
   }
   if (USE_REAL) {
     console.warn('[data] Supabase is not configured; report submit is unavailable.')

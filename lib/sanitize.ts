@@ -50,10 +50,10 @@ export function sanitizePassword(raw: string): string {
  * Sanitize display names / usernames / nicks / hardware model strings (most important to control because they can be displayed later):
  * - Trim + collapse whitespace
  * - Allow apostrophes, common punctuation, letters, marks, digits, spaces, -_. (friendly for gamer nicks + hardware like "Ryzen 7 7800X3D")
- * - Hard cap at 80 chars
+ * - Hard cap at `maxLength` chars (default 80; report free-text fields pass their own cap)
  * - Strip dangerous characters + neutralize links to prevent malicious injection
  */
-export function sanitizeFullName(raw: string): string {
+export function sanitizeFullName(raw: string, maxLength = 80): string {
   let name = raw
     .trim()
     .replace(/[\x00-\x1F\x7F-\x9F]/g, '')           // remove control chars
@@ -62,7 +62,7 @@ export function sanitizeFullName(raw: string): string {
     .replace(/[^\p{L}\p{M}\p{N}\s\-'.]/gu, '')      // allow safe name chars + digits for hardware/driver strings
     .replace(/\s+/g, ' ');                          // collapse spaces
 
-  if (name.length > 80) name = name.slice(0, 80);
+  if (name.length > maxLength) name = name.slice(0, maxLength);
   return name.trim();
 }
 

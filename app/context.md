@@ -25,7 +25,7 @@
 - Client pages use React Query hooks from `@/lib/data` such as `useGames`, `useGame`, `useReportsForGame`, `usePrediction`, and `useMyRig`.
 - Server components can read via async adapter helpers or server-only helpers when appropriate.
 - Mutations that affect reports, hardware catalog, ingest queue, profile identity, or resolver caches go through `app/actions/*` or route handlers.
-- Report submission flows through UI form -> `submitReportAction` -> hardware normalization -> preflight checks -> `submit_report` RPC -> mapped `Report`.
+- Report submission/edit flows through UI form (shared zod schema in `lib/report-input.ts`) -> `submitReportAction` / `updateReportAction` -> `lib/server/report-write.ts` (auth, strict schema, game/ownership, rate limit + duplicate check, auto-review) -> service-role insert/update -> mapped `Report`. Actions return `{ ok, error }` for expected failures (Next.js hides thrown messages in production).
 - Auth state flows through Supabase server/client wrappers in `lib/supabase/*`, cookie refresh, and `AuthButton` / `SiteHeader`.
 - Styling flows from `globals.css` and Tailwind/shadcn component conventions into `components/`.
 

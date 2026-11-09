@@ -11,6 +11,8 @@
 - `admin.ts`: client-safe dual-mode admin adapter used by `app/admin`. Real mode calls `app/actions/admin.ts`; demo mode lazily imports `admin-demo.ts`.
 - `admin-logic.ts`: pure admin helpers (status guards, bulk id validation, alias/image row mappers, alias input validation, bulk game-import row parsing). Tested in `admin-logic.test.ts`.
 - `admin-demo.ts`: mock/localStorage-backed admin tools (moderation queue, aliases, bulk import, image moderation); only reached through `admin.ts` when `USE_REAL` is false so mock state stays out of real bundles.
+- `report-input.ts`: shared report zod schemas (client forms + server), tier calculation and the auto-review plausibility rule. Pure; runs in browser, server and tests.
+- `server/report-write.ts`: server core for report submit/edit (auth, strict validation, game/ownership, rate limit, duplicates, auto-review), dependency-injected so tests use fakes.
 - `server/admin-moderation.ts`: server-only moderation helpers taking an explicit Supabase client (service role from actions, stubs in tests); calls the audited moderation RPCs and writes `moderation_log` rows for direct table writes.
 - `types.ts`: source-of-truth TypeScript shapes that mirror Postgres concepts and UI payloads.
 - `mock-data.ts`: demo seed reports, localStorage persistence, and mock admin state (games fixture and pure helpers now live in `starter-games.ts` / `data-logic.ts` and are re-exported here for compat).

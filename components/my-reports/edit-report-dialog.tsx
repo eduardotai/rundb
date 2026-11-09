@@ -18,6 +18,7 @@ import type { ProfileReportLite } from '@/lib/server/profile';
 import { updateReportAction } from '@/app/actions/reports';
 import { showUserError, showUserSuccess } from '@/lib/toast';
 import { sanitizeFullName } from '@/lib/sanitize';
+import { reportEditFormSchema, calculatePerformanceTier } from '@/lib/report-input';
 import { getAllHardwareCatalogAsync } from '@/lib/data';
 import { shouldOfferIgpuOnEmptyGpu } from '@/lib/cpu-igpu';
 import { Pencil } from 'lucide-react';
@@ -33,32 +34,14 @@ const RESOLUTION_OPTIONS: { value: string; label: string }[] = [
   { value: '3840x2160', label: '3840×2160 (4K)' },
 ];
 
-// Mirror of the server-side tier calc (app/actions/reports.ts) — non-authoritative preview only.
+// Non-authoritative preview of the tier the server will compute (same function).
 function previewTier(avgFps: number): PerformanceTier | null {
   if (!Number.isFinite(avgFps) || avgFps < 1) return null;
-  if (avgFps >= 90) return 'Excellent';
-  if (avgFps >= 60) return 'Good';
-  if (avgFps >= 40) return 'Playable';
-  if (avgFps >= 25) return 'Struggling';
-  return 'Unplayable';
+  return calculatePerformanceTier(avgFps);
 }
 
-const formSchema = z.object({
-  cpu: z.string().min(2, 'CPU is required').max(80, 'Too long').transform((v) => sanitizeFullName(v)),
-  gpu: z.string().min(2, 'GPU is required').max(80, 'Too long').transform((v) => sanitizeFullName(v)),
-  ram: z.coerce.number().min(2, 'Min 2 GB').max(256, 'Max 256 GB'),
-  ramSpeed: z.string().max(20, 'Too long').optional().transform((v) => (v ? sanitizeFullName(v) : undefined)),
-  resolution: z.string().min(3).max(20),
-  refreshRate: z.coerce.number().optional(),
-  settingsPreset: z.enum(['Low', 'Medium', 'High', 'Ultra', 'Custom']),
-  customSettingsNotes: z.string().max(300, 'Too long').optional().transform((v) => (v ? sanitizeFullName(v) : undefined)),
-  avgFps: z.coerce.number().min(1, 'Min 1').max(600, 'Max 600'),
-  fps1PercentLow: z.coerce.number().optional(),
-  notes: z.string().max(500, 'Too long').optional().transform((v) => (v ? sanitizeFullName(v) : undefined)),
-  issues: z.string().max(500, 'Too long').optional().transform((v) => (v ? sanitizeFullName(v) : undefined)),
-  tweaks: z.string().max(300, 'Too long').optional().transform((v) => (v ? sanitizeFullName(v) : undefined)),
-  driverVersion: z.string().max(40, 'Too long').optional().transform((v) => (v ? sanitizeFullName(v) : undefined)),
-});
+// Shared with updateReportAction (lib/report-input.ts): the server re-validates the same rules.
+const formSchema = reportEditFormSchema;
 
 type FormValues = z.input<typeof formSchema>;
 
@@ -139,7 +122,7 @@ export function EditReportDialog({ report, open, onOpenChange, onSaved }: EditRe
     if (!report) return;
     setIsSaving(true);
     try {
-      await updateReportAction(report.id, {
+      const result = await updateReportAction(report.id, {
         cpu: values.cpu as string,
         gpu: values.gpu as string,
         ram: Number(values.ram),
@@ -156,7 +139,15 @@ export function EditReportDialog({ report, open, onOpenChange, onSaved }: EditRe
         driverVersion: (values.driverVersion as string) || null,
       });
 
-      showUserSuccess('Report updated');
+      if (!result.ok) {
+        showUserError(result.error);
+        return;
+      }
+      showUserSuccess(
+        result.report.status === 'pending' && report.status === 'approved'
+          ? 'Report updated — it will be re-reviewed by a moderator before it shows publicly again.'
+          : 'Report updated'
+      );
       onOpenChange(false);
       onSaved?.();
     } catch (e: any) {
