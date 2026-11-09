@@ -249,6 +249,27 @@ END $t$;
 DO $t$
 DECLARE n bigint;
 BEGIN
+  EXECUTE 'UPDATE public.profiles SET main_cpu = ''R5'', main_gpu = ''G'', main_ram = 16, preferred_resolution = ''1080p'' WHERE id = ''00000000-0000-0000-0000-00000000a11c''';
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 1 THEN RAISE EXCEPTION 'expected 1 rows (got %): owner saves rig with UPDATE (app path)', n; END IF;
+EXCEPTION WHEN OTHERS THEN
+  RAISE EXCEPTION 'unexpected error in "owner saves rig with UPDATE (app path)": %', SQLERRM;
+END $t$;
+DO $t$
+BEGIN
+  BEGIN
+    EXECUTE 'INSERT INTO public.profiles (id, main_cpu) VALUES (''00000000-0000-0000-0000-00000000a11c'', ''R5'') ON CONFLICT (id) DO UPDATE SET id = EXCLUDED.id, main_cpu = EXCLUDED.main_cpu';
+  EXCEPTION
+    -- Only denials count: privilege/RLS (42501), CHECK (23514), trigger RAISE (P0001).
+    -- Any other error (typo, missing column) propagates and fails the run.
+    WHEN insufficient_privilege OR check_violation OR raise_exception THEN
+      RETURN;
+  END;
+  RAISE EXCEPTION 'expected failure: rig upsert is denied (ON CONFLICT DO UPDATE needs SELECT on rig columns); app must use UPDATE';
+END $t$;
+DO $t$
+DECLARE n bigint;
+BEGIN
   EXECUTE 'INSERT INTO public.profiles (id, username) VALUES (''00000000-0000-0000-0000-00000000a11c'', ''alice3'') ON CONFLICT (id) DO UPDATE SET id = EXCLUDED.id, username = EXCLUDED.username';
   GET DIAGNOSTICS n = ROW_COUNT;
   IF n <> 1 THEN RAISE EXCEPTION 'expected 1 rows (got %): owner upserts own profile like PostgREST', n; END IF;
