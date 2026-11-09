@@ -10,6 +10,7 @@
 import { USE_REAL, getAllGames } from './data'
 import type { AdminOverviewStats, HardwareAliasInput, ImageStatus } from './admin-logic'
 import { EMPTY_ADMIN_STATS } from './admin-logic'
+import { unwrapAction } from './action-result'
 import type {
   AdminReport,
   BulkImportResult,
@@ -41,7 +42,7 @@ function loadActions(): Promise<ActionsModule> {
 export async function getAdminOverviewStats(): Promise<AdminOverviewStats> {
   if (!USE_REAL) return (await loadDemo()).getAdminOverviewStats()
   try {
-    return await (await loadActions()).getAdminOverviewStatsAction()
+    return unwrapAction(await (await loadActions()).getAdminOverviewStatsAction())
   } catch (err) {
     console.warn('[admin] stats unavailable:', err instanceof Error ? err.message : err)
     return EMPTY_ADMIN_STATS
@@ -53,7 +54,7 @@ export async function getAdminOverviewStats(): Promise<AdminOverviewStats> {
 export async function getModerationQueue(filter?: ReportStatus | 'all'): Promise<AdminReport[]> {
   if (!USE_REAL) return (await loadDemo()).getModerationQueue(filter)
   const { getModerationQueueAction } = await import('@/app/actions/reports')
-  return getModerationQueueAction(filter)
+  return unwrapAction(await getModerationQueueAction(filter))
 }
 
 /**
@@ -71,13 +72,13 @@ export async function moderateReports(
     for (const id of reportIds) if (demo.updateReportStatus(id, status, notes)) n++
     return n
   }
-  const { updated } = await (await loadActions()).bulkModerateReportsAction(reportIds, status, notes)
+  const { updated } = unwrapAction(await (await loadActions()).bulkModerateReportsAction(reportIds, status, notes))
   return updated
 }
 
 export async function deleteReports(reportIds: string[]): Promise<number> {
   if (!USE_REAL) return (await loadDemo()).deleteReports(reportIds)
-  const { deleted } = await (await loadActions()).bulkDeleteReportsAction(reportIds)
+  const { deleted } = unwrapAction(await (await loadActions()).bulkDeleteReportsAction(reportIds))
   return deleted
 }
 
@@ -85,7 +86,7 @@ export async function deleteReports(reportIds: string[]): Promise<number> {
 
 export async function getReportImages(filter?: ImageStatus | 'all'): Promise<ReportImage[]> {
   if (!USE_REAL) return (await loadDemo()).getReportImages(filter)
-  return (await loadActions()).getReportImagesAction(filter)
+  return unwrapAction(await (await loadActions()).getReportImagesAction(filter))
 }
 
 export async function moderateReportImages(imageIds: string[], status: ImageStatus): Promise<number> {
@@ -95,7 +96,7 @@ export async function moderateReportImages(imageIds: string[], status: ImageStat
     for (const id of imageIds) if (demo.updateImageStatus(id, status)) n++
     return n
   }
-  const { updated } = await (await loadActions()).bulkModerateReportImagesAction(imageIds, status)
+  const { updated } = unwrapAction(await (await loadActions()).bulkModerateReportImagesAction(imageIds, status))
   return updated
 }
 
@@ -106,7 +107,7 @@ export async function deleteReportImages(imageIds: string[]): Promise<number> {
     for (const id of imageIds) if (demo.deleteReportImage(id)) n++
     return n
   }
-  const { deleted } = await (await loadActions()).bulkDeleteReportImagesAction(imageIds)
+  const { deleted } = unwrapAction(await (await loadActions()).bulkDeleteReportImagesAction(imageIds))
   return deleted
 }
 
@@ -114,7 +115,7 @@ export async function deleteReportImages(imageIds: string[]): Promise<number> {
 
 export async function getHardwareAliases(search?: string): Promise<HardwareAlias[]> {
   if (!USE_REAL) return (await loadDemo()).getHardwareAliases(search)
-  return (await loadActions()).getHardwareAliasesAction(search)
+  return unwrapAction(await (await loadActions()).getHardwareAliasesAction(search))
 }
 
 export async function createHardwareAlias(input: HardwareAliasInput): Promise<HardwareAlias> {
@@ -128,7 +129,7 @@ export async function createHardwareAlias(input: HardwareAliasInput): Promise<Ha
     if (!created) throw new Error('An alias already exists for that raw string.')
     return created
   }
-  return (await loadActions()).createHardwareAliasAction(input)
+  return unwrapAction(await (await loadActions()).createHardwareAliasAction(input))
 }
 
 export async function updateHardwareAlias(id: string, input: HardwareAliasInput): Promise<HardwareAlias> {
@@ -145,12 +146,12 @@ export async function updateHardwareAlias(id: string, input: HardwareAliasInput)
     if (!updated) throw new Error('Alias not found.')
     return updated
   }
-  return (await loadActions()).updateHardwareAliasAction(id, input)
+  return unwrapAction(await (await loadActions()).updateHardwareAliasAction(id, input))
 }
 
 export async function deleteHardwareAlias(id: string): Promise<boolean> {
   if (!USE_REAL) return Boolean((await loadDemo()).deleteHardwareAlias(id))
-  const { deleted } = await (await loadActions()).deleteHardwareAliasAction(id)
+  const { deleted } = unwrapAction(await (await loadActions()).deleteHardwareAliasAction(id))
   return deleted
 }
 
@@ -163,5 +164,5 @@ export async function getAllGamesForAdmin(): Promise<Game[]> {
 
 export async function bulkImportGames(rows: unknown[]): Promise<BulkImportResult> {
   if (!USE_REAL) return (await loadDemo()).bulkImportGames(rows as Record<string, unknown>[])
-  return (await loadActions()).bulkImportGamesAction(rows)
+  return unwrapAction(await (await loadActions()).bulkImportGamesAction(rows))
 }

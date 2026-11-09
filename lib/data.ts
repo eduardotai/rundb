@@ -1588,7 +1588,9 @@ export async function addUserReport(
 export async function voteReport(reportId: string, value: 1 | -1 | 0): Promise<void> {
   if (USE_REAL && isSupabaseConfigured()) {
     const { voteReportAction } = await import('@/app/actions/reports')
-    return voteReportAction(reportId, value)
+    const { unwrapAction } = await import('@/lib/action-result')
+    unwrapAction(await voteReportAction(reportId, value))
+    return
   }
   if (USE_REAL) {
     console.warn('[data] USE_REAL=true but Supabase not configured; report voting is unavailable.')

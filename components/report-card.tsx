@@ -151,6 +151,7 @@ export function ReportCard({
       setUserVote(prevVote);
       setPendingDelta((d) => d - delta);
       console.warn('[ReportCard] vote failed:', err instanceof Error ? err.message : err);
+      showUserError(err instanceof Error && err.message ? err.message : 'Could not register your vote. Please try again.');
     } finally {
       setVoting(false);
     }

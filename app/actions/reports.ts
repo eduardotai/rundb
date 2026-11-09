@@ -22,6 +22,8 @@ import { createServiceClient } from '@/lib/supabase/service'
 import type { AdminReport, Report, PerformanceTier, ReportStatus, GraphicsPreset } from '@/lib/types'
 import { normalizeSlug } from '@/lib/utils'
 import { submitReport, updateReport, type ReportWriteDeps } from '@/lib/server/report-write'
+import { castReportVote } from '@/lib/server/report-vote'
+import { UserFacingError, runAction, toActionFailure, type ActionResult } from '@/lib/action-result'
 import { cleanPublicReportNotes } from '@/lib/report-notes'
 import type { User } from '@supabase/supabase-js'
 
@@ -29,7 +31,7 @@ const REPORT_STATUSES: ReportStatus[] = ['pending', 'approved', 'rejected', 'fla
 
 function assertReportStatus(status: ReportStatus): ReportStatus {
   if (!REPORT_STATUSES.includes(status)) {
-    throw new Error('Invalid report status.')
+    throw new UserFacingError('Invalid report status.')
   }
   return status
 }
@@ -37,13 +39,9 @@ function assertReportStatus(status: ReportStatus): ReportStatus {
 async function requireModerationAccess(): Promise<string> {
   const access = await getStaffAccess()
   if (!access.user || !access.canModerate) {
-    throw new Error('Access denied. Moderator or admin role required.')
+    throw new UserFacingError('Access denied. Moderator or admin role required.')
   }
   return access.user.id
-}
-
-function isRegisteredUser(user: User | null): boolean {
-  return Boolean(user?.id && user.email && !user.is_anonymous)
 }
 
 function mapDbReportToReport(row: any): Report {
@@ -243,83 +241,48 @@ export async function updateReportAction(reportId: unknown, input: unknown): Pro
 }
 
 /**
- * Cast or clear a signed vote on a report (authenticated only).
- * Leverages report_votes table + trigger (see supabase/migrations).
- * - value 1 / -1: upsert the vote (duplicate prevented by UNIQUE constraint + RLS).
- * - value 0: remove the user's existing vote (the DELETE RLS policy allows owners).
- * Vote counters + reporter reputation are auto-updated by DB triggers/functions.
+ * Cast or clear a signed vote on a report (registered users only). See lib/server/report-vote.ts.
+ * Returns a result instead of throwing so "can't vote on your own report" reaches the UI.
  */
-export async function voteReportAction(reportId: string, value: 1 | -1 | 0): Promise<void> {
+export async function voteReportAction(reportId: string, value: 1 | -1 | 0): Promise<ActionResult<null>> {
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-
-    if (!isRegisteredUser(user)) {
-      throw new Error('You must sign in to vote on reports.')
-    }
-
-    const { error } = value === 0
-      ? await supabase
-          .from('report_votes')
-          .delete()
-          .eq('report_id', reportId)
-          .eq('user_id', user.id)
-      : await supabase
-          .from('report_votes')
-          .upsert(
-            { report_id: reportId, user_id: user.id, vote: value },
-            { onConflict: 'report_id,user_id' }
-          )
-
-    if (error) {
-      console.error('[voteReportAction] error', error)
-      // 42501 = RLS rejected the row: the report belongs to the voter (self-votes are blocked in the DB).
-      if (error.code === '42501') {
-        throw new Error("You can't vote on your own report.")
-      }
-      throw new Error('Failed to register vote. Please try again.')
-    }
-  } catch (err: any) {
-    console.error('[voteReportAction] error', err)
-    if (err?.message?.includes('sign in')) {
-      throw err
-    }
-    throw new Error(err?.message || 'Failed to register vote. Please try again.')
+    return await castReportVote(supabase, user, reportId, value)
+  } catch (err) {
+    return toActionFailure(err, 'Failed to register vote. Please try again.', '[voteReportAction]')
   }
 }
 
-export async function upvoteReportAction(reportId: string): Promise<void> {
+export async function upvoteReportAction(reportId: string): Promise<ActionResult<null>> {
   return voteReportAction(reportId, 1)
 }
 
-export async function downvoteReportAction(reportId: string): Promise<void> {
+export async function downvoteReportAction(reportId: string): Promise<ActionResult<null>> {
   return voteReportAction(reportId, -1)
 }
 
-/** Remove the current user's vote on a report (undo an upvote/downvote). */
-export async function removeVoteReportAction(reportId: string): Promise<void> {
+export async function removeVoteReportAction(reportId: string): Promise<ActionResult<null>> {
   return voteReportAction(reportId, 0)
 }
 
 /**
- * Moderation action for /admin/reports.
- * Server-side role check (even if UI also checks).
- * Updates status + moderation audit fields.
+ * Moderation action for a single report (server-side role check).
+ * Routed through the audited moderate_reports RPC (supabase/migrations/20261109000400_admin_moderation.sql).
  */
 export async function moderateReportAction(
   reportId: string,
   newStatus: ReportStatus,
   moderatorNotes?: string
-): Promise<void> {
-  const status = assertReportStatus(newStatus)
-  const moderatorId = await requireModerationAccess()
-
-  // Routed through the audited moderate_reports RPC (supabase/migrations/20261109000400_admin_moderation.sql).
-  const { moderateReports } = await import('@/lib/server/admin-moderation')
-  const updated = await moderateReports(createServiceClient(), moderatorId, [reportId], status, moderatorNotes)
-  if (updated === 0) {
-    throw new Error('Report not found.')
-  }
+): Promise<ActionResult<null>> {
+  return runAction('Failed to update report status.', async () => {
+    const status = assertReportStatus(newStatus)
+    const moderatorId = await requireModerationAccess()
+    const { moderateReports } = await import('@/lib/server/admin-moderation')
+    const updated = await moderateReports(createServiceClient(), moderatorId, [reportId], status, moderatorNotes)
+    if (updated === 0) throw new UserFacingError('Report not found.')
+    return null
+  }, '[moderateReportAction]')
 }
 
 /**
@@ -329,37 +292,35 @@ export async function moderateReportAction(
  */
 export async function getModerationQueueAction(
   filterStatus?: ReportStatus | 'all'
-): Promise<AdminReport[]> {
-  await requireModerationAccess()
-  const supabase = createServiceClient()
+): Promise<ActionResult<AdminReport[]>> {
+  return runAction('Failed to load moderation queue.', async () => {
+    await requireModerationAccess()
+    const supabase = createServiceClient()
 
-  const statusFilter =
-    filterStatus && filterStatus !== 'all' ? assertReportStatus(filterStatus) : null
+    const statusFilter =
+      filterStatus && filterStatus !== 'all' ? assertReportStatus(filterStatus) : null
 
-  let query = supabase
-    .from('reports')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(200)
+    let query = supabase
+      .from('reports')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(200)
 
-  if (statusFilter) {
-    query = query.eq('status', statusFilter)
-  }
+    if (statusFilter) {
+      query = query.eq('status', statusFilter)
+    }
 
-  const { data, error } = await query
+    const { data, error } = await query
+    if (error) throw new Error(`moderation queue select failed: ${error.message}`)
 
-  if (error) {
-    console.error('[getModerationQueueAction] select error', error)
-    throw new Error(error.message || 'Failed to load moderation queue.')
-  }
-
-  return (data || [])
-    .map((row) => mapDbReportToReport(row) as AdminReport)
-    .sort((a, b) => {
-      if (a.status === 'pending' && b.status !== 'pending') return -1
-      if (a.status !== 'pending' && b.status === 'pending') return 1
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    })
+    return (data || [])
+      .map((row) => mapDbReportToReport(row) as AdminReport)
+      .sort((a, b) => {
+        if (a.status === 'pending' && b.status !== 'pending') return -1
+        if (a.status !== 'pending' && b.status === 'pending') return 1
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      })
+  }, '[getModerationQueueAction]')
 }
 
 /**
@@ -388,47 +349,35 @@ export async function getReportByIdForMod(reportId: string): Promise<Report | nu
  */
 export async function triggerIngestionAction(
   seedList?: Array<{ name: string; slug?: string }>
-): Promise<{
-  ok: boolean
+): Promise<ActionResult<{
   authorized: boolean
   count: number
   normalizedSeeds: Array<{ name: string; slug: string }>
   message: string
-}> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+}>> {
+  return runAction('Ingestion action failed.', async () => {
+    // Same admin check as the other admin actions (profiles.role or ADMIN_EMAILS allowlist).
+    const access = await getStaffAccess()
+    if (!access.user) throw new UserFacingError('Authentication required to trigger game ingestion.')
+    if (!access.isAdmin) throw new UserFacingError('Access denied. Admin role required for ingestion tooling.')
 
-  if (!user) {
-    throw new Error('Authentication required to trigger game ingestion.')
-  }
+    const input = Array.isArray(seedList) ? seedList : []
+    const normalizedSeeds = input
+      .map((s) => {
+        const name = String(s?.name || '').trim()
+        if (!name) return null
+        const slug = String(s?.slug || '').trim() || normalizeSlug(name)
+        return { name, slug }
+      })
+      .filter((x): x is { name: string; slug: string } => !!x)
 
-  // Role check (admin only, like moderation). Relies on profiles.role from schema.
-  const { data: profile, error: profileErr } = await supabase
-    .rpc('get_my_profile')
-    .select('role')
-    .single()
-
-  if (profileErr || !profile || profile.role !== 'admin') {
-    throw new Error('Access denied. Admin role required for ingestion tooling.')
-  }
-
-  const input = Array.isArray(seedList) ? seedList : []
-  const normalizedSeeds = input
-    .map((s) => {
-      const name = String(s?.name || '').trim()
-      if (!name) return null
-      const slug = String(s?.slug || '').trim() || normalizeSlug(name)
-      return { name, slug }
-    })
-    .filter((x): x is { name: string; slug: string } => !!x)
-
-  return {
-    ok: true,
-    authorized: true,
-    count: normalizedSeeds.length,
-    normalizedSeeds,
-    message: normalizedSeeds.length > 0
-      ? `Admin authorized. ${normalizedSeeds.length} normalized seeds ready for ingest script or bulk.`
-      : 'Admin authorized. No seeds provided (use default 18 in script). Run via CLI with SEED_JSON or --admin-trigger.',
-  }
+    return {
+      authorized: true,
+      count: normalizedSeeds.length,
+      normalizedSeeds,
+      message: normalizedSeeds.length > 0
+        ? `Admin authorized. ${normalizedSeeds.length} normalized seeds ready for ingest script or bulk.`
+        : 'Admin authorized. No seeds provided (use default 18 in script). Run via CLI with SEED_JSON or --admin-trigger.',
+    }
+  }, '[triggerIngestionAction]')
 }
