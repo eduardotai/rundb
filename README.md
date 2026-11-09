@@ -160,7 +160,7 @@ For deeper onboarding, start with [`CONTEXT.md`](./CONTEXT.md), then the folder-
 | **Game media** | Covers, screenshots, artworks, attribution, storage URLs |
 | **Ingest queue** | Background enrichment jobs for growing the catalog safely |
 
-Source of truth: [`supabase/schema.sql`](./supabase/schema.sql) and [`lib/types.ts`](./lib/types.ts).
+Source of truth: [`supabase/migrations/`](./supabase/migrations) (see [`supabase/README.md`](./supabase/README.md)) and [`lib/types.ts`](./lib/types.ts).
 
 </details>
 
@@ -218,7 +218,7 @@ npm run test    # Node test runner
 | `npm run ingest:worker -- --batch=50` | Process queued ingestion in batches |
 | `npm run import:latest` | Import latest game candidates |
 | `npm run backfill:steam-appids` | Fill missing `steam_app_id` via Steam-first resolver (`--dry-run`, `--limit=N`) |
-| `npm run backfill:steam-reqs` | Optional warm-cache of `official_min_reqs` / `official_rec_reqs` from Steam. Game detail also lazy-fills on first open (preferred for 10k+ catalogs). Store API is rate-limited — use `--delay-ms=2500`, `--limit=30`, re-run to resume (`--dry-run`, `--force`). Apply `supabase/incremental-game-official-reqs-cache.sql` first. |
+| `npm run backfill:steam-reqs` | Optional warm-cache of `official_min_reqs` / `official_rec_reqs` from Steam. Game detail also lazy-fills on first open (preferred for 10k+ catalogs). Store API is rate-limited — use `--delay-ms=2500`, `--limit=30`, re-run to resume (`--dry-run`, `--force`). Requires the migrations in `supabase/migrations/`. |
 | `npm run reingest:covers` | Refresh covers and media |
 
 The catalog grows in two phases: **skeleton rows** are inserted fast (seeds, bulk import, queues), then **enriched in the background** with IGDB/Steam/PCGamingWiki metadata, covers, screenshots, and requirements. The app stays usable while large catalogs process; failed rows stay visible in the queue for retry.
@@ -228,7 +228,7 @@ The catalog grows in two phases: **skeleton rows** are inserted fast (seeds, bul
 ## 🚢 Public Deploy Prep
 
 1. Create a Supabase project and add the required env vars to your host.
-2. Run [`supabase/schema.sql`](./supabase/schema.sql) in the Supabase SQL editor.
+2. Apply the migrations: `supabase link --project-ref <ref>` then `supabase db push --remote` (see [`supabase/README.md`](./supabase/README.md)).
 3. `npm run seed:hardware` → `npm run seed:games`
 4. `npm run build:seed` → `npm run seed:queue` → `npm run ingest:worker -- --batch=50`
 5. Verify locally: `npm run lint && npm run test && npm run build`

@@ -6,7 +6,7 @@
  * authorised the session) and unit tests can pass an in-memory stub.
  *
  * Writes that change moderation state go through the SECURITY DEFINER RPCs from
- * supabase/incremental-admin-moderation.sql so every change is audited in
+ * supabase/migrations/20261109000400_admin_moderation.sql so every change is audited in
  * public.moderation_log and the same authorisation rules apply if a client ever
  * calls the RPC directly with its own session.
  */

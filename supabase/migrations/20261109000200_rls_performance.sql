@@ -1,3 +1,6 @@
+-- Migration: Formerly supabase/incremental-rls-performance.sql (2026-06-09, revised 2026-07-25). Never applied to production as of 2026-11-09.
+-- Content below is unchanged from that file.
+
 -- RunDB: RLS + FK index performance hardening (Supabase Postgres best practices).
 -- Safe to re-run on existing projects. Apply in Supabase SQL Editor after base schema.
 --

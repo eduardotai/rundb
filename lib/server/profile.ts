@@ -263,8 +263,8 @@ export async function getProfileData(userId: string): Promise<ProfileData> {
     if ((reportsRes as any)?.error) {
       const errMsg = String((reportsRes as any).error?.message || '');
       console.warn('[profile] reports select error (missing incremental cols?), retrying with base columns:', errMsg);
-      // Fallback: select only columns guaranteed by base schema.sql so user's reports still appear in /profile
-      // (downvote/vote/cred are maintained by incremental-reputation-voting.sql; without them stats are approx but list works)
+      // Fallback: select only columns guaranteed by the baseline migration so user's reports still appear in /profile
+      // (downvote/vote/cred are maintained by the reputation triggers in supabase/migrations; without them stats are approx but list works)
       try {
         const fallbackRes = await supabase
           .from('reports')

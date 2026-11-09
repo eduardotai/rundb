@@ -47,3 +47,40 @@ jobs:
         run: npm run build
         env:
           NEXT_PUBLIC_USE_REAL_DATA: "false"
+
+  # Rebuilds the database from supabase/migrations on an empty local Supabase
+  # Postgres and runs the SQL smoke check. Never talks to the hosted project.
+  db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_CLI_VERSION: 3.1.0
+      # sha256 of supabase_linux_amd64.tar.gz from the release's checksums file.
+      SUPABASE_CLI_SHA256: dbe9fd66771337fc198727da86b9d3551302f87a7091cd8781be2a4cd0c8ac4d
+      SUPABASE_TELEMETRY_DISABLED: "1"
+      DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Install Supabase CLI (pinned, checksum-verified)
+        run: |
+          curl -fsSL -o /tmp/supabase.tar.gz \
+            "https://github.com/supabase/cli/releases/download/v${SUPABASE_CLI_VERSION}/supabase_linux_amd64.tar.gz"
+          echo "${SUPABASE_CLI_SHA256}  /tmp/supabase.tar.gz" | sha256sum --check --strict
+          tar -xzf /tmp/supabase.tar.gz -C /tmp supabase
+          sudo install -m 0755 /tmp/supabase /usr/local/bin/supabase
+          supabase --version
+
+      - name: Start Postgres and apply migrations
+        run: supabase db start
+
+      - name: Reset from zero (re-applies every migration)
+        run: supabase db reset
+
+      - name: Smoke check
+        run: psql "$DB_URL" -X -v ON_ERROR_STOP=1 -f supabase/tests/smoke.sql
+
+      - name: Schema signature (for drift comparison)
+        run: psql "$DB_URL" -X -tA -v ON_ERROR_STOP=1 -f supabase/tests/schema-signature.sql

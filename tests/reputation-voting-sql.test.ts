@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
 test('vote total recomputation preserves staff moderation decisions', () => {
-  const sql = readFileSync('supabase/incremental-reputation-voting.sql', 'utf8')
+  const sql = readFileSync('supabase/migrations/20261109000100_sync_function_bodies_with_repo.sql', 'utf8')
 
   assert.match(
     sql,

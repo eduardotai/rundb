@@ -1,3 +1,7 @@
+-- Migration: Formerly supabase/incremental-admin-moderation.sql (2026-09-16). Never applied to production as of 2026-11-09;
+-- the admin moderation RPCs called by lib/server/admin-moderation.ts depend on it.
+-- Content below is unchanged from that file.
+
 -- RunDB: real admin moderation (reports, report images, hardware aliases, bulk actions).
 -- Safe to re-run on existing Supabase projects. Apply in the SQL Editor after
 -- schema.sql, incremental-security-rls.sql, incremental-rls-performance.sql and

@@ -2,7 +2,7 @@
 
 /**
  * RunDB Phase 2 Real Reports Server Actions
- * Aligned strictly with Master Implementation Plan + approved schema in supabase/schema.sql
+ * Aligned strictly with Master Implementation Plan + approved schema in supabase/migrations
  *
  * - Submission: registered users only, status='approved', authoritative performance_tier calc
  * - Anti-abuse: rate limiting (5/hr) + duplicate detection (exact hardware match, 24h); service-role insert
@@ -310,7 +310,7 @@ function cleanText(value: string | null | undefined, max: number): string | null
  * Ownership is verified in-code before any write, then the update is performed with the
  * service client constrained by `user_id`. This is required because reports publish as
  * `status='approved'` while the owner-update RLS policy only covers `status='pending'`
- * (schema.sql) — so a user-scoped update would silently match zero rows for live reports.
+ * (supabase/migrations) — so a user-scoped update would silently match zero rows for live reports.
  * The same "verify-then-service-write" pattern is used by moderateReportAction.
  *
  * performance_tier is always recomputed server-side from the (possibly new) avgFps so the
@@ -438,7 +438,7 @@ export async function updateReportAction(reportId: string, input: UpdateReportIn
 
 /**
  * Cast or clear a signed vote on a report (authenticated only).
- * Leverages report_votes table + trigger (see schema.sql).
+ * Leverages report_votes table + trigger (see supabase/migrations).
  * - value 1 / -1: upsert the vote (duplicate prevented by UNIQUE constraint + RLS).
  * - value 0: remove the user's existing vote (the DELETE RLS policy allows owners).
  * Vote counters + reporter reputation are auto-updated by DB triggers/functions.
@@ -504,7 +504,7 @@ export async function moderateReportAction(
   const status = assertReportStatus(newStatus)
   const moderatorId = await requireModerationAccess()
 
-  // Routed through the audited moderate_reports RPC (supabase/incremental-admin-moderation.sql).
+  // Routed through the audited moderate_reports RPC (supabase/migrations/20261109000400_admin_moderation.sql).
   const { moderateReports } = await import('@/lib/server/admin-moderation')
   const updated = await moderateReports(createServiceClient(), moderatorId, [reportId], status, moderatorNotes)
   if (updated === 0) {

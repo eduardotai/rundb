@@ -44,19 +44,19 @@ function getProjectRef(): string {
 const PROJECT_REF = getProjectRef()
 const INCREMENTAL_SQL_FILES = [
   {
-    path: resolve(process.cwd(), 'supabase/incremental-game-media.sql'),
+    path: resolve(process.cwd(), 'supabase/legacy/incremental-game-media.sql'),
     label: 'game_media',
   },
   {
-    path: resolve(process.cwd(), 'supabase/incremental-hardware-catalog.sql'),
+    path: resolve(process.cwd(), 'supabase/legacy/incremental-hardware-catalog.sql'),
     label: 'hardware_catalog + hardware_aliases (for live catalog + normalization)',
   },
   {
-    path: resolve(process.cwd(), 'supabase/incremental-security-rls.sql'),
+    path: resolve(process.cwd(), 'supabase/legacy/incremental-security-rls.sql'),
     label: 'security RLS hardening',
   },
   {
-    path: resolve(process.cwd(), 'supabase/incremental-steam-linked-accounts.sql'),
+    path: resolve(process.cwd(), 'supabase/legacy/incremental-steam-linked-accounts.sql'),
     label: 'Steam linked_accounts + profile steam denorm columns',
   },
 ]

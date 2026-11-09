@@ -533,7 +533,7 @@ async function probeGamesReportCountColumn(supabase: {
     gamesReportCountColumn = !error || error.code !== '42703'
     if (error && error.code === '42703') {
       console.warn(
-        '[data] games.report_count missing — Most reports uses live tallies from reports. Apply supabase/incremental-game-report-count.sql for indexed sort.'
+        '[data] games.report_count missing — Most reports uses live tallies from reports. Apply the migrations in supabase/migrations for indexed sort.'
       )
     }
   } catch {

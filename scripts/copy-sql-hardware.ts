@@ -1,5 +1,5 @@
 /**
- * Copy supabase/incremental-hardware-catalog.sql to the system clipboard (cross-platform).
+ * Copy supabase/legacy/incremental-hardware-catalog.sql to the system clipboard (cross-platform).
  *
  *   npm run copy:sql:hardware
  *
@@ -10,7 +10,7 @@ import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
-const SQL_PATH = path.join(process.cwd(), 'supabase', 'incremental-hardware-catalog.sql')
+const SQL_PATH = path.join(process.cwd(), 'supabase', 'legacy', 'incremental-hardware-catalog.sql')
 
 function clipboardCommands(): Array<{ cmd: string; args: string[] }> {
   switch (process.platform) {
