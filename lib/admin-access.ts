@@ -41,9 +41,8 @@ export async function getStaffAccess(): Promise<StaffAccess> {
   const allowlisted = email ? parseAdminEmails().has(email) : false
 
   const { data: profile } = await supabase
-    .from('profiles')
+    .rpc('get_my_profile')
     .select('role, username, avatar_url')
-    .eq('id', user.id)
     .maybeSingle()
 
   const dbRole = (profile?.role as StaffRole | undefined) ?? 'user'

@@ -467,6 +467,10 @@ export async function voteReportAction(reportId: string, value: 1 | -1 | 0): Pro
 
     if (error) {
       console.error('[voteReportAction] error', error)
+      // 42501 = RLS rejected the row: the report belongs to the voter (self-votes are blocked in the DB).
+      if (error.code === '42501') {
+        throw new Error("You can't vote on your own report.")
+      }
       throw new Error('Failed to register vote. Please try again.')
     }
   } catch (err: any) {
@@ -594,9 +598,8 @@ export async function triggerIngestionAction(
 
   // Role check (admin only, like moderation). Relies on profiles.role from schema.
   const { data: profile, error: profileErr } = await supabase
-    .from('profiles')
+    .rpc('get_my_profile')
     .select('role')
-    .eq('id', user.id)
     .single()
 
   if (profileErr || !profile || profile.role !== 'admin') {

@@ -82,5 +82,8 @@ jobs:
       - name: Smoke check
         run: psql "$DB_URL" -X -v ON_ERROR_STOP=1 -f supabase/tests/smoke.sql
 
+      - name: RLS and privilege tests (anon / owner / other user / moderator)
+        run: psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 -f supabase/tests/policies.sql
+
       - name: Schema signature (for drift comparison)
         run: psql "$DB_URL" -X -tA -v ON_ERROR_STOP=1 -f supabase/tests/schema-signature.sql

@@ -46,11 +46,13 @@ Before saying a change is done, run lint, typecheck, test, and build, and report
 
 ## Supabase / database conventions
 
-- **Source of truth: `supabase/migrations/`** (Supabase CLI, config in `supabase/config.toml`). The DB must rebuild from zero with `supabase db reset`; CI job `db` does that on every PR and runs `supabase/tests/smoke.sql`. Details and the production runbook: `supabase/README.md`.
-- Local DB (needs Docker): `supabase db start` (Postgres only), `supabase db reset` (re-apply all migrations), then `psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -f supabase/tests/smoke.sql`.
+- **Source of truth: `supabase/migrations/`** (Supabase CLI, config in `supabase/config.toml`). The DB must rebuild from zero with `supabase db reset`; CI job `db` does that on every PR and runs `supabase/tests/smoke.sql` and `supabase/tests/policies.sql`. Details and the production runbook: `supabase/README.md`.
+- Local DB (needs Docker): `supabase db start` (Postgres only), `supabase db reset` (re-apply all migrations), then `psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -f supabase/tests/smoke.sql` (and `policies.sql`).
 - New schema change = new file `supabase/migrations/<YYYYMMDDHHMMSS>_<name>.sql` (`supabase migration new <name>`). Never edit a migration that production already has; add a new one. Make it re-runnable where cheap (`IF NOT EXISTS`, `DROP POLICY IF EXISTS` + `CREATE POLICY`).
 - `supabase/legacy/*.sql` are the old hand-applied scripts, kept for history. Do not apply or edit them.
-- Production is applied with `supabase db push --remote` by the owner, never by an agent. Drift check: run `supabase/tests/schema-signature.sql` on both databases and diff.
+- Production is applied with `supabase db push --remote`, only with the owner's explicit approval for that push. Drift check: run `supabase/tests/schema-signature.sql` on both databases and diff.
+- Grants are explicit. Supabase default privileges give new tables/functions to `anon`/`authenticated`; `smoke.sql` fails until the migration revokes `TRUNCATE`/`TRIGGER`/`REFERENCES`/`MAINTAIN`, keeps `anon` read-only, and grants `EXECUTE` only to functions the API needs (allowlist in `smoke.sql`). Every new policy gets a positive and a negative case in `policies.sql`.
+- `profiles`: clients can read only public columns (`id, username, avatar_url, credibility_badge, reputation_score, reports_submitted, votes_cast, created_at, updated_at`) and write only `username` + rig columns. Read the caller's own `role`/rig/`steam_*` with `supabase.rpc('get_my_profile').select(...)` (guarded by `tests/profile-column-access.test.ts`). Steam links and `steam_*` are written by the Steam callback with the service role.
 - When adding a column, update together: migration, `lib/types.ts`, mappers in `lib/data.ts`, server actions, forms, tests, `supabase/context.md`.
 
 ## Security rules

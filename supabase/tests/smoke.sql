@@ -52,7 +52,8 @@ BEGIN
     'public.delete_report_images(uuid[], uuid)',
     'private.resolve_moderation_actor(uuid, boolean)',
     'private.recompute_report_vote_totals(uuid)',
-    'private.recompute_profile_reputation(uuid)'
+    'private.recompute_profile_reputation(uuid)',
+    'public.get_my_profile()'
   ]) AS f
   WHERE to_regprocedure(f) IS NULL;
   IF missing IS NOT NULL THEN
@@ -73,7 +74,9 @@ BEGIN
     ('report_images', 'Approved report images are publicly readable'),
     ('moderation_log', 'Moderators can read the moderation log'),
     ('profiles', 'Users can update own profile'),
-    ('linked_accounts', 'Users can manage own linked accounts')
+    ('linked_accounts', 'Users can read own linked accounts'),
+    ('linked_accounts', 'Users can unlink own linked accounts'),
+    ('report_votes', 'Users can vote on other users'' reports')
   ) AS expected(tbl, pol)
   WHERE NOT EXISTS (
     SELECT 1 FROM pg_policies p
@@ -86,7 +89,8 @@ BEGIN
   SELECT string_agg(trg, ', ') INTO missing
   FROM unnest(ARRAY[
     'on_auth_user_created', 'profiles_prevent_client_role_change', 'trg_reports_report_count',
-    'reports_recompute_profile_reputation', 'report_votes_recompute_reputation'
+    'reports_recompute_profile_reputation', 'report_votes_recompute_reputation',
+    'linked_accounts_clear_profile_steam'
   ]) AS trg
   WHERE NOT EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgname = trg AND NOT t.tgisinternal);
   IF missing IS NOT NULL THEN
@@ -107,6 +111,87 @@ BEGIN
   END IF;
   IF has_table_privilege('anon', 'public.moderation_log', 'SELECT') THEN
     RAISE EXCEPTION 'anon must not read public.moderation_log';
+  END IF;
+END $$;
+
+-- 5b. Privilege guardrails (enforced for every table/function, including future ones).
+-- A new table or function created under Supabase default privileges fails here until its
+-- grants are made explicit in its migration.
+DO $$
+DECLARE
+  bad text;
+BEGIN
+  -- No API role may TRUNCATE / TRIGGER / REFERENCES / MAINTAIN any public table.
+  SELECT string_agg(format('%s:%s:%s', r, c.relname, priv), ', ') INTO bad
+  FROM pg_class c
+  CROSS JOIN unnest(ARRAY['anon', 'authenticated']) AS r
+  CROSS JOIN unnest(ARRAY['TRUNCATE', 'TRIGGER', 'REFERENCES', 'MAINTAIN']) AS priv
+  WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p', 'v', 'm')
+    AND has_table_privilege(r, c.oid, priv);
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'API roles must not hold: %', bad;
+  END IF;
+
+  -- anon is read-only on every public table.
+  SELECT string_agg(format('%s:%s', c.relname, priv), ', ') INTO bad
+  FROM pg_class c
+  CROSS JOIN unnest(ARRAY['INSERT', 'UPDATE', 'DELETE']) AS priv
+  WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p', 'v', 'm')
+    AND has_table_privilege('anon', c.oid, priv);
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'anon must not write: %', bad;
+  END IF;
+
+  -- Private profile columns are not readable by API roles (use get_my_profile()).
+  SELECT string_agg(format('%s:%s', r, col), ', ') INTO bad
+  FROM unnest(ARRAY['anon', 'authenticated']) AS r
+  CROSS JOIN unnest(ARRAY['role', 'steam_id', 'steam_persona', 'steam_avatar_url', 'steam_linked_at',
+                          'main_cpu', 'main_gpu', 'main_ram', 'preferred_resolution']) AS col
+  WHERE has_column_privilege(r, 'public.profiles', col, 'SELECT');
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'private profile columns readable by: %', bad;
+  END IF;
+
+  -- Clients cannot write server-owned profile columns.
+  SELECT string_agg(format('%s:%s', col, priv), ', ') INTO bad
+  FROM unnest(ARRAY['role', 'reputation_score', 'credibility_badge', 'reports_submitted', 'votes_cast',
+                    'avatar_url', 'steam_id', 'steam_persona', 'steam_avatar_url', 'steam_linked_at']) AS col
+  CROSS JOIN unnest(ARRAY['INSERT', 'UPDATE']) AS priv
+  WHERE has_column_privilege('authenticated', 'public.profiles', col, priv);
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'authenticated can write server-owned profile columns: %', bad;
+  END IF;
+
+  -- Clients cannot create or edit linked accounts (verified server-side only).
+  IF has_table_privilege('authenticated', 'public.linked_accounts', 'INSERT')
+     OR has_table_privilege('authenticated', 'public.linked_accounts', 'UPDATE') THEN
+    RAISE EXCEPTION 'authenticated must not insert/update public.linked_accounts';
+  END IF;
+
+  -- anon may execute only these app functions (extension functions are excluded).
+  SELECT string_agg(p.oid::regprocedure::text, ', ') INTO bad
+  FROM pg_proc p
+  WHERE p.pronamespace IN ('public'::regnamespace, 'private'::regnamespace)
+    AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')
+    AND has_function_privilege('anon', p.oid, 'EXECUTE')
+    AND p.oid::regprocedure::text NOT IN ('is_username_taken(text)', 'is_admin()', 'is_moderator_or_admin()');
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'anon can execute: %', bad;
+  END IF;
+
+  -- authenticated may execute only these app functions.
+  SELECT string_agg(p.oid::regprocedure::text, ', ') INTO bad
+  FROM pg_proc p
+  WHERE p.pronamespace IN ('public'::regnamespace, 'private'::regnamespace)
+    AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')
+    AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
+    AND p.oid::regprocedure::text NOT IN (
+      'is_username_taken(text)', 'is_admin()', 'is_moderator_or_admin()', 'get_my_profile()',
+      'moderate_reports(uuid[],report_status,text,uuid)', 'delete_reports(uuid[],uuid)',
+      'moderate_report_images(uuid[],text,uuid)', 'delete_report_images(uuid[],uuid)'
+    );
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'authenticated can execute: %', bad;
   END IF;
 END $$;
 

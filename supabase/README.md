@@ -9,6 +9,7 @@ does this on every PR.
 | `config.toml` | Supabase CLI config for the local stack (`supabase init` defaults, `project_id = "rundb"`, Postgres 17, storage buckets that mirror production). It does not change the hosted project unless someone runs `supabase config push`. |
 | `migrations/` | Ordered, versioned migrations. Source of truth. |
 | `tests/smoke.sql` | Post-reset checks: tables, RLS on every public table, key functions/policies/triggers, privilege shape, and a few behaviors (rolled back). |
+| `tests/policies.sql` | RLS/privilege behavior tests as anon, owner, other user and moderator (positive and negative cases, rolled back). |
 | `tests/schema-signature.sql` | Read-only catalog signature (no table data) used to diff two databases for drift. |
 | `legacy/` | The old hand-applied `incremental-*.sql` scripts. **History only, do not apply.** Their effects are in `migrations/`. |
 | `email-templates/` | Supabase Auth email templates. |
@@ -19,6 +20,7 @@ does this on every PR.
 supabase db start      # Postgres only; applies migrations to an empty volume
 supabase db reset      # drop and re-apply every migration from zero
 psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -X -v ON_ERROR_STOP=1 -f supabase/tests/smoke.sql
+psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -X -v ON_ERROR_STOP=1 -f supabase/tests/policies.sql
 supabase migration new <name>   # new migration file; never edit one production already has
 ```
 
@@ -50,22 +52,25 @@ incremental scripts and some manual changes.
 | `20261109000200_rls_performance` | `incremental-rls-performance.sql` | adds `is_moderator_or_admin()`, moderator read/update policies on `reports`, FK/hot-path indexes, `(select auth.uid())` policy rewrites |
 | `20261109000300_hardware_catalog_igpu` | `incremental-hardware-catalog-igpu.sql` | adds `hardware_catalog.has_igpu`, `igpu_canonical` |
 | `20261109000400_admin_moderation` | `incremental-admin-moderation.sql` | adds `report_images.status` (**existing images become `pending`, hidden from the public until approved**), `is_admin()`, `moderation_log`, and the moderation RPCs that `lib/server/admin-moderation.ts` already calls |
+| `20261109000500_security_hardening` | PR 4 | column grants on `profiles` (public columns only; own private columns via `get_my_profile()`), Steam links written only server-side, owner image/vote policies with `WITH CHECK`, no self-votes, no raw owner edits of reports, `EXECUTE` revoked on internal functions, no `TRUNCATE`/`TRIGGER`/`REFERENCES`/`MAINTAIN` for API roles, anon read-only |
 
 Platform-owned objects are not in migrations: roles, the `auth`/`storage` schemas,
 `pgcrypto`/`uuid-ossp`, the `ensure_rls` event trigger (`public.rls_auto_enable`), and bucket
 rows (declared in `config.toml`).
 
-## Production runbook (owner only)
+## Production status and runbook (owner approval required)
 
-Production has no migration history table yet. Record the baseline as already applied,
-review, then push the rest:
+Production history (2026-11-09): baseline `20261109000000` recorded as applied (not run), then
+`…0100` to `…0400` applied in order with the owner's approval. The two pre-baseline history rows
+(`20260915122645`, `20260915122706`) were removed because the baseline contains their effects.
+After that the production signature equals a fresh `db reset` of `main`.
+
+Next migrations:
 
 ```bash
 supabase link --project-ref <project-ref>
-supabase migration list --remote                                 # expect: remote history empty
-supabase migration repair --remote --status applied 20261109000000
-supabase db push --remote --dry-run                              # expect the four migrations above
-# before pushing: count rows in public.report_images; all of them become 'pending' (hidden) after 20261109000400
+supabase migration list --remote          # local and remote must match up to the last applied version
+supabase db push --remote --dry-run       # review exactly which files will run
 supabase db push --remote
 psql "$PROD_DB_URL" -X -tA -f supabase/tests/schema-signature.sql > prod.sig   # diff against CI's "Schema signature" step
 ```
