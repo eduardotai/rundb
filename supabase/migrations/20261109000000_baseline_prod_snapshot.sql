@@ -20,7 +20,7 @@
 -- (public.rls_auto_enable), storage buckets (declared in supabase/config.toml).
 --
 -- Production adoption (never run `db push` before this):
---   supabase migration repair --status applied 20261109000000
+--   supabase migration repair --remote --status applied 20261109000000
 -- =============================================================================
 
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
