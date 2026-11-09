@@ -7,12 +7,14 @@ import {
   fetchSteamPlayerSummary,
   validateSteamLinkState,
 } from '@/lib/steam';
+import { linkSteamAccount, serviceSteamLinkStore, type SteamProfileSnapshot } from '@/lib/server/steam-link';
 
 /**
  * Steam OpenID callback for account linking.
  * Expects the user to already have a valid Supabase session (cookie) when Steam redirects back.
- * Verifies the OpenID response, fetches public profile (if API key present), then upserts linked_accounts +
- * the profiles.steam_* denorms with the service role (clients cannot write either).
+ * Verifies the OpenID response, fetches public profile (if API key present), then writes linked_accounts +
+ * the profiles.steam_* denorms with the service role via lib/server/steam-link.ts (clients cannot write
+ * either). One Steam account per RunDB user: conflicts redirect with reason=steam_already_linked.
  */
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
@@ -58,7 +60,7 @@ export async function GET(request: NextRequest) {
 
   // Fetch public profile snapshot (best effort)
   const apiKey = process.env.STEAM_WEB_API_KEY;
-  let profileData: any = { steamid: steamId };
+  let profileData: SteamProfileSnapshot = { steamid: steamId };
 
   if (apiKey) {
     const summary = await fetchSteamPlayerSummary(steamId, apiKey);
@@ -74,31 +76,15 @@ export async function GET(request: NextRequest) {
 
   // Write the verified link with the service role: clients cannot insert/update linked_accounts
   // or the profiles.steam_* denorms (RLS + column grants), so a link can only come from this
-  // server-side OpenID verification. Scoped to the session user checked above.
-  const service = createServiceClient();
-  const { error: linkErr } = await service.from('linked_accounts').upsert({
-    user_id: user.id,
-    provider: 'steam',
-    provider_user_id: steamId,
-    provider_data: profileData,
-  }, { onConflict: 'user_id,provider' });
-
-  if (linkErr) {
-    console.error('[steam] link upsert failed', linkErr);
-    return redirectWithClearedState(new URL('/auth/auth-code-error?reason=db_error', url.origin));
-  }
-
-  // Denorm onto profiles for fast display (avatar, persona)
-  const { error: profErr } = await service.from('profiles').upsert({
-    id: user.id,
-    steam_id: steamId,
-    steam_persona: profileData.personaname || null,
-    steam_avatar_url: profileData.avatar_url || profileData.avatarfull || null,
-    steam_linked_at: new Date().toISOString(),
+  // server-side OpenID verification. Scoped to the session user checked above. A Steam id that
+  // already belongs to another user is refused (never overwritten): reason=steam_already_linked.
+  const linked = await linkSteamAccount(serviceSteamLinkStore(createServiceClient()), {
+    userId: user.id,
+    steamId,
+    profile: profileData,
   });
-
-  if (profErr) {
-    console.warn('[steam] profile denorm failed (non-fatal)', profErr.message);
+  if (!linked.ok) {
+    return redirectWithClearedState(new URL(`/auth/auth-code-error?reason=${linked.reason}`, url.origin));
   }
 
   // Success — redirect back to profile with success flag
