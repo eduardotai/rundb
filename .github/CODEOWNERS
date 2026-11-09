@@ -1,0 +1,20 @@
+# Default owner for everything.
+* @eduardotai
+
+# High-risk areas (listed explicitly so they stay owned if the default changes):
+# CI/CD and repo governance
+/.github/ @eduardotai
+# Database schema, RLS policies, RPCs
+/supabase/ @eduardotai
+# Server actions, route handlers, auth (public endpoints)
+/app/actions/ @eduardotai
+/app/api/ @eduardotai
+/app/auth/ @eduardotai
+/proxy.ts @eduardotai
+# Privileged server code and Supabase clients
+/lib/server/ @eduardotai
+/lib/supabase/ @eduardotai
+/lib/admin-access.ts @eduardotai
+# Agent instructions
+/AGENTS.md @eduardotai
+/CLAUDE.md @eduardotai
