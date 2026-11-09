@@ -96,21 +96,19 @@ export function AuthButton({ user }: AuthButtonProps) {
             </div>
           </div>
           <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={() => (window.location.href = '/profile')}
-            className="group cursor-pointer py-2 focus:bg-accent"
-          >
-            <User className="mr-2 h-4 w-4 text-muted-foreground group-focus:text-foreground" />
-            <span className="flex-1">Profile &amp; My Rig</span>
-            <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
+          <DropdownMenuItem asChild className="group cursor-pointer py-2 focus:bg-accent">
+            <Link href="/profile">
+              <User className="mr-2 h-4 w-4 text-muted-foreground group-focus:text-foreground" />
+              <span className="flex-1">Profile &amp; My Rig</span>
+              <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
+            </Link>
           </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() => (window.location.href = '/my-reports')}
-            className="group cursor-pointer py-2 focus:bg-accent"
-          >
-            <FileText className="mr-2 h-4 w-4 text-muted-foreground group-focus:text-foreground" />
-            <span className="flex-1">My Reports</span>
-            <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
+          <DropdownMenuItem asChild className="group cursor-pointer py-2 focus:bg-accent">
+            <Link href="/my-reports">
+              <FileText className="mr-2 h-4 w-4 text-muted-foreground group-focus:text-foreground" />
+              <span className="flex-1">My Reports</span>
+              <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
+            </Link>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

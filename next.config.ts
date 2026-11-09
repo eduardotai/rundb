@@ -29,6 +29,9 @@ const nextConfig: NextConfig = {
         pathname: '/steam/**',
       },
     ],
+    // Next.js 16 rejects (400) any `quality` not in this allowlist (default [75]).
+    // Covers use 90 (game-card) and 92 (game page hero); keep in sync with `quality=` props.
+    qualities: [75, 90, 92],
     // Minimum cache for optimized images (Next default good for our case)
     minimumCacheTTL: 60 * 60 * 24 * 30, // 30 days
     deviceSizes: [640, 750, 828, 1080, 1200, 1920],
