@@ -21,7 +21,7 @@ import { getStaffAccess } from '@/lib/admin-access'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { AdminReport, Report, PerformanceTier, ReportStatus, GraphicsPreset } from '@/lib/types'
 import { normalizeSlug } from '@/lib/utils'
-import { submitReport, updateReport, type ReportWriteDeps } from '@/lib/server/report-write'
+import { hardwareLookupPattern, submitReport, updateReport, type ReportWriteDeps } from '@/lib/server/report-write'
 import { castReportVote } from '@/lib/server/report-vote'
 import { UserFacingError, runAction, toActionFailure, type ActionResult } from '@/lib/action-result'
 import { cleanPublicReportNotes } from '@/lib/report-notes'
@@ -174,6 +174,18 @@ async function buildReportWriteDeps(): Promise<{ deps: ReportWriteDeps<any>; get
     async recordEdit(reportId, userId) {
       const { error } = await service.from('report_edits').insert({ report_id: reportId, user_id: userId })
       if (error) throw new Error(`edit log insert failed: ${error.message}`)
+    },
+    async isKnownHardware(name) {
+      // Both tables are publicly readable (RLS select = true), so the user client is enough.
+      const pattern = hardwareLookupPattern(name)
+      if (!pattern) return false
+      const [catalog, alias] = await Promise.all([
+        supabase.from('hardware_catalog').select('canonical').ilike('canonical', pattern).limit(1),
+        supabase.from('hardware_aliases').select('raw_string').ilike('raw_string', pattern).limit(1),
+      ])
+      if (catalog.error) console.error('[reports] hardware_catalog lookup error', catalog.error)
+      if (alias.error) console.error('[reports] hardware_aliases lookup error', alias.error)
+      return Boolean(catalog.data?.length || alias.data?.length)
     },
     now: () => Date.now(),
   }

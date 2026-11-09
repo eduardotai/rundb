@@ -1151,7 +1151,7 @@ export default function AdminPage() {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-semibold">Hardware Normalization Workbench</h2>
-              <p className="text-sm text-muted-foreground">Map raw user-entered strings (GPU/CPU) to canonical names for better matching.</p>
+              <p className="text-sm text-muted-foreground">Map raw user-entered strings (GPU/CPU) to canonical names for better matching. Reports held as &quot;CPU/GPU not in hardware catalog&quot;: approve them in the queue, then add an alias for that exact string so future reports with it publish without review.</p>
             </div>
             <Button onClick={() => openAliasDialog()} disabled={!canModerate} className="gap-2">
               <Plus className="h-4 w-4" /> Add Alias
