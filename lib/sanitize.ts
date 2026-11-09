@@ -67,6 +67,36 @@ export function sanitizeFullName(raw: string, maxLength = 80): string {
 }
 
 /**
+ * Sanitize free text in reports (notes, issues, tweaks, custom settings notes).
+ *
+ * Unlike sanitizeFullName this keeps normal punctuation (`, : ; % + ( ) / ! ? & # @ = *`),
+ * because tweaks read like "DLSS: Quality, FG on (60%)". XSS safety does not come from
+ * stripping punctuation: report text is only rendered as React text children (escaped;
+ * see tests/report-text-render.test.ts, which forbids dangerouslySetInnerHTML outside the
+ * repo-docs dashboard). Defense in depth on top of that:
+ * - control and invisible format characters are removed (incl. bidi overrides / zero-width)
+ * - `<`, `>` and backticks are removed so the text is inert even in an HTML/markdown context
+ * - script-capable URL schemes (`javascript:`, `vbscript:`, `data:` directly followed by a
+ *   payload) are neutralized; plain http(s) links stay visible as text and send the report
+ *   to moderator review (lib/report-input.ts)
+ * - whitespace is collapsed and the result capped at `maxLength`
+ */
+export function sanitizeReportText(raw: string, maxLength: number): string {
+  let text = raw
+    .replace(/[\p{Cc}\p{Cf}\p{Co}]/gu, ' ') // control, format (bidi, zero-width), private use
+    .replace(/[<>`]/g, '');                 // markup / template delimiters
+  // Script-capable schemes; repeat so nested input ("javajavascript:script:") can't reassemble one.
+  const scheme = /(?:javascript|vbscript|\bdata)\s*:(?=\S)/gi;
+  for (let prev = ''; prev !== text; ) {
+    prev = text;
+    text = text.replace(scheme, '');
+  }
+  text = text.replace(/\s+/g, ' ').trim();
+  if (text.length > maxLength) text = text.slice(0, maxLength).trimEnd();
+  return text;
+}
+
+/**
  * Sanitize search query (lightweight, permissive for free-text search / filter inputs):
  * - Allows spaces, punctuation, digits, unicode letters, apostrophes (Baldur's Gate 3, etc.)
  * - Strips control characters + dangerous XSS chars (< > " `)

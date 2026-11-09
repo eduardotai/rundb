@@ -14,7 +14,7 @@
  * Pure module (no server imports) so it can run in the browser, the server and tests.
  */
 import * as z from 'zod'
-import { sanitizeFullName } from '@/lib/sanitize'
+import { sanitizeFullName, sanitizeReportText } from '@/lib/sanitize'
 import { normalizeHardwareSync } from '@/lib/normalize-hardware'
 import type { GraphicsPreset, PerformanceTier } from '@/lib/types'
 
@@ -94,7 +94,7 @@ function hardwareName(label: string) {
     .pipe(z.string().min(REPORT_LIMITS.hardwareMin, `${label} is required.`))
 }
 
-/** Optional free text: sanitized, capped, '' -> undefined. */
+/** Optional short identifier-like text (RAM speed, driver version): strict name sanitizer. */
 function optionalText(label: string, max: number) {
   return z.preprocess(
     toOptionalString,
@@ -102,6 +102,18 @@ function optionalText(label: string, max: number) {
       .string({ error: `${label} must be text.` })
       .max(max, `${label} is too long (max ${max} characters).`)
       .transform((v) => sanitizeFullName(v, max) || undefined)
+      .optional(),
+  )
+}
+
+/** Optional free text (notes, issues, tweaks): keeps normal punctuation, see sanitizeReportText. */
+function optionalFreeText(label: string, max: number) {
+  return z.preprocess(
+    toOptionalString,
+    z
+      .string({ error: `${label} must be text.` })
+      .max(max, `${label} is too long (max ${max} characters).`)
+      .transform((v) => sanitizeReportText(v, max) || undefined)
       .optional(),
   )
 }
@@ -137,12 +149,12 @@ export const reportFieldShape = {
   resolution,
   refreshRate: optionalNumber('Refresh rate (Hz)', REPORT_LIMITS.refreshMinHz, REPORT_LIMITS.refreshMaxHz, { int: true }),
   settingsPreset: z.enum(GRAPHICS_PRESETS, { error: 'Pick a graphics preset.' }),
-  customSettingsNotes: optionalText('Custom settings notes', REPORT_LIMITS.customSettingsMax),
+  customSettingsNotes: optionalFreeText('Custom settings notes', REPORT_LIMITS.customSettingsMax),
   avgFps: requiredNumber('Average FPS', REPORT_LIMITS.fpsMin, REPORT_LIMITS.fpsMax),
   fps1PercentLow: optionalNumber('1% low FPS', 0, REPORT_LIMITS.fpsMax, { exclusiveMin: true }),
-  notes: optionalText('Notes', REPORT_LIMITS.notesMax),
-  issues: optionalText('Issues', REPORT_LIMITS.issuesMax),
-  tweaks: optionalText('Tweaks', REPORT_LIMITS.tweaksMax),
+  notes: optionalFreeText('Notes', REPORT_LIMITS.notesMax),
+  issues: optionalFreeText('Issues', REPORT_LIMITS.issuesMax),
+  tweaks: optionalFreeText('Tweaks', REPORT_LIMITS.tweaksMax),
   driverVersion: optionalText('Driver version', REPORT_LIMITS.driverMax),
 }
 

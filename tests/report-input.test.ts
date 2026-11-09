@@ -130,8 +130,12 @@ test('string length caps and sanitizing', () => {
   // Long notes are no longer cut at 80 characters by the sanitizer.
   const long = 'Smooth after the latest patch '.repeat(10).trim()
   assert.equal(submitReportInputSchema.parse(valid({ notes: long })).notes, long)
-  // Markup characters are stripped.
-  assert.equal(submitReportInputSchema.parse(valid({ notes: 'ok <b>bold</b>' })).notes, 'ok bboldb')
+  // Markup characters are stripped; normal punctuation is kept.
+  assert.equal(submitReportInputSchema.parse(valid({ notes: 'ok <b>bold</b>' })).notes, 'ok bbold/b')
+  assert.equal(
+    submitReportInputSchema.parse(valid({ tweaks: 'DLSS: Quality, FG on (60%) + RT/PT off!' })).tweaks,
+    'DLSS: Quality, FG on (60%) + RT/PT off!',
+  )
 })
 
 test('server requires a UUID game id; the client form accepts mock slugs', () => {
