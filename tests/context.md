@@ -13,6 +13,7 @@
 - `report-public-reads.test.ts`: static guard that public report reads in `lib/data.ts` filter `status = 'approved'`.
 - `action-result.test.ts`: result-value helper for Server Actions and a static check that admin/vote/moderation actions return `ActionResult`.
 - `report-vote.test.ts`: `lib/server/report-vote.ts` (auth, input checks, friendly DB error mapping).
+- `report-text-render.test.ts`: user text never reaches `dangerouslySetInnerHTML` (allowlist: repo-docs dashboard) or page metadata.
 - `admin-moderation.test.ts`: drives `lib/server/admin-moderation.ts` with an in-memory Supabase stub (RPC payloads, dedup, audit rows, bulk import) and guards the security shape of `supabase/migrations/20261109000400_admin_moderation.sql`.
 - Also check colocated `lib/*.test.ts` files for auth redirect, hardware detection, normalization-adjacent behavior, report notes, sanitization, similarity, Steam helpers, and trending.
 
