@@ -272,7 +272,7 @@ test('getAdminOverviewStats aggregates head-only counts', async () => {
 })
 
 test('admin moderation SQL keeps privileged paths locked down', () => {
-  const sql = readFileSync('supabase/incremental-admin-moderation.sql', 'utf8')
+  const sql = readFileSync('supabase/migrations/20261109000400_admin_moderation.sql', 'utf8')
 
   for (const fn of ['moderate_reports', 'delete_reports', 'moderate_report_images', 'delete_report_images']) {
     assert.match(sql, new RegExp(`CREATE OR REPLACE FUNCTION public\\.${fn}\\(`), `${fn} must exist`)

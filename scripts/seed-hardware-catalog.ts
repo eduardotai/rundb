@@ -7,7 +7,7 @@
  * This script now properly loads .env.local like all other scripts in the project.
  *
  * Prerequisites: hardware_catalog (and hardware_aliases) table must exist.
- *   - Use supabase/incremental-hardware-catalog.sql for existing projects, or full schema.sql for fresh.
+ *   - Apply supabase/migrations (supabase db reset locally, supabase db push --remote for a linked project).
  *   - Or: npm run setup:supabase (auto-applies when ACCESS_TOKEN/DATABASE_URL present).
  */
 
@@ -76,8 +76,8 @@ async function main() {
     console.log('  SUPABASE_SERVICE_ROLE_KEY=...  (go to your project Settings > API and copy the service_role key, NOT anon)');
     console.log('\nAlso ensure the hardware_catalog table exists in YOUR project:');
     console.log(`  - Open your project's SQL Editor: https://supabase.com/dashboard/project/YOUR-REF/sql/new`);
-    console.log('  - Fresh DB: paste & run the full supabase/schema.sql');
-    console.log('  - Existing DB: paste supabase/incremental-hardware-catalog.sql (or run `npm run setup:supabase` if you have access token for *your* project)');
+    console.log('  - Fresh DB: apply supabase/migrations (supabase db reset / supabase db push --remote)');
+    console.log('  - Existing DB: apply pending migrations with supabase db push --remote');
     console.log('');
     console.log('  On Windows/PowerShell, get CLEAN SQL (no > prompts):');
     console.log('    npm run copy:sql:hardware     # easiest - copies directly to clipboard');

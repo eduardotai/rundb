@@ -135,8 +135,8 @@ function SignUpForm() {
       // Pre-check username for duplicates (case-insensitive).
       // 1. Prefer the is_username_taken RPC (clean, no data leak).
       // 2. Fallback to direct query using ilike (works if the public "basic profile info" policy is applied,
-      //    which it is in incremental-security-rls.sql). This helps on localhost before the dedicated
-      //    incremental-username-uniqueness.sql has been run.
+      //    which it is in supabase/migrations). This helps on localhost before the dedicated
+      //    username-uniqueness index exists.
       let usernameTaken = false;
       try {
         const { data: taken, error: rpcError } = await supabase.rpc('is_username_taken', {

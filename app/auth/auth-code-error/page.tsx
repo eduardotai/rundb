@@ -28,7 +28,7 @@ const REASON_COPY: Record<string, { title: string; body: string }> = {
   },
   db_error: {
     title: 'Could not save Steam link',
-    body: 'Steam verified successfully, but saving the link failed (usually a missing database table or RLS policy). An admin needs to apply supabase/incremental-steam-linked-accounts.sql, then try again.',
+    body: 'Steam verified successfully, but saving the link failed (usually a missing database table or RLS policy). An admin needs to apply the database migrations in supabase/migrations, then try again.',
   },
 };
 

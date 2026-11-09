@@ -714,7 +714,7 @@ export default function AdminPage() {
             <div>
               <strong>Live mode:</strong> moderation, alias and image changes are written to Supabase through
               staff-checked Server Actions and <code>SECURITY DEFINER</code> RPCs, and every change is recorded in{' '}
-              <code>moderation_log</code>. Requires <code>supabase/incremental-admin-moderation.sql</code>.
+              <code>moderation_log</code>. Requires <code>supabase/migrations/20261109000400_admin_moderation.sql</code>.
             </div>
           </div>
         </div>
@@ -1031,7 +1031,7 @@ export default function AdminPage() {
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  Queue not available — run <code className="text-xs">supabase/incremental-game-ingest-queue.sql</code> then seed.
+                  Queue not available — apply <code className="text-xs">supabase/migrations</code> (<code className="text-xs">supabase db push --remote</code>) then seed.
                 </p>
               )}
             </div>
@@ -1292,7 +1292,7 @@ export default function AdminPage() {
             </ul>
             <p className="text-xs text-muted-foreground mt-6">
               Real mode: Server Actions in <code>app/actions/admin.ts</code> verify <code>profiles.role</code> (or the server-only
-              <code> ADMIN_EMAILS</code> allowlist) and call the audited RPCs from <code>supabase/incremental-admin-moderation.sql</code>
+              <code> ADMIN_EMAILS</code> allowlist) and call the audited RPCs from <code>supabase/migrations/20261109000400_admin_moderation.sql</code>
               (<code>moderate_reports</code>, <code>moderate_report_images</code>, admin-only deletes). Every change lands in <code>moderation_log</code>.
             </p>
           </div>

@@ -1,3 +1,6 @@
+-- Migration: Formerly supabase/incremental-hardware-catalog-igpu.sql (2026-07-08). Never applied to production as of 2026-11-09.
+-- Content below is unchanged from that file.
+
 -- Optional iGPU columns on hardware_catalog (CPU → integrated GPU linkage)
 -- Idempotent. Static catalog works without this; apply when using live DB overrides.
 

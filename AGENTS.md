@@ -46,10 +46,12 @@ Before saying a change is done, run lint, typecheck, test, and build, and report
 
 ## Supabase / database conventions
 
-- There is **no migrations folder**. SQL lives in `supabase/*.sql`: `schema.sql` + `incremental-*.sql`, applied by hand in the Supabase SQL editor.
-- Known gap: `supabase/schema.sql` is truncated (core tables like `reports`, `profiles`, enums and RLS are missing). It cannot rebuild the DB on its own. Do not treat it as the source of truth until a versioned baseline exists.
-- New SQL: add a new idempotent file (`CREATE ... IF NOT EXISTS`, `DROP POLICY IF EXISTS` + `CREATE POLICY`). Never edit history silently. State the apply order in the PR, and apply to a non-production project first.
-- When adding a column, update together: SQL, `lib/types.ts`, mappers in `lib/data.ts`, server actions, forms, tests, `supabase/context.md`.
+- **Source of truth: `supabase/migrations/`** (Supabase CLI, config in `supabase/config.toml`). The DB must rebuild from zero with `supabase db reset`; CI job `db` does that on every PR and runs `supabase/tests/smoke.sql`. Details and the production runbook: `supabase/README.md`.
+- Local DB (needs Docker): `supabase db start` (Postgres only), `supabase db reset` (re-apply all migrations), then `psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -f supabase/tests/smoke.sql`.
+- New schema change = new file `supabase/migrations/<YYYYMMDDHHMMSS>_<name>.sql` (`supabase migration new <name>`). Never edit a migration that production already has; add a new one. Make it re-runnable where cheap (`IF NOT EXISTS`, `DROP POLICY IF EXISTS` + `CREATE POLICY`).
+- `supabase/legacy/*.sql` are the old hand-applied scripts, kept for history. Do not apply or edit them.
+- Production is applied with `supabase db push --remote` by the owner, never by an agent. Drift check: run `supabase/tests/schema-signature.sql` on both databases and diff.
+- When adding a column, update together: migration, `lib/types.ts`, mappers in `lib/data.ts`, server actions, forms, tests, `supabase/context.md`.
 
 ## Security rules
 

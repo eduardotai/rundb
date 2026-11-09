@@ -15,7 +15,7 @@
  *        NEXT_PUBLIC_SUPABASE_URL=...
  *        NEXT_PUBLIC_SUPABASE_ANON_KEY=...
  *        (SUPABASE_SERVICE_ROLE_KEY=... only for write tests)
- *   2. (Recommended) Run schema.sql on the target DB first.
+ *   2. (Recommended) Apply supabase/migrations to the target DB first.
  *   3. Seed some real data: npm run ingest:games (or via /admin)
  *   4. Run:
  *        npx tsx scripts/phase5-e2e-real-data.ts
@@ -476,7 +476,7 @@ async function main() {
 
   if (failed > 0) {
     console.error('\n❌ Some flows failed. See details above. Do not flip NEXT_PUBLIC_USE_REAL_DATA in prod until fixed.');
-    console.error('   Recommended: run with a freshly seeded DB + full schema.sql applied.');
+    console.error('   Recommended: run with a freshly seeded DB + supabase/migrations applied.');
     process.exit(1);
   } else {
     console.log('\n✅ All exercised real-data flows are healthy.');

@@ -1,13 +1,14 @@
 # supabase Context
 
 ## Purpose
-`supabase/` owns the database schema, incremental SQL migrations, RLS policies, RPCs, privileged database behavior, and auth email templates for RunDB real-data mode.
+`supabase/` owns the database schema (versioned migrations), RLS policies, RPCs, privileged database behavior, and auth email templates for RunDB real-data mode.
 
 ## Read This First
-- `schema.sql`: source of truth for tables, enums, indexes, RLS, triggers, functions, RPCs, and phase-added columns.
-- `incremental-*.sql`: additive SQL changes for security, username uniqueness, game media, ingest queue, hardware catalog, reputation/voting, RLS performance, and admin moderation.
-- `incremental-admin-moderation.sql`: `report_images` moderation columns + RLS (only approved images public), `public.is_admin()`, append-only `public.moderation_log`, and SECURITY DEFINER RPCs (`moderate_reports`, `delete_reports`, `moderate_report_images`, `delete_report_images`). RPCs trust `p_actor` only for service_role callers; authenticated callers must pass `is_moderator_or_admin()` / `is_admin()`. Apply after the RLS performance and hardware catalog migrations.
-- `secure-profile-role.sql`: role-hardening helper for profile security.
+- `README.md`: layout, local workflow, how the baseline was built, production runbook.
+- `migrations/`: source of truth for tables, enums, indexes, RLS, triggers, functions, and RPCs. `20261109000000_baseline_prod_snapshot.sql` is production as of 2026-11-09; later files are changes on top.
+- `migrations/20261109000400_admin_moderation.sql`: `report_images` moderation columns + RLS (only approved images public), `public.is_admin()`, append-only `public.moderation_log`, and SECURITY DEFINER RPCs (`moderate_reports`, `delete_reports`, `moderate_report_images`, `delete_report_images`). RPCs trust `p_actor` only for service_role callers; authenticated callers must pass `is_moderator_or_admin()` / `is_admin()`.
+- `legacy/`: old hand-applied scripts, history only. Do not apply or edit.
+- `tests/smoke.sql`, `tests/schema-signature.sql`: post-reset checks and drift signature (CI job `db`).
 - `email-templates/README.md`, `confirm-signup.html`, `reset-password.html`: Supabase Auth email templates.
 
 ## Main Responsibilities
@@ -33,11 +34,11 @@
 - Preserve public-approved report reads: pending/rejected/flagged content should not leak through normal public queries.
 - Keep `SUPABASE_SERVICE_ROLE_KEY` server-only and never documented with real values.
 - Add indexes or bounded query patterns when introducing queries over reports, media, queue, or catalog tables.
-- Treat incremental SQL as deployable migration history; do not silently contradict `schema.sql`.
+- Every schema change is a new file in `migrations/` (`supabase migration new <name>`); never edit a migration production already has.
 
 ## Common Changes
 - Adding a report column: update table definition, RPC signature/defaults, insert logic, mapper, type, form, ReportCard display if visible, and tests.
-- Adding moderation behavior: extend the RPCs in `incremental-admin-moderation.sql` (keep the `private.resolve_moderation_actor` guard and `moderation_log` insert), then `lib/server/admin-moderation.ts`, `app/actions/admin.ts`, `lib/admin.ts`, the admin UI, and `tests/admin-moderation.test.ts`.
+- Adding moderation behavior: add a migration that replaces the RPCs from `migrations/20261109000400_admin_moderation.sql` (keep the `private.resolve_moderation_actor` guard and `moderation_log` insert), then `lib/server/admin-moderation.ts`, `app/actions/admin.ts`, `lib/admin.ts`, the admin UI, and `tests/admin-moderation.test.ts`.
 - Adding ingest metadata: update `games`, `game_media`, or queue SQL plus scripts and server ingest helpers.
 - Changing profile or user rig behavior: update auth trigger/profile policies, `user_rigs`, profile page components, saved-rig adapter logic, and auth tests if relevant.
 - Adding hardware catalog fields: update SQL, import/seed/verify scripts, catalog mapper, combobox display, and normalization logic.
@@ -47,7 +48,7 @@
 - Run `npm run test` for mapper and pure logic coverage after schema-driven changes.
 - Run `npm run lint` for TypeScript consumers.
 - Run `npm run build` when database types or actions change.
-- In a real Supabase project, apply SQL in a safe environment first and run `npx tsx scripts/supabase-health.ts`.
+- `supabase db reset` + `supabase/tests/smoke.sql` locally (CI job `db` runs both). For a real project, apply to a non-production project first and run `npx tsx scripts/supabase-health.ts`.
 - For hardware catalog SQL changes, run `npm run verify:hardware`.
 
 ## Related Context

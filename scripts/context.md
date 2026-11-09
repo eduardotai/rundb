@@ -34,7 +34,7 @@
 - Never commit secrets from `.env.local`, Supabase service-role keys, IGDB credentials, Steam keys, or generated logs containing them.
 - Treat scripts as potentially side-effectful. Prefer dry-run flags if the script supports them, and read the header/options before running.
 - Service-role operations belong in scripts and server-only helpers, not browser/client code.
-- Keep script insert/update shapes aligned with `supabase/schema.sql`, `lib/types.ts`, and `lib/data.ts` mappers.
+- Keep script insert/update shapes aligned with `supabase/migrations`, `lib/types.ts`, and `lib/data.ts` mappers.
 - Preserve idempotency where possible: queue and seed scripts should tolerate reruns without duplicating canonical rows.
 - Be careful with rate-limited external APIs; keep batching and retry behavior bounded.
 
