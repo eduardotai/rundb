@@ -59,6 +59,15 @@ import { cleanPublicReportNotes } from './report-notes'
 import type { MatchFilters, RigMatch } from './similarity'
 import { rankAndFilterMatches } from './similarity'
 import { rankTrendingGameIds, type TrendingRankRow } from './trending'
+import {
+  DataUnavailableError,
+  escapeIlike,
+  fetchApprovedReportRowsForGames,
+  fetchGlobalCounts,
+  fetchReportedGameRows,
+  type GlobalCounts,
+} from './data-queries'
+import { computeGameStatsFromReports as computeStatsForReports } from './data-logic'
 
 export const ALLOW_MOCK_DATA =
   process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_ALLOW_MOCK_DATA === 'true'
@@ -713,7 +722,7 @@ export async function getGamesPage(params: GetGamesPageParams = {}): Promise<Gam
 
   let query = supabase.from('games').select('*', { count: 'exact' })
 
-  if (search) query = query.ilike('name', `%${search}%`)
+  if (search) query = query.ilike('name', `%${escapeIlike(search)}%`)
   if (genre) query = query.contains('genres', [genre])
 
   // Sort meanings (Browse Games UI):
@@ -741,7 +750,7 @@ export async function getGamesPage(params: GetGamesPageParams = {}): Promise<Gam
   const result = await withSupabaseReadTimeout<any>(query.range(from, to), 'getGamesPage', timeoutMs)
 
   if (!result) {
-    return getStarterGamesPage({ page, pageSize, search, genre, sort })
+    throw new DataUnavailableError('games')
   }
 
   const { data, error, count } = result
@@ -757,7 +766,7 @@ export async function getGamesPage(params: GetGamesPageParams = {}): Promise<Gam
     // Prefer a real name-ordered page over starter so the full catalog stays visible
     if (effectiveSort !== 'name') {
       let fallback = supabase.from('games').select('*', { count: 'exact' }).order('name', { ascending: true })
-      if (search) fallback = fallback.ilike('name', `%${search}%`)
+      if (search) fallback = fallback.ilike('name', `%${escapeIlike(search)}%`)
       if (genre) fallback = fallback.contains('genres', [genre])
       const fb = await withSupabaseReadTimeout<any>(fallback.range(from, to), 'getGamesPage:nameFallback', timeoutMs)
       if (fb && !fb.error && (fb.count ?? 0) > 0) {
@@ -771,7 +780,7 @@ export async function getGamesPage(params: GetGamesPageParams = {}): Promise<Gam
         }
       }
     }
-    return getStarterGamesPage({ page, pageSize, search, genre, sort })
+    throw new DataUnavailableError('games', error)
   }
 
   const total = count ?? 0
@@ -787,53 +796,44 @@ export async function getGamesPage(params: GetGamesPageParams = {}): Promise<Gam
   }
 }
 
-/** Debounced game search for submit picker (real mode scales to 10k+). */
+/**
+ * Debounced game search (submit picker, reports filter, ⌘K).
+ *
+ * Empty query → the trending/most-active games (not the first N names A–Z, which in a
+ * 10k-game catalog are titles like "'83" and ".hack//G.U.").
+ * Real mode throws DataUnavailableError on Supabase errors/timeouts instead of silently
+ * returning starter games.
+ */
 export async function searchGames(query: string, limit = 25): Promise<Game[]> {
   const q = query.trim()
   if (!q) {
     if (USE_REAL && isSupabaseConfigured()) {
-      const { createClient } = await import('@/lib/supabase/client')
-      const supabase = createClient()
-      const result = await withSupabaseReadTimeout<any>(
-        supabase
-          .from('games')
-          .select('*')
-          .order('name', { ascending: true })
-          .limit(limit),
-        'searchGames'
-      )
-      if (!result) return []
-      const { data, error } = result
-      if (error) {
-        console.error('[data] searchGames initial load error:', error)
-        return []
-      }
-      if (data?.length) return enrichGamesWithCovers(data.map(mapDbGameToGame))
-      return []
+      const trending = await getTrendingGamesAsync(Math.min(limit, 48), 7)
+      return trending.games.slice(0, limit)
     }
     return searchStarterGames('', limit)
   }
 
   if (USE_REAL && isSupabaseConfigured()) {
+    const pattern = escapeIlike(q)
+    if (!pattern) return []
     const { createClient } = await import('@/lib/supabase/client')
     const supabase = createClient()
     const result = await withSupabaseReadTimeout<any>(
       supabase
         .from('games')
         .select('*')
-        .ilike('name', `%${q}%`)
+        .ilike('name', `%${pattern}%`)
         .order('name', { ascending: true })
         .limit(limit),
       'searchGames'
     )
 
-    if (!result) return searchStarterGames(q, limit)
-
+    if (!result) throw new DataUnavailableError('search results')
     const { data, error } = result
-
     if (error) {
       console.error('[data] searchGames error:', error)
-      return searchStarterGames(q, limit)
+      throw new DataUnavailableError('search results', error)
     }
     return enrichGamesWithCovers((data || []).map(mapDbGameToGame))
   }
@@ -1114,17 +1114,18 @@ export async function getReportsForGamesAsync(
 
       if (error) {
         console.error('[data] getReportsForGamesAsync Supabase error:', error)
-      } else {
-        for (const row of data || []) {
-          const r = mapDbReportToReport(row)
-          const arr = byGame.get(r.gameId)
-          if (arr) arr.push(r)
-          else byGame.set(r.gameId, [r])
-        }
-        return byGame
+        throw new DataUnavailableError('reports', error)
       }
+      for (const row of data || []) {
+        const r = mapDbReportToReport(row)
+        const arr = byGame.get(r.gameId)
+        if (arr) arr.push(r)
+        else byGame.set(r.gameId, [r])
+      }
+      return byGame
     } catch (err: any) {
       console.error('[data] getReportsForGamesAsync unexpected error:', err)
+      throw err instanceof DataUnavailableError ? err : new DataUnavailableError('reports', err)
     }
   }
 
@@ -1191,10 +1192,10 @@ export async function getTrendingGamesAsync(limit: number = 6, windowDays: numbe
         .limit(5000),
       'getTrendingGamesAsync.recent',
     )
-    if (!recentResult) return starterFallback()
+    if (!recentResult) throw new DataUnavailableError('trending games')
     if (recentResult.error) {
       console.error('[data] getTrendingGamesAsync recent query error:', recentResult.error)
-      return starterFallback()
+      throw new DataUnavailableError('trending games', recentResult.error)
     }
     const recentRows: TrendingRankRow[] = (recentResult.data || []).map((r: any) => ({
       gameId: r.game_id,
@@ -1225,7 +1226,8 @@ export async function getTrendingGamesAsync(limit: number = 6, windowDays: numbe
     }
 
     const { ids, recentCounts } = rankTrendingGameIds(recentRows, fallbackRows, safeLimit)
-    if (ids.length === 0) return starterFallback()
+    // No approved reports at all: nothing is trending or active. Return an empty row.
+    if (ids.length === 0) return { games: [], recentCounts: {} }
 
     // 3. Hydrate the chosen game rows in one query, then restore ranked order.
     const gamesResult = await withSupabaseReadTimeout<any>(
@@ -1234,10 +1236,9 @@ export async function getTrendingGamesAsync(limit: number = 6, windowDays: numbe
     )
     if (!gamesResult || gamesResult.error) {
       if (gamesResult?.error) console.error('[data] getTrendingGamesAsync games query error:', gamesResult.error)
-      return starterFallback()
+      throw new DataUnavailableError('trending games', gamesResult?.error)
     }
     const mapped = (gamesResult.data || []).map(mapDbGameToGame)
-    if (mapped.length === 0) return starterFallback()
 
     const enriched = await enrichGamesWithCovers(mapped)
     const byId = new Map<string, Game>(enriched.map((g) => [g.id, g]))
@@ -1246,7 +1247,7 @@ export async function getTrendingGamesAsync(limit: number = 6, windowDays: numbe
     return { games: ordered, recentCounts }
   } catch (err: any) {
     console.error('[data] getTrendingGamesAsync unexpected error:', err)
-    return starterFallback()
+    throw err instanceof DataUnavailableError ? err : new DataUnavailableError('trending games', err)
   }
 }
 
@@ -1255,35 +1256,50 @@ export async function getTrendingGamesAsync(limit: number = 6, windowDays: numbe
  * queries so no row payloads are transferred (vs. fetching reports just to read
  * `.length`).
  */
-export async function getGlobalCountsAsync(): Promise<{ totalGames: number; totalReports: number }> {
+export async function getGlobalCountsAsync(): Promise<GlobalCounts> {
   if (USE_REAL && isSupabaseConfigured()) {
-    try {
-      const { createClient } = await import('@/lib/supabase/client')
-      const supabase = createClient()
-
-      const [gamesRes, reportsRes] = await Promise.all([
-        supabase.from('games').select('id', { count: 'exact', head: true }),
-        supabase.from('reports').select('id', { count: 'exact', head: true }).eq('status', 'approved'),
-      ])
-
-      return {
-        totalGames: gamesRes.count ?? 0,
-        totalReports: reportsRes.count ?? 0,
-      }
-    } catch (err: any) {
-      console.error('[data] getGlobalCountsAsync error:', err)
-    }
+    const { createClient } = await import('@/lib/supabase/client')
+    return fetchGlobalCounts(createClient())
   }
 
   if (!ALLOW_MOCK_DATA) {
-    return { totalGames: 0, totalReports: 0 }
+    return { totalGames: 0, totalReports: 0, gamesWithReports: 0 }
   }
 
   const mock = await loadMockModule()
+  const reports = mock.getAllReports()
   return {
     totalGames: mock.getAllGames().length,
-    totalReports: mock.getAllReports().length,
+    totalReports: reports.length,
+    gamesWithReports: new Set(reports.map((r) => r.gameId)).size,
   }
+}
+
+/**
+ * Every game with at least one approved report (optionally narrowed by name search and
+ * genre) plus its community stats. Drives the /games tier filter, which can only match
+ * games that have reports. Returns null outside real mode (mock pages filter in memory).
+ */
+export async function getReportedGamesWithStatsAsync(opts: {
+  search?: string
+  genre?: string
+} = {}): Promise<{ games: Game[]; stats: Record<string, GameStats> } | null> {
+  if (!USE_REAL || !isSupabaseConfigured()) return null
+  const { createClient } = await import('@/lib/supabase/client')
+  const supabase = createClient()
+  const gameRows = await fetchReportedGameRows(supabase, opts)
+  const games = await enrichGamesWithCovers(gameRows.map(mapDbGameToGame))
+  const reportRows = await fetchApprovedReportRowsForGames(supabase, games.map((g) => g.id))
+  const byGame = new Map<string, Report[]>()
+  for (const row of reportRows) {
+    const r = mapDbReportToReport(row)
+    const list = byGame.get(r.gameId)
+    if (list) list.push(r)
+    else byGame.set(r.gameId, [r])
+  }
+  const stats: Record<string, GameStats> = {}
+  for (const g of games) stats[g.id] = computeStatsForReports(byGame.get(g.id) ?? [])
+  return { games, stats }
 }
 
 /** Dev-mock fallback for getFilteredGlobalReportsAsync (empty outside ALLOW_MOCK_DATA). */
@@ -1324,7 +1340,7 @@ export async function getAllReportsAsync(): Promise<Report[]> {
 
       if (error) {
         console.error('[data] getAllReportsAsync Supabase error:', error)
-        return getMockReports()
+        throw new DataUnavailableError('reports', error)
       }
 
       const base = (data || []).map((row: any) => {
@@ -1337,7 +1353,7 @@ export async function getAllReportsAsync(): Promise<Report[]> {
       return await enrichReportsWithReporters(base)
     } catch (err: any) {
       console.error('[data] getAllReportsAsync unexpected error:', err)
-      return getMockReports()
+      throw err instanceof DataUnavailableError ? err : new DataUnavailableError('reports', err)
     }
   }
   return getMockReports()
@@ -1389,15 +1405,19 @@ export async function getFilteredGlobalReportsAsync(filters: {
         .order('created_at', { ascending: false })
         .limit(300)
 
+      if (filters.gameSlug && !gameIdForFilter) return []
       if (gameIdForFilter) {
         q = q.eq('game_id', gameIdForFilter)
       }
+      // Cheap, indexable filters run server-side so the 300-row window holds matches only.
+      if (filters.tier) q = q.eq('performance_tier', filters.tier)
+      if (filters.minFps) q = q.gte('avg_fps', filters.minFps)
 
       const { data, error } = await q
 
       if (error) {
         console.error('[data] getFilteredGlobalReportsAsync Supabase error:', error)
-        return getMockFilteredGlobalReports(filters)
+        throw new DataUnavailableError('reports', error)
       }
 
       let reports = (data || []).map((row: any) => {
@@ -1420,7 +1440,7 @@ export async function getFilteredGlobalReportsAsync(filters: {
       return reports
     } catch (err: any) {
       console.error('[data] getFilteredGlobalReportsAsync unexpected error:', err)
-      return getMockFilteredGlobalReports(filters)
+      throw err instanceof DataUnavailableError ? err : new DataUnavailableError('reports', err)
     }
   }
   return getMockFilteredGlobalReports(filters)
@@ -2253,7 +2273,10 @@ export {
   predictForUserRigFromReports,
   applyGamesBrowseTransform,
   checkOfficialSpecsForRig,
+  getDominantTier,
 } from './data-logic'
+export { DataUnavailableError, escapeIlike } from './data-queries'
+export type { GlobalCounts } from './data-queries'
 
 // ============================================
 // HARDWARE CATALOG (Phase 6+ full database)

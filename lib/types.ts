@@ -199,8 +199,9 @@ export interface UserDevice {
 // Filter shapes used across UI
 export interface ReportFilters {
   resolution?: string;
-  gpuSeries?: string; // 'RTX 40' | 'RX 6000' etc.
+  gpuSeries?: string; // catalog series ('RTX 40', 'RDNA 3') or a model ('RX 7800 XT')
   minFps?: number;
+  tier?: PerformanceTier;
   maxFps?: number;
   preset?: GraphicsPreset | 'Any';
 }

@@ -6,6 +6,8 @@ import {
   getGamesPage,
   getAllGames,
   getAllReportsAsync,
+  getReportedGamesWithStatsAsync,
+  useAvailableGenres,
   computeGameStatsFromReports,
   applyGamesBrowseTransform,
   USE_REAL,
@@ -20,7 +22,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { sanitizeSearchQuery } from '@/lib/sanitize';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 
-const ALL_GENRES = ['Action', 'RPG', 'Open World', 'FPS', 'Competitive', 'Strategy', 'Shooter', 'Horror', 'Survival', 'Roguelike'];
 const TIERS: PerformanceTier[] = ['Excellent', 'Good', 'Playable', 'Struggling', 'Unplayable'];
 const PAGE_SIZE = 48;
 
@@ -41,19 +42,24 @@ export default function GamesPage() {
   }, [search]);
 
   const paginatedMode = USE_REAL;
-  // Tier filter needs the full search/genre set client-side (dominant tier is computed from reports).
+  // Tier filter: only games WITH reports can have a dominant tier, so real mode loads exactly
+  // that set (all reported games + their stats) instead of "the first N games" (PostgREST caps
+  // any page at 1,000 rows, which hid every reported game past row 1,000 A–Z).
   // Name / year / reports sorts are applied server-side via getGamesPage — do not re-sort and scramble them.
   const needsGlobalTransform = Boolean(selectedTier);
+  const tierMode = paginatedMode && needsGlobalTransform;
+  const { data: genreOptions = [] } = useAvailableGenres();
 
   const gamesQuery = useQuery({
     queryKey: paginatedMode
-      ? ['games-page', needsGlobalTransform ? 'full' : page, debouncedSearch, selectedGenres[0] || '', sort, selectedTier || '']
+      ? ['games-page', page, debouncedSearch, selectedGenres[0] || '', sort]
       : ['all-games'],
+    enabled: !tierMode,
     queryFn: () =>
       paginatedMode
         ? getGamesPage({
-            page: needsGlobalTransform ? 1 : page,
-            pageSize: needsGlobalTransform ? 10000 : PAGE_SIZE,
+            page,
+            pageSize: PAGE_SIZE,
             search: debouncedSearch || undefined,
             genre: selectedGenres[0],
             // Server applies: name=A–Z, year=newest release_year, reports=report_count
@@ -68,17 +74,29 @@ export default function GamesPage() {
           })),
   });
 
+  const reportedQuery = useQuery({
+    queryKey: ['reported-games-with-stats', debouncedSearch, selectedGenres[0] || ''],
+    enabled: tierMode,
+    queryFn: () =>
+      getReportedGamesWithStatsAsync({ search: debouncedSearch || undefined, genre: selectedGenres[0] }),
+  });
+
   const reportsQuery = useQuery({
     queryKey: ['all-reports-for-stats'],
     queryFn: () => getAllReportsAsync(),
   });
 
   const pageData = gamesQuery.data;
-  const rawGames = useMemo(() => pageData?.games ?? [], [pageData]);
+  const reportedData = reportedQuery.data;
+  const rawGames = useMemo(
+    () => (tierMode ? reportedData?.games ?? [] : pageData?.games ?? []),
+    [tierMode, reportedData, pageData]
+  );
   const reportsData = reportsQuery.data;
   const allReports = useMemo(() => reportsData || [], [reportsData]);
 
   const gameStatsMap = useMemo(() => {
+    if (tierMode && reportedData) return reportedData.stats;
     const map: Record<string, GameStats> = {};
     if (allReports.length === 0) return map;
     // Compute for received games. When needsGlobalTransform we requested the full search/genre set,
@@ -88,7 +106,7 @@ export default function GamesPage() {
       map[g.id] = computeGameStatsFromReports(greports);
     });
     return map;
-  }, [rawGames, allReports]);
+  }, [tierMode, reportedData, rawGames, allReports]);
 
   // Real mode without tier: trust server search/genre/sort order (do not re-sort with empty stats).
   // Mock mode: full client filter + sort. Tier filter: client dominant-tier pass + re-sort.
@@ -165,8 +183,8 @@ export default function GamesPage() {
     });
   };
 
-  const isLoading = gamesQuery.isLoading;
-  const isStatsLoading = reportsQuery.isLoading;
+  const isLoading = tierMode ? reportedQuery.isLoading : gamesQuery.isLoading;
+  const isStatsLoading = tierMode ? reportedQuery.isLoading : reportsQuery.isLoading;
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
@@ -224,7 +242,7 @@ export default function GamesPage() {
         <div>
           <div className="mb-1.5 text-xs uppercase tracking-widest text-muted-foreground">Genres</div>
           <div className="flex flex-wrap gap-2">
-            {ALL_GENRES.map((genre) => (
+            {genreOptions.slice(0, 12).map((genre) => (
               <button
                 key={genre}
                 onClick={() => toggleGenre(genre)}
@@ -268,7 +286,7 @@ export default function GamesPage() {
                   setSelectedTier(selectedTier === tier ? '' : tier);
                   setPage(1);
                 }}
-                disabled={isLoading || isStatsLoading || allReports.length === 0}
+                disabled={isLoading || isStatsLoading}
                 className={cn(
                   'rounded-full border px-3 py-1 text-sm transition',
                   selectedTier === tier ? 'border-primary bg-white text-black shadow-sm' : 'border-border hover:bg-muted',
@@ -345,7 +363,7 @@ export default function GamesPage() {
         </div>
       )}
 
-      {(gamesQuery.isError || reportsQuery.isError) && (
+      {((tierMode ? reportedQuery.isError : gamesQuery.isError) || reportsQuery.isError) && (
         <div className="mt-4 text-center text-sm text-amber-500">Some live stats unavailable — using partial data.</div>
       )}
     </div>

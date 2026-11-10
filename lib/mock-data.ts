@@ -30,6 +30,7 @@ import {
   MainResolution,
 } from './types';
 import { normalizeSlug } from './utils';
+import { gpuMatchesSeries } from './gpu-series';
 
 // Shared pure helpers (also used by lib/data.ts real paths) — moved to data-logic.ts
 import {
@@ -444,7 +445,7 @@ export function getFilteredGlobalReports(filters: {
     if (game) reports = reports.filter((r) => r.gameId === game.id);
   }
   if (filters.gpuSeries) {
-    reports = reports.filter((r) => r.gpu.toUpperCase().includes(filters.gpuSeries!.toUpperCase()));
+    reports = reports.filter((r) => gpuMatchesSeries(r.gpu, filters.gpuSeries!));
   }
   if (filters.minFps) {
     reports = reports.filter((r) => r.avgFps >= filters.minFps!);

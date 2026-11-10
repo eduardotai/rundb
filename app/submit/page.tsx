@@ -16,6 +16,7 @@ export default function SubmitPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [games, setGames] = useState<Game[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState(false);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const [showDialog, setShowDialog] = useState(false);
 
@@ -31,7 +32,16 @@ export default function SubmitPage() {
     });
     searchGames(debouncedSearch, 30)
       .then((results) => {
-        if (!cancelled) setGames(results);
+        if (!cancelled) {
+          setGames(results);
+          setSearchError(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setGames([]);
+          setSearchError(true);
+        }
       })
       .finally(() => {
         if (!cancelled) setIsSearching(false);
@@ -45,10 +55,11 @@ export default function SubmitPage() {
 
   const hint = useMemo(() => {
     if (isSearching) return 'Searching…';
+    if (searchError) return 'Search is unavailable right now. Please try again.';
     if (games.length === 0 && debouncedSearch) return 'No games match your search.';
     if (games.length === 0) return 'Start typing to search the catalog.';
     return `${games.length} game${games.length === 1 ? '' : 's'} found — click one to open the report form`;
-  }, [isSearching, games.length, debouncedSearch]);
+  }, [isSearching, searchError, games.length, debouncedSearch]);
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 md:py-14">

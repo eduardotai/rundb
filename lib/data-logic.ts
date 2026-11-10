@@ -24,11 +24,13 @@ import {
 // Hardware-aware similarity engine (catalog-powered, Phase 6+)
 import { calculateHardwareAwareSimilarity } from './similarity';
 import { checkOfficialSpecsForRig as checkOfficialSpecsForRigImpl } from './official-spec-check';
+import { gpuMatchesSeries } from './gpu-series';
 
 export function filterReports(reports: Report[], filters: ReportFilters): Report[] {
   return reports.filter((r) => {
     if (filters.resolution && r.resolution !== filters.resolution) return false;
-    if (filters.gpuSeries && !r.gpu.toUpperCase().includes(filters.gpuSeries.toUpperCase())) return false;
+    if (filters.gpuSeries && !gpuMatchesSeries(r.gpu, filters.gpuSeries)) return false;
+    if (filters.tier && r.performanceTier !== filters.tier) return false;
     if (filters.minFps && r.avgFps < filters.minFps) return false;
     if (filters.maxFps && r.avgFps > filters.maxFps) return false;
     if (filters.preset && filters.preset !== 'Any' && r.settingsPreset !== filters.preset) return false;
@@ -140,7 +142,7 @@ export interface GamesBrowseTransformOptions {
   sort: 'reports' | 'name' | 'year';
 }
 
-function getDominantTier(stats?: GameStats): PerformanceTier | null {
+export function getDominantTier(stats?: GameStats): PerformanceTier | null {
   if (!stats || stats.totalReports === 0) return null;
   const entries = Object.entries(stats.tierDistribution) as [PerformanceTier, number][];
   if (entries.length === 0) return null;

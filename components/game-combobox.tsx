@@ -54,8 +54,8 @@ export function GameCombobox({ value, onChange, games = [], disabled, className 
   }, [search]);
 
   // Only fetch a small, dynamic slice of games (matching the query, or the
-  // first RESULT_LIMIT alphabetically when empty) — never the full catalog.
-  const { data: results = [], isFetching } = useQuery({
+  // most active games when empty) — never the full catalog.
+  const { data: results = [], isFetching, isError } = useQuery({
     queryKey: ['game-combobox', debounced],
     queryFn: () => searchGames(debounced, RESULT_LIMIT),
     enabled: open,
@@ -108,7 +108,7 @@ export function GameCombobox({ value, onChange, games = [], disabled, className 
           />
           <CommandList>
             <CommandEmpty>
-              {isFetching ? 'Searching…' : 'No games found.'}
+              {isFetching ? 'Searching…' : isError ? 'Search is unavailable right now.' : 'No games found.'}
             </CommandEmpty>
 
             <CommandGroup>

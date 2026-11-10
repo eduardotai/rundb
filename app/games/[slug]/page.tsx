@@ -1,5 +1,6 @@
 'use client';
 
+import { GPU_SERIES_FILTER_OPTIONS } from '@/lib/gpu-series';
 import { useState, useMemo, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
@@ -285,7 +286,6 @@ function GameDetailInner({ game }: { game: Game }) {
     () => Array.from(new Set(allReports.map((r) => r.resolution))).slice(0, 6),
     [allReports]
   );
-  const gpuSeriesOptions = ['RTX 40', 'RTX 30', 'RTX 20', 'RX 6000', 'RX 7000'];
 
   // Sentinel value for "Any" options in Radix Select (empty string is forbidden)
   const ANY_FILTER_VALUE = '__any__';
@@ -570,8 +570,8 @@ function GameDetailInner({ game }: { game: Game }) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={ANY_FILTER_VALUE}>Any GPU series</SelectItem>
-                  {gpuSeriesOptions.map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  {GPU_SERIES_FILTER_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
