@@ -12,11 +12,11 @@ const TIER_ORDER: PerformanceTier[] = [
 ];
 
 const TIER_BAR: Record<PerformanceTier, string> = {
-  Excellent: 'bg-[var(--tier-excellent)]',
-  Good: 'bg-[var(--tier-good)]',
-  Playable: 'bg-[var(--tier-playable)]',
-  Struggling: 'bg-[var(--tier-struggling)]',
-  Unplayable: 'bg-[var(--tier-unplayable)]',
+  Excellent: 'bg-[var(--tier-excellent-fill)]',
+  Good: 'bg-[var(--tier-good-fill)]',
+  Playable: 'bg-[var(--tier-playable-fill)]',
+  Struggling: 'bg-[var(--tier-struggling-fill)]',
+  Unplayable: 'bg-[var(--tier-unplayable-fill)]',
 };
 
 const TIER_DOT: Record<PerformanceTier, string> = TIER_BAR;

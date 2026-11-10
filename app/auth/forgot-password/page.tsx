@@ -61,8 +61,8 @@ export default function ForgotPasswordPage() {
       <div className="mx-auto max-w-md px-4 py-16">
         <Card className="text-center">
           <CardHeader>
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30">
-              <MailCheck className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-info/10 dark:bg-info/12">
+              <MailCheck className="h-6 w-6 text-info dark:text-info" />
             </div>
             <CardTitle className="text-2xl">Check your email</CardTitle>
             <CardDescription className="pt-2">
@@ -147,7 +147,7 @@ export default function ForgotPasswordPage() {
 
           <p className="mt-6 text-center text-xs text-muted-foreground">
             Remembered your password?{' '}
-            <Link href="/auth/sign-in" className="text-primary hover:underline">
+            <Link href="/auth/sign-in" className="text-brand hover:underline">
               Sign in
             </Link>
           </p>

@@ -8,8 +8,8 @@ export default function EmailConfirmedPage() {
     <div className="mx-auto max-w-md px-4 py-12 sm:py-16">
       <Card className="text-center">
         <CardHeader>
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
-            <CheckCircle2 className="h-6 w-6 text-green-600 dark:text-green-400" />
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-success/10 dark:bg-success/12">
+            <CheckCircle2 className="h-6 w-6 text-success dark:text-success" />
           </div>
           <CardTitle className="text-2xl">Email confirmed</CardTitle>
           <CardDescription className="pt-2 text-base">

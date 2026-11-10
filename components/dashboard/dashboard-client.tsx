@@ -106,7 +106,7 @@ function TelemetryStrip({ status, gitAvailable }: { status: DashboardData['statu
       </div>
       <div className="h-4 w-px bg-[var(--hair)]" />
       <div className="flex items-center gap-2" title={status.clean ? 'working tree clean' : `${status.dirtyCount} uncommitted change(s)`}>
-        <CircleDot className={cn('h-3.5 w-3.5', status.clean ? 'text-emerald-400' : 'text-amber-400')} />
+        <CircleDot className={cn('h-3.5 w-3.5', status.clean ? 'text-success' : 'text-warning')} />
         <span className="text-[var(--ink-dim)]">{status.clean ? 'clean' : `${status.dirtyCount} dirty`}</span>
       </div>
       <div className="h-4 w-px bg-[var(--hair)]" />
@@ -264,7 +264,7 @@ function PlansTab({ plans }: { plans: PlanDoc[] }) {
               <span className="dash-mono flex items-center gap-2 text-[0.68rem] text-[var(--ink-faint)]">
                 <span className="text-[var(--phosphor-dim)]">{CATEGORY_LABEL[p.category] ?? p.category}</span>
                 · {p.sizeKb}KB · {p.words.toLocaleString()}w
-                {p.status && <span className="truncate text-emerald-400/80">· {p.status}</span>}
+                {p.status && <span className="truncate text-success/80">· {p.status}</span>}
               </span>
             </button>
           ))}
@@ -281,7 +281,7 @@ function PlansTab({ plans }: { plans: PlanDoc[] }) {
             <div className="flex flex-col gap-2 border-b border-[var(--hair)] px-6 py-5">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="dash-chip" data-active="true">{CATEGORY_LABEL[active.category] ?? active.category}</span>
-                {active.status && <span className="dash-chip text-emerald-400">{active.status}</span>}
+                {active.status && <span className="dash-chip text-success">{active.status}</span>}
                 <span className="dash-mono ml-auto text-xs text-[var(--ink-faint)]">{active.path}</span>
               </div>
               <h2 className="text-2xl font-semibold tracking-tight text-[var(--ink)]">{active.title}</h2>
@@ -413,8 +413,8 @@ function CommitRow({ commit }: { commit: CommitInfo }) {
               {commit.files.length > 0 && (
                 <span className="flex items-center gap-2">
                   <FileCode2 className="h-3 w-3" />{commit.files.length}
-                  {commit.added > 0 && <span className="text-emerald-400">+{commit.added}</span>}
-                  {commit.removed > 0 && <span className="text-red-400">−{commit.removed}</span>}
+                  {commit.added > 0 && <span className="text-success">+{commit.added}</span>}
+                  {commit.removed > 0 && <span className="text-destructive">−{commit.removed}</span>}
                 </span>
               )}
             </div>
@@ -431,8 +431,8 @@ function CommitRow({ commit }: { commit: CommitInfo }) {
                 {commit.files.map((f) => (
                   <div key={f.path} className="dash-mono flex items-center gap-2 text-xs">
                     <span className="flex w-16 shrink-0 items-center justify-end gap-1.5">
-                      {f.added >= 0 && <span className="text-emerald-400"><Plus className="inline h-2.5 w-2.5" />{f.added}</span>}
-                      {f.removed > 0 && <span className="text-red-400"><Minus className="inline h-2.5 w-2.5" />{f.removed}</span>}
+                      {f.added >= 0 && <span className="text-success"><Plus className="inline h-2.5 w-2.5" />{f.added}</span>}
+                      {f.removed > 0 && <span className="text-destructive"><Minus className="inline h-2.5 w-2.5" />{f.removed}</span>}
                     </span>
                     <span className="truncate text-[var(--ink-dim)]">{f.path}</span>
                   </div>
@@ -445,7 +445,7 @@ function CommitRow({ commit }: { commit: CommitInfo }) {
                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> loading diff…
               </div>
             )}
-            {err && <p className="py-2 text-xs text-amber-400">Diff unavailable for this commit.</p>}
+            {err && <p className="py-2 text-xs text-warning">Diff unavailable for this commit.</p>}
             {diff && <DiffView diff={diff.diff} truncated={diff.truncated} />}
           </div>
         )}

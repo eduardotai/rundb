@@ -65,14 +65,14 @@ function isStoredProfileAvatar(url?: string | null): boolean {
 function RoleBadge({ role }: { role: 'user' | 'moderator' | 'admin' }) {
   if (role === 'admin') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-400">
+      <span className="inline-flex items-center gap-1 rounded-full border border-warning/40 bg-warning/10 px-2.5 py-0.5 text-xs font-semibold text-warning">
         <ShieldCheck className="h-3 w-3" /> Admin
       </span>
     );
   }
   if (role === 'moderator') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-sky-500/40 bg-sky-500/10 px-2.5 py-0.5 text-xs font-semibold text-sky-400">
+      <span className="inline-flex items-center gap-1 rounded-full border border-info/40 bg-info/10 px-2.5 py-0.5 text-xs font-semibold text-info">
         <Shield className="h-3 w-3" /> Moderator
       </span>
     );
@@ -209,19 +209,13 @@ export function ProfileView({ user, data, steamLinked }: ProfileViewProps) {
       {/* ===== Hero ===== */}
       <div className="relative overflow-hidden rounded-2xl border border-border bg-card">
         {/* Banner */}
-        <div className="h-28 bg-gradient-to-r from-primary/25 via-accent/15 to-transparent sm:h-32">
-          <div
-            className="h-full w-full opacity-40"
-            style={{
-              backgroundImage:
-                'radial-gradient(circle at 20% 30%, rgba(103,232,249,0.25), transparent 40%), radial-gradient(circle at 80% 10%, rgba(34,211,238,0.18), transparent 45%)',
-            }}
-          />
+        <div className="relative h-28 overflow-hidden border-b border-border bg-muted sm:h-32">
+          <div aria-hidden className="hero-backdrop absolute inset-0" />
         </div>
 
         <div className="px-5 pb-5 sm:px-7 sm:pb-6">
-          <div className="-mt-12 flex flex-col gap-4 sm:-mt-14 sm:flex-row sm:items-end sm:justify-between">
-            <div className="flex items-end gap-4">
+          <div className="relative -mt-12 flex flex-col gap-4 sm:-mt-14 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex min-w-0 flex-col items-start gap-3 sm:flex-row sm:items-end sm:gap-4">
               <ProfileAvatar
                 name={displayName}
                 avatarUrl={editing ? (removeAvatar ? '' : avatarPreview || avatarUrl) : avatarUrl}
@@ -229,13 +223,13 @@ export function ProfileView({ user, data, steamLinked }: ProfileViewProps) {
                 className="shadow-lg"
               />
               {!editing && (
-                <div className="pb-1">
-                  <div className="flex items-center gap-2">
+                <div className="min-w-0 pb-1">
+                  <div className="flex flex-wrap items-center gap-2">
                     <h1 className="text-2xl font-semibold tracking-tight text-foreground">
                       {displayName}
                     </h1>
                     <RoleBadge role={role} />
-                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-300">
+                    <span className="inline-flex items-center gap-1 rounded-full border border-success/40 bg-success/10 px-2.5 py-0.5 text-xs font-semibold text-success">
                       <ShieldCheck className="h-3 w-3" /> {stats.credibilityBadge}
                     </span>
                   </div>
@@ -265,7 +259,7 @@ export function ProfileView({ user, data, steamLinked }: ProfileViewProps) {
 
           {/* Inline editor */}
           {editing && (
-            <div className="mt-4 grid gap-3 rounded-xl border border-border bg-background/60 p-4 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <div className="mt-4 grid gap-3 rounded-xl border border-border bg-muted/50 p-4 sm:grid-cols-[minmax(0,1fr)_auto]">
               <div>
                 <Label htmlFor="edit-username" className="text-xs text-muted-foreground">
                   Display name
@@ -349,9 +343,9 @@ export function ProfileView({ user, data, steamLinked }: ProfileViewProps) {
 
         {/* --- Overview --- */}
         <TabsContent value="overview" className="mt-5 space-y-5">
-          <div className="grid gap-5 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
             {/* Rig summary */}
-            <div className="rounded-xl border border-border bg-card p-5 lg:col-span-1">
+            <div className="surface p-5 lg:col-span-1">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                   My Rig
@@ -359,7 +353,7 @@ export function ProfileView({ user, data, steamLinked }: ProfileViewProps) {
                 {hasRig && (
                   <button
                     onClick={() => setTab('rig')}
-                    className="text-xs text-primary hover:underline"
+                    className="text-xs font-medium text-brand hover:underline"
                   >
                     Edit
                   </button>
@@ -392,7 +386,7 @@ export function ProfileView({ user, data, steamLinked }: ProfileViewProps) {
                   </p>
                   <button
                     onClick={() => setTab('rig')}
-                    className="mt-2 text-sm font-medium text-primary hover:underline"
+                    className="mt-2 text-sm font-medium text-brand hover:underline"
                   >
                     Add your hardware →
                   </button>
@@ -402,7 +396,7 @@ export function ProfileView({ user, data, steamLinked }: ProfileViewProps) {
 
             {/* Tier breakdown + recent */}
             <div className="space-y-5 lg:col-span-2">
-              <div className="rounded-xl border border-border bg-card p-5">
+              <div className="surface p-5">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                   Performance breakdown
                 </h2>
@@ -422,7 +416,7 @@ export function ProfileView({ user, data, steamLinked }: ProfileViewProps) {
                   {reports.length > 5 && (
                     <button
                       onClick={() => setTab('reports')}
-                      className="text-xs text-primary hover:underline"
+                      className="text-xs font-medium text-brand hover:underline"
                     >
                       View all
                     </button>
@@ -443,7 +437,7 @@ export function ProfileView({ user, data, steamLinked }: ProfileViewProps) {
           <ProfileRigEditor user={user} />
 
           {steamLinked && (
-            <div className="mt-3 rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-400">
+            <div className="mt-3 rounded-md border border-success/30 bg-success/5 p-3 text-sm text-success">
               Steam account linked successfully! You can now manage persistent devices/rigs and get verified badges on reports.
             </div>
           )}
@@ -491,8 +485,8 @@ export function ProfileView({ user, data, steamLinked }: ProfileViewProps) {
           </div>
 
           {user.isAnonymous && (
-            <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
-              <p className="font-medium text-amber-300">You&apos;re using a guest session</p>
+            <div className="mt-4 rounded-xl border border-warning/30 bg-warning/5 p-4 text-sm">
+              <p className="font-medium text-warning">You&apos;re using a guest session</p>
               <p className="mt-1 text-muted-foreground">
                 Create a permanent account to keep your rig, reports, and credibility across
                 devices.

@@ -178,7 +178,7 @@ export default function SubmitPage() {
             </p>
             <p className="mt-1 text-xs text-muted-foreground/80">
               Try a shorter or different spelling, or{' '}
-              <Link href="/games" className="text-primary underline-offset-2 hover:underline">browse the full catalog</Link>.
+              <Link href="/games" className="text-brand underline-offset-2 hover:underline">browse the full catalog</Link>.
             </p>
           </div>
         )}
@@ -208,7 +208,7 @@ export default function SubmitPage() {
 
       <p className="mt-6 text-center text-xs text-muted-foreground">
         Prefer browsing first?{' '}
-        <Link href="/games" className="text-primary underline-offset-2 hover:underline">
+        <Link href="/games" className="text-brand underline-offset-2 hover:underline">
           Go to the game list
         </Link>
       </p>

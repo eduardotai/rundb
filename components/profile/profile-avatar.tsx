@@ -10,13 +10,13 @@ interface ProfileAvatarProps {
 
 // Deterministic gradient per name so each user gets a stable, distinct identity color.
 const GRADIENTS = [
-  'from-neutral-200 to-neutral-500',
-  'from-violet-500 to-fuchsia-600',
-  'from-emerald-500 to-teal-600',
-  'from-amber-500 to-orange-600',
-  'from-rose-500 to-pink-600',
-  'from-indigo-500 to-sky-600',
-  'from-lime-500 to-green-600',
+  'from-stone-500 to-stone-700',
+  'from-zinc-500 to-zinc-700',
+  'from-slate-500 to-slate-700',
+  'from-neutral-500 to-neutral-700',
+  'from-[#6b70d6] to-[#3f45b3]',
+  'from-[#7a8a86] to-[#4c5a57]',
+  'from-[#8c7b6b] to-[#5e5045]',
 ];
 
 function hashName(name: string): number {

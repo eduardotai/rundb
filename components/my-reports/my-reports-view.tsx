@@ -154,7 +154,7 @@ export function MyReportsView({
           </p>
         </div>
         <Link href="/submit">
-          <Button className="gap-1.5 bg-white font-medium text-black hover:bg-white/90">
+          <Button className="gap-1.5 font-medium">
             <Plus className="h-4 w-4" />
             Submit a report
           </Button>

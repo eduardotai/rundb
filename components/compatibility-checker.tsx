@@ -7,7 +7,6 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { MatchFeed } from '@/components/match-feed';
-import { ValueLoopExplainer } from './value-loop-explainer';
 import { Game, UserPC, MAIN_RESOLUTIONS } from '@/lib/types';
 import {
   loadMyRigAsync,
@@ -19,7 +18,7 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { showUserError } from '@/lib/toast';
-import { Monitor, Save, Trash2 } from 'lucide-react';
+import { Gauge, Monitor, Save, Trash2 } from 'lucide-react';
 import { HardwareDetectButton } from '@/components/hardware-detect-button';
 import { DetectedHardwareBanner } from '@/components/detected-hardware-banner';
 import { PasteHardwareModal } from '@/components/paste-hardware-modal';
@@ -224,25 +223,27 @@ export function CompatibilityChecker({ embedded = false }: CompatibilityCheckerP
 
   return (
     <div className={embedded ? '' : 'max-w-5xl mx-auto'}>
-      <Card className="border-border/60">
-        <CardHeader className="pb-4">
-          <CardTitle className="flex items-center gap-2 text-xl">
-            <Monitor className="h-5 w-5 text-primary" /> My Rig — Check Compatibility
+      <Card>
+        <CardHeader className="pb-5">
+          <CardTitle className="flex items-center gap-3">
+            <span className="grid h-9 w-9 place-items-center rounded-xl bg-muted">
+              <Monitor className="h-[18px] w-[18px]" aria-hidden />
+            </span>
+            {myRig ? 'Your rig' : 'Tell us about your rig'}
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Save your hardware once. See predicted performance + matching reports across games.
+            Save your hardware once to see predicted performance and matching reports across games.
             {process.env.NEXT_PUBLIC_USE_REAL_DATA === 'true' && (
-              <span className="ml-1 text-emerald-400">(using real database reports + live hardware catalog)</span>
+              <span className="ml-1 text-success">(using real database reports + live hardware catalog)</span>
             )}
           </p>
-          {!embedded && <ValueLoopExplainer variant="compact" />}
         </CardHeader>
 
         <CardContent className="space-y-6">
           {/* Rig form */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
             <div className="lg:col-span-2">
-              <div className="flex items-center justify-between">
+              <div className="mb-1.5 flex items-center justify-between">
                 <Label>CPU</Label>
                 {HARDWARE_DETECT_UI_ENABLED && (
                   <HardwareDetectButton
@@ -271,7 +272,7 @@ export function CompatibilityChecker({ embedded = false }: CompatibilityCheckerP
               )}
             </div>
             <div className="lg:col-span-2">
-              <Label>GPU</Label>
+              <Label className="mb-1.5 block">GPU</Label>
               <HardwareCombobox
                 value={gpu}
                 onChange={(val) => setGpu(val)}
@@ -284,7 +285,7 @@ export function CompatibilityChecker({ embedded = false }: CompatibilityCheckerP
               />
             </div>
             <div>
-              <Label>RAM (GB)</Label>
+              <Label className="mb-1.5 block">RAM (GB)</Label>
               <Input
                 type="number"
                 value={ram}
@@ -293,7 +294,7 @@ export function CompatibilityChecker({ embedded = false }: CompatibilityCheckerP
               />
             </div>
             <div>
-              <Label>Preferred Resolution</Label>
+              <Label className="mb-1.5 block">Preferred resolution</Label>
               <Select
                 value={resolution}
                 onValueChange={(v) => setResolution(v as string)}
@@ -311,18 +312,18 @@ export function CompatibilityChecker({ embedded = false }: CompatibilityCheckerP
             </div>
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3 border-t border-border pt-5">
             <Button
               onClick={saveRig}
-              className="gap-2 bg-white text-black font-medium hover:bg-white/90"
+              className="gap-2 rounded-full px-5"
               disabled={isSaving || isLoadingRig || (!!myRig && !isDirty)}
             >
-              <Save className="h-4 w-4" /> {isSaving ? 'Saving...' : myRig ? 'Update Rig' : 'Save My Rig'}
+              <Save className="h-4 w-4" /> {isSaving ? 'Saving…' : myRig ? 'Update rig' : 'Save my rig'}
             </Button>
             {myRig && (
               <Button
                 variant="ghost"
-                className="gap-2 text-destructive/80 hover:bg-destructive/10 hover:text-destructive"
+                className="gap-2 rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive"
                 onClick={clearRig}
                 disabled={isSaving}
               >
@@ -335,14 +336,18 @@ export function CompatibilityChecker({ embedded = false }: CompatibilityCheckerP
           {myRig && <MatchFeed rig={myRig} allGames={allGames} />}
 
           {isLoading && !myRig && (
-            <div className="rounded-lg bg-muted/40 p-4 text-center text-sm text-muted-foreground">
+            <div className="rounded-2xl bg-muted/60 p-4 text-center text-sm text-muted-foreground">
               Loading your saved rig and games…
             </div>
           )}
 
           {!myRig && !isLoading && (
-            <div className="rounded-lg bg-muted/40 p-4 text-center text-sm text-muted-foreground">
-              Save your rig above to see personalized predictions and matching reports.
+            <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border bg-surface-2 px-6 py-10 text-center">
+              <Gauge className="h-7 w-7 text-muted-foreground" aria-hidden />
+              <div className="font-medium">Your predictions will appear here</div>
+              <p className="max-w-sm text-sm text-muted-foreground">
+                Pick your CPU and GPU above and save — we&apos;ll match you with reports from similar hardware.
+              </p>
             </div>
           )}
         </CardContent>

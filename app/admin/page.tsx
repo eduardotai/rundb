@@ -709,7 +709,7 @@ export default function AdminPage() {
 
       {/* Mode banner */}
       {USE_REAL ? (
-        <div className="mb-6 rounded-lg border border-emerald-900/60 bg-emerald-950/30 p-3 text-sm text-emerald-200">
+        <div className="mb-6 rounded-lg border border-success/30 bg-success/12 p-3 text-sm text-success">
           <div className="flex items-start gap-2">
             <Shield className="mt-0.5 h-4 w-4 flex-shrink-0" />
             <div>
@@ -720,7 +720,7 @@ export default function AdminPage() {
           </div>
         </div>
       ) : (
-        <div className="mb-6 rounded-lg border border-amber-900/60 bg-amber-950/30 p-3 text-sm text-amber-200">
+        <div className="mb-6 rounded-lg border border-warning/30 bg-warning/12 p-3 text-sm text-warning">
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
             <div>
@@ -746,7 +746,7 @@ export default function AdminPage() {
               <stat.icon className="h-4 w-4" />
               <span className="text-xs uppercase tracking-widest">{stat.label}</span>
             </div>
-            <div className={`mt-1 text-3xl font-semibold tabular-nums ${stat.highlight ? 'text-amber-400' : ''}`}>
+            <div className={`mt-1 text-3xl font-semibold tabular-nums ${stat.highlight ? 'text-warning' : ''}`}>
               {stat.value}
             </div>
           </div>
@@ -883,7 +883,7 @@ export default function AdminPage() {
                         <Button 
                           size="sm" 
                           variant="ghost" 
-                          className="h-7 text-green-400 hover:bg-green-950/60 hover:text-green-300"
+                          className="h-7 text-success hover:bg-success/12 hover:text-success"
                           disabled={!canModerate || isModeratingReport}
                           onClick={() => quickModerate(r.id, 'approved')}
                         >
@@ -892,7 +892,7 @@ export default function AdminPage() {
                         <Button 
                           size="sm" 
                           variant="ghost" 
-                          className="h-7 text-red-400 hover:bg-red-950/60 hover:text-red-300"
+                          className="h-7 text-destructive hover:bg-destructive/12 hover:text-destructive"
                           disabled={!canModerate || isModeratingReport}
                           onClick={() => quickModerate(r.id, 'rejected')}
                         >
@@ -969,14 +969,14 @@ export default function AdminPage() {
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-5 text-center text-sm">
                     <div className="rounded-lg bg-muted/40 p-2"><div className="text-lg font-semibold">{queueStats.pending}</div><div className="text-[10px] text-muted-foreground uppercase">Pending</div></div>
                     <div className="rounded-lg bg-muted/40 p-2"><div className="text-lg font-semibold">{queueStats.processing}</div><div className="text-[10px] text-muted-foreground uppercase">Processing</div></div>
-                    <div className="rounded-lg bg-muted/40 p-2"><div className="text-lg font-semibold text-green-500">{queueStats.done}</div><div className="text-[10px] text-muted-foreground uppercase">Done</div></div>
-                    <div className="rounded-lg bg-muted/40 p-2"><div className="text-lg font-semibold text-amber-500">{queueStats.failed}</div><div className="text-[10px] text-muted-foreground uppercase">Failed</div></div>
+                    <div className="rounded-lg bg-muted/40 p-2"><div className="text-lg font-semibold text-success">{queueStats.done}</div><div className="text-[10px] text-muted-foreground uppercase">Done</div></div>
+                    <div className="rounded-lg bg-muted/40 p-2"><div className="text-lg font-semibold text-warning">{queueStats.failed}</div><div className="text-[10px] text-muted-foreground uppercase">Failed</div></div>
                     <div className="rounded-lg bg-muted/40 p-2"><div className="text-lg font-semibold">{queueStats.total}</div><div className="text-[10px] text-muted-foreground uppercase">Total</div></div>
                   </div>
                   {queueStats.total > 0 && (
                     <div className="h-2 rounded-full bg-muted overflow-hidden">
                       <div
-                        className="h-full bg-green-500 transition-all"
+                        className="h-full bg-success transition-all"
                         style={{ width: `${Math.round((queueStats.done / queueStats.total) * 100)}%` }}
                       />
                     </div>
@@ -1012,7 +1012,7 @@ export default function AdminPage() {
                     <div className="text-xs space-y-1 max-h-32 overflow-y-auto">
                       <div className="font-medium text-muted-foreground">Recent failures</div>
                       {failedIngestRows.map((r) => (
-                        <div key={r.slug} className="font-mono text-[10px] text-amber-600/90">
+                        <div key={r.slug} className="font-mono text-[10px] text-warning/90">
                           {r.name}: {r.last_error ?? 'unknown'}
                         </div>
                       ))}
@@ -1092,7 +1092,7 @@ export default function AdminPage() {
               </div>
             )}
             {phase1SimResult && (
-              <div className="text-xs text-green-400">{phase1SimResult}</div>
+              <div className="text-xs text-success">{phase1SimResult}</div>
             )}
             {ingestActionResult && (
               <div className="rounded bg-primary/10 border border-primary/30 p-2 text-xs font-mono">{ingestActionResult}</div>
@@ -1449,7 +1449,7 @@ export default function AdminPage() {
             <Button 
               onClick={() => void saveAlias()}
               disabled={isSavingAlias}
-              className="bg-white text-black font-medium hover:bg-white/90"
+              className="bg-primary text-primary-foreground font-medium hover:bg-primary/90"
             >
               {isSavingAlias ? 'Saving...' : editingAlias ? 'Save Changes' : 'Add Alias'}
             </Button>

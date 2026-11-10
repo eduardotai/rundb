@@ -29,6 +29,7 @@ INSERT INTO public.reports (id, game_id, user_id, game_name, cpu, gpu, ram, reso
   ('00000000-0000-0000-0000-0000000a1a01', '00000000-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-00000000a11c', 'Policy Game', 'CPU', 'GPU', 16, '1080p', 'High', 60, 'Good', 'approved'),
   ('00000000-0000-0000-0000-0000000a1a02', '00000000-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-00000000a11c', 'Policy Game', 'CPU', 'GPU', 16, '1080p', 'High', 30, 'Struggling', 'pending'),
   ('00000000-0000-0000-0000-0000000b0b01', '00000000-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-000000000b0b', 'Policy Game', 'CPU', 'GPU', 16, '1080p', 'High', 90, 'Excellent', 'approved');
+UPDATE public.reports SET moderator_notes = 'Auto-review: FPS looks too high for this GPU' WHERE id = '00000000-0000-0000-0000-0000000a1a02';
 INSERT INTO public.report_images (id, report_id, image_url, status) VALUES
   ('00000000-0000-0000-0000-0000000e0001', '00000000-0000-0000-0000-0000000a1a01', 'https://img.test/approved.webp', 'approved'),
   ('00000000-0000-0000-0000-0000000e0002', '00000000-0000-0000-0000-0000000a1a01', 'https://img.test/pending.webp', 'pending');
@@ -624,6 +625,14 @@ BEGIN
       RETURN;
   END;
   RAISE EXCEPTION 'expected failure: owner cannot forge edit log rows';
+END $t$;
+
+-- My reports shows the moderation reason: the owner reads moderator_notes on her own pending report.
+DO $t$
+BEGIN
+  IF (SELECT moderator_notes FROM public.reports WHERE id = '00000000-0000-0000-0000-0000000a1a02') IS DISTINCT FROM 'Auto-review: FPS looks too high for this GPU' THEN
+    RAISE EXCEPTION 'assertion failed: owner reads moderator_notes on her own pending report';
+  END IF;
 END $t$;
 
 -- ===== bob (other user) =====

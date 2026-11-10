@@ -233,7 +233,7 @@ const STEPS = [
   {
     icon: Cpu,
     title: 'Save your rig once',
-    desc: 'Enter or auto-detect your CPU, GPU and RAM. It stays with your account.',
+    desc: 'Pick your CPU, GPU and RAM, or paste your system info to fill them in. Saved to your account when signed in, otherwise in this browser.',
   },
   {
     icon: Gauge,

@@ -152,7 +152,7 @@ export default function ReportsBrowser() {
       gameSearchResults.map((g) => ({
         value: g.slug,
         label: g.name,
-        hint: String(g.releaseYear),
+        hint: g.releaseYear ? String(g.releaseYear) : undefined, // unknown year is stored as 0
       })),
     [gameSearchResults]
   );
