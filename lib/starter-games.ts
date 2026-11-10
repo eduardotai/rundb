@@ -268,7 +268,8 @@ export const GAMES: Game[] = [
     id: 'g23',
     slug: 'horizon-forbidden-west',
     name: 'Horizon Forbidden West',
-    coverImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1656320/library_600x900_2x.jpg',
+    // Steam has no portrait capsule for this app (legacy library path 404s); header art instead.
+    coverImage: 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1656320/header.jpg',
     genres: ['Action', 'RPG', 'Open World'],
     releaseYear: 2024,
     developer: 'Guerrilla Games',

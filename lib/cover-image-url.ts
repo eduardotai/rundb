@@ -4,16 +4,32 @@
  * Problems solved:
  * - Steam `library_600x900.jpg` is half-res (300×450); `_2x` is true 600×900.
  * - IGDB `t_cover_big` is ~264×374; use `t_cover_big_2x` or `t_original` when ingesting/displaying.
- * - Supabase public URLs need `/render/image/` for on-the-fly transforms (not ?width on /object/public/).
+ * - Steam moved newer apps' art to content-hashed paths
+ *   (`shared.akamai.steamstatic.com/store_item_assets/steam/apps/<id>/<hash>/library_capsule_2x.jpg`).
+ *   The legacy guessed path `/steam/apps/<id>/library_600x900_2x.jpg` 404s for those apps, so a
+ *   hashed URL is authoritative and must never be rewritten back to the guessed one.
+ * - Supabase `/render/image/` transforms need the Image Transformations add-on. Without it the
+ *   endpoint answers 403 FeatureNotEnabled, so it is opt-in via NEXT_PUBLIC_SUPABASE_IMAGE_TRANSFORMS.
  */
 
 const STEAM_HOSTS = ['steamstatic.com', 'steamcdn-a.akamaihd.net']
 
+/** Inlined at build time; only `true` when the Supabase project has Image Transformations. */
+const SUPABASE_IMAGE_TRANSFORMS = process.env.NEXT_PUBLIC_SUPABASE_IMAGE_TRANSFORMS === 'true'
+
 /** Parse Steam AppID from a Steam CDN cover URL, if present. */
 export function extractSteamAppIdFromUrl(url: string): string | null {
   if (!url) return null
-  const m = url.match(/steam(?:cdn[^\s/]*|static)\.com\/steam\/apps\/(\d+)\//i)
+  const m = url.match(/steam(?:cdn[^\s/]*|static)\.com\/(?:store_item_assets\/)?steam\/apps\/(\d+)\//i)
   return m?.[1] ?? null
+}
+
+/** Steam's current content-hashed asset host (URLs come from IStoreBrowseService assets). */
+export const STEAM_STORE_ASSET_BASE = 'https://shared.akamai.steamstatic.com/store_item_assets/'
+
+/** True for an authoritative, content-hashed Steam asset URL (never rewrite these). */
+export function isSteamStoreAssetUrl(url: string): boolean {
+  return /steamstatic\.com\/store_item_assets\//i.test(url)
 }
 
 /** Build Steam portrait library art at full CDN resolution. */
@@ -66,7 +82,7 @@ export function upgradeCoverImageSrc(src: string, steamAppId?: string | number |
   const fieldAppId = steamAppId != null ? String(steamAppId) : null
   const effectiveAppId = urlAppId ?? fieldAppId
 
-  if (effectiveAppId && STEAM_HOSTS.some((h) => out.includes(h))) {
+  if (effectiveAppId && STEAM_HOSTS.some((h) => out.includes(h)) && !isSteamStoreAssetUrl(out)) {
     out = steamLibraryCoverUrl(effectiveAppId, true)
   }
   return out
@@ -78,7 +94,8 @@ export function upgradeCoverImageSrc(src: string, steamAppId?: string | number |
 export function buildCoverLoaderUrl(
   src: string,
   width: number,
-  quality = 85
+  quality = 85,
+  supabaseTransforms = SUPABASE_IMAGE_TRANSFORMS
 ): string {
   if (!src) return src
   const w = Math.min(Math.max(Math.round(width), 200), 1920)
@@ -89,8 +106,13 @@ export function buildCoverLoaderUrl(
   try {
     const url = new URL(upgradeCoverImageSrc(src))
 
-    // Supabase Storage image transformation API
-    if (url.hostname.includes('supabase.co') && url.pathname.includes('/storage/v1/object/public/')) {
+    // Supabase Storage image transformation API: opt-in only. Without the add-on the
+    // /render/image/ endpoint returns 403 FeatureNotEnabled and every Storage cover breaks.
+    if (
+      supabaseTransforms &&
+      url.hostname.includes('supabase.co') &&
+      url.pathname.includes('/storage/v1/object/public/')
+    ) {
       url.pathname = url.pathname.replace(
         '/storage/v1/object/public/',
         '/storage/v1/render/image/public/'

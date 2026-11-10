@@ -14,7 +14,7 @@ BEGIN
   FROM unnest(ARRAY[
     'games', 'game_ingest_queue', 'game_media', 'profiles', 'user_rigs', 'reports',
     'report_votes', 'report_images', 'hardware_aliases', 'hardware_catalog',
-    'linked_accounts', 'moderation_log', 'report_edits'
+    'linked_accounts', 'moderation_log', 'report_edits', 'catalog_sync_runs'
   ]) AS t
   WHERE to_regclass('public.' || t) IS NULL;
   IF missing IS NOT NULL THEN
@@ -223,6 +223,25 @@ BEGIN
   IF NOT has_table_privilege('service_role', 'public.report_edits', 'INSERT')
      OR NOT has_table_privilege('service_role', 'public.report_edits', 'SELECT') THEN
     RAISE EXCEPTION 'service_role must read and insert public.report_edits';
+  END IF;
+END $$;
+
+-- 5c. catalog sync: run log is server-only; the service role can update and insert games.
+DO $$
+BEGIN
+  IF has_table_privilege('anon', 'public.catalog_sync_runs', 'SELECT')
+     OR has_table_privilege('authenticated', 'public.catalog_sync_runs', 'SELECT')
+     OR has_table_privilege('authenticated', 'public.catalog_sync_runs', 'INSERT') THEN
+    RAISE EXCEPTION 'public.catalog_sync_runs must not be accessible to anon/authenticated';
+  END IF;
+  IF NOT has_table_privilege('service_role', 'public.catalog_sync_runs', 'INSERT')
+     OR NOT has_table_privilege('service_role', 'public.games', 'UPDATE')
+     OR NOT has_table_privilege('service_role', 'public.games', 'INSERT') THEN
+    RAISE EXCEPTION 'service_role must insert catalog_sync_runs and update/insert games';
+  END IF;
+  IF to_regclass('public.idx_games_steam_app_id') IS NULL
+     OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'games' AND column_name = 'last_synced_at') THEN
+    RAISE EXCEPTION 'catalog sync migration not applied (idx_games_steam_app_id / games.last_synced_at)';
   END IF;
 END $$;
 
