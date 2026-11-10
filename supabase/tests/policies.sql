@@ -12,6 +12,19 @@ INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
 UPDATE public.profiles SET role = 'moderator' WHERE id = '00000000-0000-0000-0000-00000000000d';
 UPDATE public.profiles SET steam_id = '76561190000000001', steam_persona = 'alice_steam', main_cpu = 'Ryzen 5' WHERE id = '00000000-0000-0000-0000-00000000a11c';
 INSERT INTO public.games (id, slug, name) VALUES ('00000000-0000-0000-0000-0000000000f1', 'policy-game', 'Policy Game');
+-- search_games ranking fixtures: a substring hit, a word-start hit, two prefix hits (one with reports),
+-- wildcard decoys and 60 bulk rows for the 50-row cap.
+INSERT INTO public.games (slug, name, report_count) VALUES
+  ('sg-a-tech-cybernetic-vr', 'A-Tech Cybernetic VR', 0),
+  ('sg-bomb-rush-cyberfunk', 'Bomb Rush Cyberfunk', 0),
+  ('sg-cyberpunk-2077', 'Cyberpunk 2077', 3),
+  ('sg-cyber-hook', 'Cyber Hook', 0),
+  ('sg-100-orange-juice', '100% Orange Juice', 0),
+  ('sg-game-1000', 'Game 1000', 0),
+  ('sg-axb-test', 'AxB Test', 0),
+  ('sg-cyberpunkdreams', 'cyberpunkdreams', 0),
+  ('sg-cyberpunk-ue', 'Cyberpunk 2077: Ultimate Edition', 0);
+INSERT INTO public.games (slug, name) SELECT 'sg-bulk-' || i, 'Bulk Game ' || i FROM generate_series(1, 60) i;
 INSERT INTO public.reports (id, game_id, user_id, game_name, cpu, gpu, ram, resolution, settings_preset, avg_fps, performance_tier, status) VALUES
   ('00000000-0000-0000-0000-0000000a1a01', '00000000-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-00000000a11c', 'Policy Game', 'CPU', 'GPU', 16, '1080p', 'High', 60, 'Good', 'approved'),
   ('00000000-0000-0000-0000-0000000a1a02', '00000000-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-00000000a11c', 'Policy Game', 'CPU', 'GPU', 16, '1080p', 'High', 30, 'Struggling', 'pending'),
@@ -215,6 +228,36 @@ END $t$;
 DO $t$
 BEGIN
   IF NOT (public.is_username_taken('alice')) THEN RAISE EXCEPTION 'assertion failed: is_username_taken sees existing usernames'; END IF;
+END $t$;
+
+-- search_games (anon): prefix-first ranking, literal wildcards, empty input, row cap.
+DO $t$
+DECLARE names text[];
+BEGIN
+  SELECT array_agg(name) INTO names FROM public.search_games('cyber', 8);
+  IF array_length(names, 1) IS DISTINCT FROM 6 THEN RAISE EXCEPTION 'search_games(cyber) expected 6 rows, got %', names; END IF;
+  IF names[1] <> 'Cyber Hook' THEN RAISE EXCEPTION 'search_games(cyber) expected the whole-word prefix hit first, got %', names; END IF;
+  IF names[2] <> 'Cyberpunk 2077' THEN RAISE EXCEPTION 'search_games(cyber) expected prefix hits with more reports next, got %', names; END IF;
+  IF NOT (names[5:6] @> ARRAY['A-Tech Cybernetic VR', 'Bomb Rush Cyberfunk']) THEN
+    RAISE EXCEPTION 'search_games(cyber) expected word/substring hits after prefix hits, got %', names;
+  END IF;
+  SELECT array_agg(name) INTO names FROM public.search_games('cyberpunk', 3);
+  IF names[1] <> 'Cyberpunk 2077' OR names[2] <> 'Cyberpunk 2077: Ultimate Edition' OR names[3] <> 'cyberpunkdreams' THEN
+    RAISE EXCEPTION 'search_games(cyberpunk) expected whole-word prefix hits before in-word ones, got %', names;
+  END IF;
+  IF (SELECT name FROM public.search_games('  CYBER HOOK ', 8) LIMIT 1) <> 'Cyber Hook' THEN
+    RAISE EXCEPTION 'search_games: exact (trimmed, case-insensitive) match must rank first';
+  END IF;
+  SELECT array_agg(name) INTO names FROM public.search_games('100%', 8);
+  IF names IS DISTINCT FROM ARRAY['100% Orange Juice'] THEN RAISE EXCEPTION 'search_games(100%%) must treat %% literally, got %', names; END IF;
+  IF EXISTS (SELECT 1 FROM public.search_games('a_b', 8)) THEN RAISE EXCEPTION 'search_games(a_b) must treat _ literally'; END IF;
+  IF EXISTS (SELECT 1 FROM public.search_games('', 8)) OR EXISTS (SELECT 1 FROM public.search_games('   ', 8))
+     OR EXISTS (SELECT 1 FROM public.search_games(NULL, 8)) THEN
+    RAISE EXCEPTION 'search_games: empty input must return no rows';
+  END IF;
+  IF (SELECT count(*) FROM public.search_games('bulk game', 1000)) <> 50 THEN RAISE EXCEPTION 'search_games: max_results must be capped at 50'; END IF;
+  IF (SELECT count(*) FROM public.search_games('bulk game', 0)) <> 1 THEN RAISE EXCEPTION 'search_games: max_results must be at least 1'; END IF;
+  IF (SELECT count(*) FROM public.search_games('bulk game')) <> 8 THEN RAISE EXCEPTION 'search_games: default max_results must be 8'; END IF;
 END $t$;
 
 -- ===== alice (owner) =====

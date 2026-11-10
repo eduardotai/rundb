@@ -53,6 +53,8 @@ incremental scripts and some manual changes.
 | `20261109000300_hardware_catalog_igpu` | `incremental-hardware-catalog-igpu.sql` | adds `hardware_catalog.has_igpu`, `igpu_canonical` |
 | `20261109000400_admin_moderation` | `incremental-admin-moderation.sql` | adds `report_images.status` (**existing images become `pending`, hidden from the public until approved**), `is_admin()`, `moderation_log`, and the moderation RPCs that `lib/server/admin-moderation.ts` already calls |
 | `20261109000500_security_hardening` | PR 4 | column grants on `profiles` (public columns only; own private columns via `get_my_profile()`), Steam links written only server-side, owner image/vote policies with `WITH CHECK`, no self-votes, no raw owner edits of reports, `EXECUTE` revoked on internal functions, no `TRUNCATE`/`TRIGGER`/`REFERENCES`/`MAINTAIN` for API roles, anon read-only |
+| `20261110001000_search_games_rpc` | PR 2 of the redesign plan | adds `search_games(q, max_results)` (SECURITY INVOKER, EXECUTE for `anon`/`authenticated`/`service_role`): type-ahead ranking exact > prefix > word prefix > `report_count` > trigram similarity, LIKE wildcards escaped, max 50 rows |
+| `20261110001100_search_games_word_prefix` | PR 2 follow-up | `search_games` ranks whole-word prefix hits ("Cyberpunk 2077" for `cyberpunk`) above in-word ones ("cyberpunkdreams"); same signature and grants |
 
 Platform-owned objects are not in migrations: roles, the `auth`/`storage` schemas,
 `pgcrypto`/`uuid-ossp`, the `ensure_rls` event trigger (`public.rls_auto_enable`), and bucket

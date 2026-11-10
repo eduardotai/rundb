@@ -65,6 +65,7 @@ import {
   fetchApprovedReportRowsForGames,
   fetchGlobalCounts,
   fetchReportedGameRows,
+  fetchSearchGameRows,
   type GlobalCounts,
 } from './data-queries'
 import { computeGameStatsFromReports as computeStatsForReports } from './data-logic'
@@ -815,27 +816,14 @@ export async function searchGames(query: string, limit = 25): Promise<Game[]> {
   }
 
   if (USE_REAL && isSupabaseConfigured()) {
-    const pattern = escapeIlike(q)
-    if (!pattern) return []
     const { createClient } = await import('@/lib/supabase/client')
     const supabase = createClient()
-    const result = await withSupabaseReadTimeout<any>(
-      supabase
-        .from('games')
-        .select('*')
-        .ilike('name', `%${pattern}%`)
-        .order('name', { ascending: true })
-        .limit(limit),
+    const rows = await withSupabaseReadTimeout<any[]>(
+      fetchSearchGameRows(supabase, q, limit),
       'searchGames'
     )
-
-    if (!result) throw new DataUnavailableError('search results')
-    const { data, error } = result
-    if (error) {
-      console.error('[data] searchGames error:', error)
-      throw new DataUnavailableError('search results', error)
-    }
-    return enrichGamesWithCovers((data || []).map(mapDbGameToGame))
+    if (!rows) throw new DataUnavailableError('search results')
+    return enrichGamesWithCovers(rows.map(mapDbGameToGame))
   }
 
   return searchStarterGames(q, limit)
