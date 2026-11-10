@@ -15,12 +15,11 @@ import {
 import { PerformanceTier, GameStats, Game } from '@/lib/types';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { sanitizeSearchQuery } from '@/lib/sanitize';
-import { X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Search, SearchX, Gamepad2 } from 'lucide-react';
 
 const TIERS: PerformanceTier[] = ['Excellent', 'Good', 'Playable', 'Struggling', 'Unplayable'];
 const PAGE_SIZE = 48;
@@ -185,35 +184,69 @@ export default function GamesPage() {
 
   const isLoading = tierMode ? reportedQuery.isLoading : gamesQuery.isLoading;
   const isStatsLoading = tierMode ? reportedQuery.isLoading : reportsQuery.isLoading;
+  // The game list itself failed: say so instead of "no games" (fetchers throw since #78).
+  const listError = tierMode ? reportedQuery.isError : gamesQuery.isError;
+  const retryList = () => (tierMode ? reportedQuery.refetch() : gamesQuery.refetch());
+
+  const tierFill: Record<PerformanceTier, string> = {
+    Excellent: 'var(--tier-excellent-fill)',
+    Good: 'var(--tier-good-fill)',
+    Playable: 'var(--tier-playable-fill)',
+    Struggling: 'var(--tier-struggling-fill)',
+    Unplayable: 'var(--tier-unplayable-fill)',
+  };
+
+  const clearAll = () => {
+    setSearch('');
+    setDebouncedSearch('');
+    setSelectedGenres([]);
+    setSelectedTier('');
+    setPage(1);
+  };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
+    <div className="mx-auto max-w-7xl px-4 pb-16 pt-10 sm:px-6">
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Browse Games</h1>
-          <p className="text-muted-foreground">Search and filter by community performance data.</p>
-        </div>
-        <div className="text-sm text-muted-foreground">
-          {isLoading
-            ? 'Loading…'
-            : paginatedMode
-              ? `${totalGames} games${selectedTier ? ' (tier-filtered)' : ''} · page ${effectivePage}/${effectiveTotalPages}`
-              : `${postFilterSortAll.length} games shown`}
+          <h1 className="theme-page-title">Browse games</h1>
+          <p className="mt-1.5 text-muted-foreground">
+            Search the catalog and filter by how games actually run for the community.
+          </p>
         </div>
       </div>
 
-      <div className="mt-6 space-y-4">
-        <div className="flex flex-col gap-3 md:flex-row">
-          <Input
-            placeholder="Search games or developers..."
-            value={search}
-            onChange={(e) => setSearch(sanitizeSearchQuery(e.target.value))}
-            className="md:w-80"
-            disabled={isLoading}
-          />
+      <div className="sticky top-[var(--header-h)] z-30 -mx-4 mt-6 border-b border-border bg-background/85 px-4 py-3 backdrop-blur-md sm:-mx-6 sm:px-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center">
+          <div className="relative md:w-96">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <Input
+              placeholder="Search games or developers…"
+              aria-label="Search games or developers"
+              value={search}
+              onChange={(e) => setSearch(sanitizeSearchQuery(e.target.value))}
+              className="h-11 rounded-full pl-9 pr-9"
+              disabled={isLoading}
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-2 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label="Clear search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-muted-foreground">Sort:</span>
+          <div className="flex items-center gap-3 md:ml-auto">
+            <span className="text-sm tabular-nums text-muted-foreground" aria-live="polite">
+              {isLoading
+                ? 'Loading…'
+                : paginatedMode
+                  ? `${totalGames} games${effectiveTotalPages > 1 ? ` · page ${effectivePage}/${effectiveTotalPages}` : ''}`
+                  : `${postFilterSortAll.length} games`}
+            </span>
             <Select
               value={sort}
               onValueChange={(v) => {
@@ -222,12 +255,7 @@ export default function GamesPage() {
               }}
               disabled={isLoading}
             >
-              <SelectTrigger
-                className={cn(
-                  'h-10 w-[180px]',
-                  'border-primary/70 bg-primary/5 ring-1 ring-inset ring-primary/25'
-                )}
-              >
+              <SelectTrigger className="ml-auto h-11 w-[170px] rounded-full md:ml-0" aria-label="Sort games">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -239,78 +267,75 @@ export default function GamesPage() {
           </div>
         </div>
 
-        <div>
-          <div className="mb-1.5 text-xs uppercase tracking-widest text-muted-foreground">Genres</div>
-          <div className="flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-col gap-2">
+          <div className="scrollbar-none -mx-1 flex items-center gap-1.5 overflow-x-auto px-1 md:flex-wrap md:overflow-visible" role="group" aria-label="Filter by genre">
+            <span className="eyebrow mr-1 w-12 shrink-0">Genre</span>
             {genreOptions.slice(0, 12).map((genre) => (
               <button
                 key={genre}
+                type="button"
                 onClick={() => toggleGenre(genre)}
                 disabled={isLoading}
-                className={cn(
-                  'rounded-full border px-3 py-1 text-sm transition',
-                  selectedGenres.includes(genre)
-                    ? 'border-primary bg-white text-black shadow-sm'
-                    : 'border-border hover:bg-muted',
-                  isLoading && 'opacity-60 cursor-not-allowed'
-                )}
+                aria-pressed={selectedGenres.includes(genre)}
+                className="chip shrink-0"
               >
                 {genre}
               </button>
             ))}
-            {selectedGenres.length > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setSelectedGenres([]);
-                  setPage(1);
-                }}
-                disabled={isLoading}
-                className="h-7 gap-1 px-2 text-xs text-destructive/80 hover:bg-destructive/10 hover:text-destructive"
-              >
-                <X className="h-3 w-3" />
-                Clear
-              </Button>
-            )}
           </div>
-        </div>
-
-        <div>
-          <div className="mb-1.5 text-xs uppercase tracking-widest text-muted-foreground">Dominant community tier</div>
-          <div className="flex flex-wrap gap-2">
+          <div className="scrollbar-none -mx-1 flex items-center gap-1.5 overflow-x-auto px-1 md:flex-wrap md:overflow-visible" role="group" aria-label="Filter by community tier">
+            <span className="eyebrow mr-1 w-12 shrink-0">Runs</span>
             {TIERS.map((tier) => (
               <button
                 key={tier}
+                type="button"
                 onClick={() => {
                   setSelectedTier(selectedTier === tier ? '' : tier);
                   setPage(1);
                 }}
                 disabled={isLoading || isStatsLoading}
-                className={cn(
-                  'rounded-full border px-3 py-1 text-sm transition',
-                  selectedTier === tier ? 'border-primary bg-white text-black shadow-sm' : 'border-border hover:bg-muted',
-                  isLoading && 'opacity-60 cursor-not-allowed'
-                )}
+                aria-pressed={selectedTier === tier}
+                className="chip shrink-0"
               >
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: tierFill[tier] }} aria-hidden />
                 {tier}
               </button>
             ))}
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearAll}
+                className="ml-1 h-8 shrink-0 gap-1 rounded-full px-3 text-xs"
+              >
+                <X className="h-3 w-3" />
+                Clear all
+              </Button>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="motion-grid-stagger mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+      <div className="motion-grid-stagger mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
         {isLoading ? (
           Array.from({ length: 12 }).map((_, i) => (
-            <div key={i} className="rounded-xl border border-border bg-card overflow-hidden">
-              <Skeleton className="aspect-[2/3] w-full" />
+            <div key={i} className="surface overflow-hidden">
+              <Skeleton className="aspect-[2/3] w-full rounded-none" />
               <div className="p-2.5 space-y-2">
                 <Skeleton className="h-3.5 w-3/4" />
                 <Skeleton className="h-2.5 w-1/2" />
               </div>
             </div>
           ))
+        ) : listError ? (
+          <div role="alert" className="col-span-full rounded-2xl border border-dashed border-border bg-card px-6 py-14 text-center">
+            <SearchX className="mx-auto h-8 w-8 text-muted-foreground" aria-hidden />
+            <p className="mt-3 font-medium">Couldn&apos;t load games right now</p>
+            <p className="mt-1 text-sm text-muted-foreground">The catalog is temporarily unavailable. Please try again.</p>
+            <Button variant="outline" size="sm" className="mt-5 rounded-full" onClick={() => void retryList()}>
+              Try again
+            </Button>
+          </div>
         ) : displayGames.length > 0 ? (
           displayGames.map((game: Game) => (
             <GameCard
@@ -322,8 +347,9 @@ export default function GamesPage() {
             />
           ))
         ) : rawGames.length === 0 && !hasActiveFilters ? (
-          <div className="col-span-full py-12 text-center">
-            <p className="text-muted-foreground">No games in the database yet.</p>
+          <div className="col-span-full rounded-2xl border border-dashed border-border bg-card py-14 text-center">
+            <Gamepad2 className="mx-auto h-8 w-8 text-muted-foreground" aria-hidden />
+            <p className="mt-3 font-medium">No games in the database yet.</p>
             {USE_REAL && (
               <p className="mt-2 text-sm text-muted-foreground">
                 Run <code className="rounded bg-muted px-1.5 py-0.5 text-xs">npm run build:seed</code>,{' '}
@@ -333,12 +359,19 @@ export default function GamesPage() {
             )}
           </div>
         ) : (
-          <div className="col-span-full py-12 text-center text-muted-foreground">No games match your filters.</div>
+          <div className="col-span-full rounded-2xl border border-dashed border-border bg-card px-6 py-14 text-center">
+            <SearchX className="mx-auto h-8 w-8 text-muted-foreground" aria-hidden />
+            <p className="mt-3 font-medium">No games match your filters</p>
+            <p className="mt-1 text-sm text-muted-foreground">Try a different name, or remove a genre or tier filter.</p>
+            <Button variant="outline" size="sm" className="mt-5 rounded-full" onClick={clearAll}>
+              Clear all filters
+            </Button>
+          </div>
         )}
       </div>
 
       {paginatedMode && effectiveTotalPages > 1 && (
-        <div className="mt-8 flex items-center justify-center gap-4">
+        <div className="mt-10 flex items-center justify-center gap-4">
           <Button
             variant="outline"
             size="sm"
@@ -363,8 +396,8 @@ export default function GamesPage() {
         </div>
       )}
 
-      {((tierMode ? reportedQuery.isError : gamesQuery.isError) || reportsQuery.isError) && (
-        <div className="mt-4 text-center text-sm text-amber-500">Some live stats unavailable — using partial data.</div>
+      {!listError && !tierMode && reportsQuery.isError && (
+        <div className="mt-4 text-center text-sm text-warning">Community stats are unavailable right now, so tiers and FPS are hidden.</div>
       )}
     </div>
   );
