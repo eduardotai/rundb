@@ -1,9 +1,10 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeShell } from "@/components/theme/theme-shell";
 import { Toaster } from "@/components/ui/sonner";
 import { Providers } from "./providers";
+import { ThemeProvider } from "@/components/theme/theme-provider";
 import { Analytics } from "@vercel/analytics/next";
 import { getStaffAccess } from "@/lib/admin-access";
 
@@ -18,6 +19,13 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
   weight: ["400", "500", "700"],
 });
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f7f6f3" },
+    { media: "(prefers-color-scheme: dark)", color: "#0e0f11" },
+  ],
+};
 
 export const metadata: Metadata = {
   title: "RunDB — Real PC Performance for Games",
@@ -37,16 +45,18 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
-        <Providers>
-          <ThemeShell user={user} isAdmin={isAdmin}>
-            {children}
-          </ThemeShell>
-          <Toaster position="top-center" richColors closeButton />
-        </Providers>
+        <ThemeProvider>
+          <Providers>
+            <ThemeShell user={user} isAdmin={isAdmin}>
+              {children}
+            </ThemeShell>
+            <Toaster position="top-center" richColors closeButton />
+          </Providers>
+        </ThemeProvider>
         <Analytics />
       </body>
     </html>
