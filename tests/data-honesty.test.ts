@@ -223,3 +223,14 @@ test('trending heading is honest when the 7-day window is empty', () => {
   assert.equal(recentReportsBadge({ a: 2 }, 'a'), '+2 this week')
   assert.equal(recentReportsBadge({ a: 2 }, 'b'), null)
 })
+
+// ---------- home copy guard ----------
+
+test('home page derives the trending heading from real activity and shows real counts', async () => {
+  const { readFileSync } = await import('node:fs')
+  const src = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8')
+  assert.match(src, /trendingHeading\(recentCounts\)/)
+  assert.match(src, /gamesWithReports/)
+  assert.doesNotMatch(src, />\s*Trending this week\s*</, 'heading must not be hard-coded')
+  assert.doesNotMatch(src, /label: 'reports per game'/, 'a rounded per-game average reads as 0 on the real catalog')
+})
