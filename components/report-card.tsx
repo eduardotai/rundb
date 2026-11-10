@@ -166,7 +166,8 @@ export function ReportCard({
     <>
     <div
       className={cn(
-        'report-card theme-card group cursor-pointer rounded-[var(--radius)] border border-border bg-card p-4 md:p-5',
+        'report-card theme-card group cursor-pointer p-4 md:p-5',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
         'active:scale-[0.995] motion-reduce:active:scale-100',
         'tier-accent',
         `tier-accent-${report.performanceTier.toLowerCase()}`,
@@ -182,87 +183,81 @@ export function ReportCard({
         }
       }}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-1 items-start gap-3">
-          {showGame && report.game?.coverImage && <GameCoverThumb game={report.game} />}
-          <div className="min-w-0 flex-1">
-          {showGame && (report.gameName || report.game?.name) && (
-            <div className="mb-1 truncate text-xs font-semibold uppercase text-primary">
-              {report.gameName || report.game?.name}
-            </div>
-          )}
-          {/* Reporter nickname is always visible — required attribution on every report card. */}
-          <div className="mb-1.5 flex flex-wrap items-center gap-1.5 text-xs">
-            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/50 px-2 py-0.5 font-medium text-foreground">
-              <User className="h-3 w-3 text-primary" />
-              <span className="text-muted-foreground">by</span>
-              <span className="font-semibold">{nickname}</span>
-            </span>
-            {reporterBadge && reporterBadge !== 'New' && (
-              <span className="rounded-full border border-border bg-background/60 px-1.5 py-px text-[10px] font-semibold text-muted-foreground">
-                {reporterBadge}
-              </span>
+      <div className="flex gap-4 sm:gap-5">
+        {/* Numbers first: average FPS + 1% low */}
+        <div className={cn('flex shrink-0 flex-col', compact ? 'w-[4.5rem]' : 'w-[4.75rem] sm:w-24')}>
+          <span
+            className={cn(
+              'font-mono font-semibold leading-none tabular-nums tracking-tight text-foreground',
+              compact ? 'text-3xl' : 'text-4xl'
             )}
-          </div>
-          <div className="flex flex-col gap-1 text-sm">
-            {/* Full hardware names (e.g. "NVIDIA GeForce RTX 4070", "AMD Ryzen 7 5700X3D") —
-                stacked on their own lines so the entire name is shown, not just the model. */}
-            <div className="flex items-start gap-1.5 font-medium text-foreground">
-              <Zap className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-              <span className="break-words">{gpuName}</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
-              <div className="flex items-start gap-1.5">
-                <Cpu className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span className="break-words">{cpuName}</span>
-              </div>
-              <span className="inline-flex items-center rounded bg-muted px-1.5 py-px text-[10px] font-medium text-muted-foreground">
-                {report.ram} GB
-              </span>
-            </div>
-          </div>
-
-          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
-            <div className="inline-flex items-center gap-1.5 rounded-md bg-muted/60 px-2 py-0.5 text-xs font-medium text-muted-foreground">
-              <Monitor className="h-3 w-3" />
-              {report.resolution}
-              {report.refreshRate && ` @ ${report.refreshRate}Hz`}
-            </div>
-            <span className="rounded-md border border-border bg-background/60 px-2 py-0.5 text-xs font-medium">
-              {report.settingsPreset}
-              {report.customSettingsNotes && <span className="ml-1 text-[10px] text-muted-foreground">(custom)</span>}
-            </span>
-          </div>
-          </div>
-        </div>
-
-        <PerformanceBadge tier={report.performanceTier} size={compact ? 'sm' : 'md'} />
-      </div>
-
-      <div className="mt-3 flex items-baseline gap-3">
-        <div className="flex items-baseline gap-1">
-          <span className="font-mono text-3xl font-semibold tabular-nums text-foreground md:text-4xl">
+          >
             {report.avgFps}
           </span>
-          <span className="text-sm font-medium text-muted-foreground">FPS</span>
+          <span className="mt-1.5 text-xs font-medium text-muted-foreground">avg FPS</span>
+          {report.fps1PercentLow ? (
+            <span className="mt-2 text-xs text-muted-foreground">
+              <span className="font-mono font-medium tabular-nums text-foreground">{report.fps1PercentLow}</span> 1% low
+            </span>
+          ) : null}
         </div>
-        {report.fps1PercentLow && (
-          <div className="text-sm text-muted-foreground">
-            <span className="font-mono tabular-nums">{report.fps1PercentLow}</span>
-            <span className="ml-0.5 text-xs">1% low</span>
+
+        <div className="min-w-0 flex-1 border-l border-border pl-4 sm:pl-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-2.5">
+              {showGame && report.game?.coverImage && <GameCoverThumb game={report.game} />}
+              <div className="min-w-0">
+                {showGame && (report.gameName || report.game?.name) && (
+                  <div className="mb-0.5 truncate text-sm font-semibold text-foreground">
+                    {report.gameName || report.game?.name}
+                  </div>
+                )}
+                <div className="flex items-start gap-1.5 font-medium leading-snug text-foreground">
+                  <Zap className="mt-[3px] h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                  <span className="break-words">{gpuName}</span>
+                </div>
+                <div className="mt-0.5 flex flex-wrap items-start gap-x-1.5 text-sm text-muted-foreground">
+                  <Cpu className="mt-[3px] h-3.5 w-3.5 shrink-0" aria-hidden />
+                  <span className="break-words">{cpuName}</span>
+                  <span aria-hidden>·</span>
+                  <span className="tabular-nums">{report.ram} GB</span>
+                </div>
+              </div>
+            </div>
+            <PerformanceBadge tier={report.performanceTier} size="sm" className="shrink-0" />
           </div>
-        )}
+
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 font-medium text-foreground/80">
+              <Monitor className="h-3 w-3" aria-hidden />
+              {report.resolution}
+              {report.refreshRate && ` @ ${report.refreshRate}Hz`}
+            </span>
+            <span className="rounded-md bg-muted px-2 py-1 font-medium text-foreground/80">
+              {report.settingsPreset}
+              {report.customSettingsNotes && <span className="ml-1 text-muted-foreground">(custom)</span>}
+            </span>
+            {/* Reporter nickname is always visible — required attribution on every report card. */}
+            <span className="inline-flex items-center gap-1 px-1 text-muted-foreground">
+              <User className="h-3 w-3" aria-hidden />
+              <span className="font-medium text-foreground/80">{nickname}</span>
+              {reporterBadge && reporterBadge !== 'New' && (
+                <span className="rounded-full border border-border px-1.5 text-[10px] font-semibold">{reporterBadge}</span>
+              )}
+            </span>
+          </div>
+
+          {(report.notes || report.tweaks) && (
+            <p className="mt-2.5 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+              {report.tweaks || report.notes}
+            </p>
+          )}
+        </div>
       </div>
 
-      {(report.notes || report.tweaks) && (
-        <div className="mt-2 line-clamp-2 text-sm leading-snug text-muted-foreground">
-          {report.tweaks || report.notes}
-        </div>
-      )}
-
       {(breakdown || isSimilar) && (
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400">
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success">
             <Zap className="h-3 w-3" /> {breakdown ? breakdown.score : similarity}% match
           </span>
           {breakdown && (
@@ -281,10 +276,10 @@ export function ReportCard({
         <TransferRow transfer={transfer} looserMode={looserMode} />
       )}
 
-      <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
+      <div className="mt-4 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
         <div className="flex flex-wrap items-center gap-2">
           <span>{formatRelativeTime(report.createdAt)}</span>
-          <div className="inline-flex items-center overflow-hidden rounded-full border border-border bg-background/60">
+          <div className="inline-flex items-center overflow-hidden rounded-full border border-border bg-card">
             <motion.button
               onClick={(e) => handleVote(1, e)}
               disabled={voting}
@@ -293,7 +288,7 @@ export function ReportCard({
               className={cn(
                 'relative grid h-6 w-7 place-items-center transition hover:bg-muted hover:text-foreground disabled:opacity-60',
                 !canVote && 'opacity-50 hover:bg-transparent hover:text-muted-foreground',
-                userVote === 1 && 'text-emerald-400'
+                userVote === 1 && 'text-success'
               )}
               title={!canVote ? 'Sign in to upvote reports' : userVote === 1 ? 'Remove your upvote' : 'Upvote report credibility'}
               aria-pressed={userVote === 1}
@@ -306,7 +301,7 @@ export function ReportCard({
                     animate={{ scale: 2.2, opacity: 0 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.45, ease: 'easeOut' }}
-                    className="pointer-events-none absolute inset-0 rounded-full bg-emerald-400/40"
+                    className="pointer-events-none absolute inset-0 rounded-full bg-success/40"
                   />
                 )}
               </AnimatePresence>
@@ -328,8 +323,8 @@ export function ReportCard({
                   transition={{ type: 'spring', stiffness: 550, damping: 32 }}
                   className={cn(
                     'block',
-                    userVote === 1 && 'text-emerald-400',
-                    userVote === -1 && 'text-rose-400'
+                    userVote === 1 && 'text-success',
+                    userVote === -1 && 'text-destructive'
                   )}
                 >
                   {displayedScore}
@@ -344,7 +339,7 @@ export function ReportCard({
               className={cn(
                 'relative grid h-6 w-7 place-items-center transition hover:bg-muted hover:text-foreground disabled:opacity-60',
                 !canVote && 'opacity-50 hover:bg-transparent hover:text-muted-foreground',
-                userVote === -1 && 'text-rose-400'
+                userVote === -1 && 'text-destructive'
               )}
               title={!canVote ? 'Sign in to downvote reports' : userVote === -1 ? 'Remove your downvote' : 'Downvote report credibility'}
               aria-pressed={userVote === -1}
@@ -357,7 +352,7 @@ export function ReportCard({
                     animate={{ scale: 2.2, opacity: 0 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.45, ease: 'easeOut' }}
-                    className="pointer-events-none absolute inset-0 rounded-full bg-rose-400/40"
+                    className="pointer-events-none absolute inset-0 rounded-full bg-destructive/40"
                   />
                 )}
               </AnimatePresence>
@@ -403,7 +398,7 @@ export function ReportCard({
       </div>
 
       {expanded && hasDetails && (
-        <div className="mt-3 space-y-1.5 rounded-lg bg-muted/40 p-3 text-sm">
+        <div className="mt-3 space-y-1.5 rounded-xl bg-muted/60 p-3 text-sm">
           {report.tweaks && (
             <div>
               <span className="font-medium text-muted-foreground">Tweaks:</span> {report.tweaks}
@@ -433,7 +428,7 @@ export function ReportCard({
             </div>
           )}
           {report.issues && (
-            <div className="text-amber-400">
+            <div className="text-warning">
               <span className="font-medium">Issues:</span> {report.issues}
             </div>
           )}
@@ -548,7 +543,7 @@ function GameCoverThumb({ game }: { game: Game }) {
 
   if (imgError || !game.coverImage) {
     return (
-      <div className="grid h-24 w-16 shrink-0 place-items-center overflow-hidden rounded-md border border-border bg-muted px-1 text-center text-[9px] font-mono font-medium uppercase leading-tight tracking-wide text-muted-foreground/70">
+      <div className="grid h-14 w-10 shrink-0 place-items-center overflow-hidden rounded-md border border-border bg-muted px-1 text-center text-[8px] font-mono font-medium uppercase leading-tight tracking-wide text-muted-foreground/70">
         {game.name}
       </div>
     );
@@ -559,7 +554,7 @@ function GameCoverThumb({ game }: { game: Game }) {
       src={game.coverImage}
       alt={game.name}
       steamAppId={game.steamAppId}
-      className="h-24 w-16 shrink-0 rounded-md border border-border"
+      className="h-14 w-10 shrink-0 rounded-md border border-border"
       sizes="64px"
       blurBackdrop={false}
       onError={() => setImgError(true)}
@@ -569,8 +564,8 @@ function GameCoverThumb({ game }: { game: Game }) {
 
 function MatchChip({ label, level }: { label: string; level: 'exact' | 'close' | 'far' }) {
   const styles: Record<typeof level, string> = {
-    exact: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400',
-    close: 'border-amber-500/20 bg-amber-500/10 text-amber-400',
+    exact: 'border-success/20 bg-success/10 text-success',
+    close: 'border-warning/20 bg-warning/10 text-warning',
     far: 'border-border bg-muted/40 text-muted-foreground',
   };
   const text = level === 'exact' ? 'exact' : level === 'close' ? 'close' : 'differs';
@@ -628,7 +623,7 @@ function TransferRow({
         </span>
       )}
       {!transfer.settingsComparable && transfer.direction !== 'unknown' && (
-        <span className="rounded-full border border-amber-500/20 bg-amber-500/5 px-2 py-0.5 text-[10px] text-amber-200/80">
+        <span className="rounded-full border border-warning/20 bg-warning/5 px-2 py-0.5 text-[10px] text-warning/80">
           Different resolution — not same-settings
         </span>
       )}

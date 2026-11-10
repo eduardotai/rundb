@@ -33,7 +33,7 @@ const tierConfig: Record<PerformanceTier, { label: string; className: string }> 
 };
 
 const sizeClasses = {
-  sm: 'px-2 py-0.5 text-xs',
+  sm: 'px-2 py-0.5 text-[11px] font-semibold',
   md: 'px-2.5 py-1 text-xs font-semibold',
   lg: 'px-3 py-1.5 text-sm font-semibold',
 };
@@ -52,7 +52,7 @@ export function PerformanceBadge({ tier, size = 'md', className }: PerformanceBa
     >
       <span
         aria-hidden="true"
-        className="motion-badge-dot h-1.5 w-1.5 shrink-0 rounded-full bg-current"
+        className="h-1.5 w-1.5 shrink-0 rounded-full bg-current"
       />
       {config.label}
     </span>
