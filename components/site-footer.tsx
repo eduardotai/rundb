@@ -19,7 +19,7 @@ function DiscordIcon({ className }: { className?: string }) {
 }
 
 const iconLinkClass =
-  "inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground";
+  "inline-flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground";
 
 type FooterLinkProps = {
   href: string;
@@ -65,35 +65,83 @@ function FooterIconStandby({ label, children }: { label: string; children: React
   );
 }
 
+const FOOTER_COLUMNS: { title: string; links: { href: string; label: string }[] }[] = [
+  {
+    title: 'Explore',
+    links: [
+      { href: '/games', label: 'Browse games' },
+      { href: '/reports', label: 'All reports' },
+      { href: '/compatibility', label: 'Will it run?' },
+    ],
+  },
+  {
+    title: 'Contribute',
+    links: [
+      { href: '/submit', label: 'Submit a report' },
+      { href: '/profile', label: 'Save your rig' },
+      { href: '/auth/sign-up', label: 'Create an account' },
+    ],
+  },
+];
+
 export function SiteFooter() {
   return (
-    <footer className="theme-footer">
-      <div className="mx-auto flex max-w-7xl flex-col items-center gap-1.5 px-4 text-center">
-        <div className="font-semibold tracking-tight text-xs">
-          <span className="text-foreground">Run</span>
-          <span className="text-muted-foreground">DB</span>
-        </div>
-
-        <p className="text-[10px] leading-tight text-muted-foreground">
-          Real PC performance data, by the community.
-        </p>
-
-        <nav aria-label="Footer links" className="flex items-center gap-0.5">
-          {process.env.NODE_ENV === 'development' && (
-            <FooterLink href="/dashboard" label="Build dashboard">
-              <LayoutDashboard className="h-3 w-3" aria-hidden="true" />
+    <footer className="theme-footer mt-auto">
+      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.4fr_1fr_1fr]">
+        <div className="max-w-xs">
+          <div className="flex items-center gap-2 text-[1.0625rem] font-semibold tracking-tight">
+            <span aria-hidden className="grid h-7 w-7 place-items-center rounded-lg bg-primary text-primary-foreground">
+              <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="currentColor">
+                <rect x="1.5" y="9" width="3" height="5.5" rx="1" />
+                <rect x="6.5" y="5.5" width="3" height="9" rx="1" />
+                <rect x="11.5" y="1.5" width="3" height="13" rx="1" />
+              </svg>
+            </span>
+            <span>
+              <span className="text-foreground">Run</span>
+              <span className="text-muted-foreground">DB</span>
+            </span>
+          </div>
+          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+            Real PC performance data, by the community. Measured FPS from real rigs — not marketing numbers.
+          </p>
+          <nav aria-label="Social links" className="mt-4 flex items-center gap-1">
+            {process.env.NODE_ENV === 'development' && (
+              <FooterLink href="/dashboard" label="Build dashboard">
+                <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
+              </FooterLink>
+            )}
+            <FooterLink href="https://github.com/eduardotai/rundb" label="GitHub" external>
+              <GitHubIcon className="h-4 w-4" />
             </FooterLink>
-          )}
-          <FooterLink href="https://github.com/eduardotai/rundb" label="GitHub" external>
-            <GitHubIcon className="h-3 w-3" />
-          </FooterLink>
-          <FooterLink href="https://x.com/taisalless" label="X" external>
-            <X className="h-3 w-3" aria-hidden="true" />
-          </FooterLink>
-          <FooterIconStandby label="Discord (coming soon)">
-            <DiscordIcon className="h-3 w-3" />
-          </FooterIconStandby>
-        </nav>
+            <FooterLink href="https://x.com/taisalless" label="X" external>
+              <X className="h-4 w-4" aria-hidden="true" />
+            </FooterLink>
+            <FooterIconStandby label="Discord (coming soon)">
+              <DiscordIcon className="h-4 w-4" />
+            </FooterIconStandby>
+          </nav>
+        </div>
+        {FOOTER_COLUMNS.map((col) => (
+          <div key={col.title}>
+            <h2 className="eyebrow">{col.title}</h2>
+            <ul className="mt-3 space-y-2 text-sm">
+              {col.links.map((l) => (
+                <li key={l.href}>
+                  <Link href={l.href} className="text-muted-foreground transition-colors hover:text-foreground">
+                    {l.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+      <div className="border-t border-border">
+        <div className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <span>© {new Date().getFullYear()} RunDB · Community project</span>
+          <span>Game art © respective publishers</span>
+        </div>
       </div>
     </footer>
   );
