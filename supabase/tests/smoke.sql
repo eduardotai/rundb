@@ -43,6 +43,7 @@ BEGIN
   SELECT string_agg(f, ', ') INTO missing
   FROM unnest(ARRAY[
     'public.is_username_taken(text)',
+    'public.search_games(text,integer)',
     'public.is_moderator_or_admin()',
     'public.is_admin()',
     'public.handle_new_user()',
@@ -174,7 +175,9 @@ BEGIN
   WHERE p.pronamespace IN ('public'::regnamespace, 'private'::regnamespace)
     AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')
     AND has_function_privilege('anon', p.oid, 'EXECUTE')
-    AND p.oid::regprocedure::text NOT IN ('is_username_taken(text)', 'is_admin()', 'is_moderator_or_admin()');
+    AND p.oid::regprocedure::text NOT IN (
+      'is_username_taken(text)', 'is_admin()', 'is_moderator_or_admin()', 'search_games(text,integer)'
+    );
   IF bad IS NOT NULL THEN
     RAISE EXCEPTION 'anon can execute: %', bad;
   END IF;
@@ -186,7 +189,8 @@ BEGIN
     AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')
     AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
     AND p.oid::regprocedure::text NOT IN (
-      'is_username_taken(text)', 'is_admin()', 'is_moderator_or_admin()', 'get_my_profile()'
+      'is_username_taken(text)', 'is_admin()', 'is_moderator_or_admin()', 'get_my_profile()',
+      'search_games(text,integer)'
     );
   IF bad IS NOT NULL THEN
     RAISE EXCEPTION 'authenticated can execute: %', bad;

@@ -15,6 +15,7 @@ import {
   fetchApprovedReportRowsForGames,
   fetchGlobalCounts,
   fetchReportedGameRows,
+  fetchSearchGameRows,
 } from '../lib/data-queries'
 import { recentReportsBadge, trendingHeading } from '../lib/trending'
 import type { Report } from '../lib/types'
@@ -174,6 +175,43 @@ test('fetchApprovedReportRowsForGames chunks ids and reads approved reports only
 test('fetchReportedGameRows throws on error', async () => {
   const { client } = fakeClient(() => ({ error: { message: 'down' } }))
   await assert.rejects(fetchReportedGameRows(client), DataUnavailableError)
+})
+
+// ---------- search_games RPC ----------
+
+function fakeRpc(result: { data?: unknown; error?: unknown }) {
+  const calls: Array<{ fn: string; args: Record<string, unknown> }> = []
+  return {
+    calls,
+    client: {
+      rpc: async (fn: string, args: Record<string, unknown>) => {
+        calls.push({ fn, args })
+        return { data: result.data ?? null, error: result.error ?? null }
+      },
+    },
+  }
+}
+
+test('search uses the ranked search_games RPC with trimmed text and a clamped limit', async () => {
+  const { client, calls } = fakeRpc({ data: [{ id: 'g1', name: 'Cyberpunk 2077' }] })
+  const rows = await fetchSearchGameRows(client, '  cyber  ', 500)
+  assert.deepEqual(rows, [{ id: 'g1', name: 'Cyberpunk 2077' }])
+  assert.deepEqual(calls, [{ fn: 'search_games', args: { q: 'cyber', max_results: 50 } }])
+  await fetchSearchGameRows(client, 'x'.repeat(300), 0)
+  assert.deepEqual(calls[1].args, { q: 'x'.repeat(100), max_results: 1 })
+})
+
+test('search sends wildcards raw (the RPC escapes them) and skips empty text', async () => {
+  const { client, calls } = fakeRpc({ data: [] })
+  await fetchSearchGameRows(client, '100%', 8)
+  assert.equal(calls[0].args.q, '100%')
+  assert.deepEqual(await fetchSearchGameRows(client, '   ', 8), [])
+  assert.equal(calls.length, 1)
+})
+
+test('search throws instead of returning an empty list when the RPC fails', async () => {
+  const { client } = fakeRpc({ error: { message: 'function public.search_games does not exist' } })
+  await assert.rejects(fetchSearchGameRows(client, 'cyber', 8), DataUnavailableError)
 })
 
 // ---------- trending copy ----------

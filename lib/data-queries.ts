@@ -110,4 +110,26 @@ export async function fetchApprovedReportRowsForGames(supabase: Client, gameIds:
   }
   return rows
 }
+/** Longest query sent to the search RPC (the RPC also caps at 100 characters). */
+export const SEARCH_QUERY_MAX = 100
+/** The RPC returns at most 50 rows. */
+export const SEARCH_LIMIT_MAX = 50
+
+/**
+ * Type-ahead game search via the `search_games` RPC (migration 20261110001000): exact name,
+ * then name prefix, then word prefix, then games with more reports, then trigram similarity.
+ * The RPC escapes LIKE wildcards itself, so the raw (trimmed) text is sent.
+ */
+export async function fetchSearchGameRows(
+  supabase: { rpc: (fn: string, args: Record<string, unknown>) => any },
+  query: string,
+  limit: number
+): Promise<any[]> {
+  const q = query.trim().slice(0, SEARCH_QUERY_MAX)
+  if (!q) return []
+  const maxResults = Math.min(Math.max(Math.floor(limit) || 1, 1), SEARCH_LIMIT_MAX)
+  const res = (await supabase.rpc('search_games', { q, max_results: maxResults })) as QueryResult<any[]>
+  if (res.error) throw new DataUnavailableError('search results', res.error)
+  return res.data ?? []
+}
 /* eslint-enable @typescript-eslint/no-explicit-any */
