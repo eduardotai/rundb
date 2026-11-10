@@ -6,7 +6,7 @@ import { Game, GameStats, PerformanceTier } from '@/lib/types';
 import { PerformanceBadge } from './performance-badge';
 import { GameCoverFrame } from '@/components/game-cover-frame';
 import { cn } from '@/lib/utils';
-import { Sparkles } from 'lucide-react';
+import { Gamepad2, Sparkles } from 'lucide-react';
 
 const EMPTY_STATS: GameStats = {
   totalReports: 0,
@@ -68,14 +68,14 @@ export function GameCard({
     <Link
       href={`/games/${game.slug}`}
       className={cn(
-        'theme-card group block overflow-hidden border border-border bg-card',
+        'theme-card group flex flex-col overflow-hidden',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
         dominantTier && 'tier-accent',
         dominantTier && tierAccentClass[dominantTier],
         className
       )}
     >
-      <div className="relative aspect-[2/3] w-full overflow-hidden">
+      <div className="relative aspect-[2/3] w-full overflow-hidden bg-muted">
         {!imgError ? (
           <GameCoverFrame
             src={game.coverImage}
@@ -89,93 +89,52 @@ export function GameCard({
             onError={() => setImgError(true)}
           />
         ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-muted via-muted to-muted/60 p-3 text-center">
-            <div className="mb-1 font-mono text-[10px] uppercase tracking-[2px] text-muted-foreground/70">
-              COVER
-            </div>
-            <div className="line-clamp-2 text-sm font-semibold leading-tight text-foreground/90">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted p-4 text-center">
+            <Gamepad2 className="h-6 w-6 text-muted-foreground/70" aria-hidden />
+            <div className="line-clamp-3 text-sm font-semibold leading-tight text-foreground/80">
               {game.name}
             </div>
           </div>
         )}
 
-        <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/85 to-transparent" />
-
-        {reportCount === 0 ? (
-          <div
-            className={cn(
-              'absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/70 to-transparent',
-              isCompact ? 'px-2 pb-2 pt-8' : 'px-3 pb-3 pt-10'
-            )}
-          >
-            <div
-              className={cn(
-                'flex w-full items-center justify-center gap-1.5 rounded-md border border-white/15 bg-white/10 font-semibold text-foreground',
-                isCompact ? 'px-2 py-1.5 text-[11px]' : 'px-3 py-2 text-xs'
-              )}
-            >
-              <Sparkles className={cn('shrink-0', isCompact ? 'h-3.5 w-3.5' : 'h-4 w-4')} />
-              <span className="text-center leading-tight">
-                <span className="font-bold">New</span>
-                <span className="font-medium opacity-90"> · First report</span>
-              </span>
-            </div>
-          </div>
-        ) : (
-          <div
-            className={cn(
-              'absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/95 via-black/65 to-transparent',
-              isCompact ? 'px-2 pb-2 pt-7' : 'px-3 pb-3 pt-10'
-            )}
-          >
-            {dominantTier && (
-              <PerformanceBadge
-                tier={dominantTier}
-                size={isCompact ? 'sm' : 'md'}
-                className="shrink-0 shadow-sm"
-              />
-            )}
-            <div
-              className={cn(
-                'ml-auto shrink-0 rounded-md border border-white/10 bg-black/70 font-semibold tabular-nums text-white',
-                isCompact ? 'px-2 py-0.5 text-[11px]' : 'px-2.5 py-1 text-xs'
-              )}
-            >
-              {reportCount} {reportCount === 1 ? 'report' : 'reports'}
-            </div>
+        {reportCount === 0 && (
+          <div className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-card/90 px-2 py-0.5 text-[11px] font-semibold text-foreground shadow-sm backdrop-blur">
+            <Sparkles className="h-3 w-3 text-brand" aria-hidden />
+            Needs first report
           </div>
         )}
       </div>
 
-      <div className={isCompact ? 'p-2.5' : 'p-3.5'}>
+      <div className={cn('flex flex-1 flex-col', isCompact ? 'p-3' : 'p-4')}>
         <h3
           className={cn(
-            'font-semibold leading-tight text-foreground transition-colors group-hover:text-primary',
-            isCompact ? 'line-clamp-2 text-sm' : 'text-base'
+            'font-semibold leading-snug tracking-tight text-foreground',
+            isCompact ? 'line-clamp-1 text-sm' : 'text-base'
           )}
+          title={game.name}
         >
           {game.name}
         </h3>
-        <p className={cn('mt-0.5 truncate text-muted-foreground', isCompact ? 'text-[11px]' : 'text-xs')}>
-          {game.releaseYear ? `${game.releaseYear} · ` : ''}{game.developer}
+        <p className={cn('mt-0.5 truncate text-muted-foreground', isCompact ? 'text-xs' : 'text-sm')}>
+          {[game.releaseYear, game.developer].filter(Boolean).join(' · ')}
         </p>
 
-        <div className={cn('flex flex-wrap gap-1', isCompact ? 'mt-1.5' : 'mt-2')}>
-          {game.genres.slice(0, isCompact ? 2 : 3).map((genre) => (
-            <span
-              key={genre}
-              className="rounded bg-muted px-1.5 py-px text-[10px] font-medium text-muted-foreground"
-            >
-              {genre}
-            </span>
-          ))}
-        </div>
+        {!isCompact && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {game.genres.slice(0, 3).map((genre) => (
+              <span
+                key={genre}
+                className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground"
+              >
+                {genre}
+              </span>
+            ))}
+          </div>
+        )}
 
         {!isCompact && avgFps1440 ? (
-          <div className="mt-2.5 text-sm">
-            <span className="font-mono text-lg font-semibold tabular-nums text-[var(--highlight)]">
-              {avgFps1440}
-            </span>
+          <div className="mt-3 text-sm">
+            <span className="font-mono text-xl font-semibold tabular-nums text-foreground">{avgFps1440}</span>
             <span className="ml-1 text-muted-foreground">avg FPS @ 1440p</span>
           </div>
         ) : null}
@@ -185,6 +144,17 @@ export function GameCard({
             Most common: <span className="font-medium text-foreground">{stats.mostCommonPreset}</span>
           </div>
         ) : null}
+
+        <div className={cn('mt-auto flex items-center justify-between gap-2', isCompact ? 'pt-2.5' : 'pt-3')}>
+          {dominantTier ? (
+            <PerformanceBadge tier={dominantTier} size="sm" className="shrink-0" />
+          ) : (
+            <span className="text-xs text-muted-foreground">No tier yet</span>
+          )}
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+            {reportCount} {reportCount === 1 ? 'report' : 'reports'}
+          </span>
+        </div>
       </div>
     </Link>
   );
