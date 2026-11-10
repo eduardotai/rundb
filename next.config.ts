@@ -28,6 +28,12 @@ const nextConfig: NextConfig = {
         hostname: 'cdn.cloudflare.steamstatic.com',
         pathname: '/steam/**',
       },
+      // Steam's content-hashed store assets (authoritative covers written by scripts/catalog-sync.ts).
+      {
+        protocol: 'https',
+        hostname: 'shared.akamai.steamstatic.com',
+        pathname: '/store_item_assets/steam/apps/**',
+      },
     ],
     // Next.js 16 rejects (400) any `quality` not in this allowlist (default [75]).
     // Covers use 90 (game-card) and 92 (game page hero); keep in sync with `quality=` props.

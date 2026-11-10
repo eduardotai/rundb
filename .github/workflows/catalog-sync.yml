@@ -1,0 +1,73 @@
+name: Catalog sync
+
+# Keeps the games catalog current from Steam (keyless): fixes covers, fills missing metadata,
+# adds notable new releases. Logic: scripts/catalog-sync.ts + lib/catalog-sync/.
+#
+# Safe by default:
+# - The daily schedule does nothing until the repo variable CATALOG_SYNC_ENABLED is 'true'.
+# - Manual runs default to dry-run; writing requires choosing mode=apply.
+# - Needs repo secrets SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (service role stays in Actions,
+#   never in the client bundle).
+on:
+  schedule:
+    - cron: '17 9 * * *' # 06:17 America/Sao_Paulo
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: dry-run reads only; apply writes to the database
+        type: choice
+        options: [dry-run, apply]
+        default: dry-run
+      max_new:
+        description: Max new games to add in this run
+        default: '100'
+      since:
+        description: Add games released on/after (YYYY-MM-DD). Empty = last 180 days.
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: catalog-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.event_name == 'workflow_dispatch' || vars.CATALOG_SYNC_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      MODE: ${{ github.event_name == 'schedule' && 'apply' || inputs.mode }}
+      MAX_NEW: ${{ inputs.max_new || '100' }}
+      SINCE: ${{ inputs.since }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync catalog
+        run: |
+          args=(--report=catalog-sync-report.json "--max-new=${MAX_NEW}")
+          [ "$MODE" = "apply" ] && args+=(--apply)
+          [[ "$SINCE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && args+=("--since=${SINCE}")
+          npx tsx scripts/catalog-sync.ts "${args[@]}"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: catalog-sync-report
+          path: catalog-sync-report.json
+          if-no-files-found: ignore
+          retention-days: 30

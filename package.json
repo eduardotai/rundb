@@ -16,6 +16,7 @@
     "seed:queue": "tsx scripts/seed-queue.ts",
     "ingest:worker": "tsx scripts/ingest-games-worker.ts",
     "import:latest": "tsx scripts/import-latest-games.ts",
+    "catalog:sync": "tsx scripts/catalog-sync.ts",
     "backfill:steam-reqs": "tsx scripts/backfill-steam-requirements.ts",
     "backfill:steam-appids": "tsx scripts/backfill-steam-app-ids.ts",
     "seed:games": "tsx scripts/seed-games-mock.ts",
