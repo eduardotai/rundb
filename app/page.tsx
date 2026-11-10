@@ -19,22 +19,25 @@ import { useQuery } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Game, GameStats } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { trendingHeading } from '@/lib/trending';
 
 function HeroKpis({
   totalReports,
   totalGames,
-  avgReportsPerGame,
+  gamesWithReports,
   className,
 }: {
   totalReports: number;
   totalGames: number;
-  avgReportsPerGame: number;
+  gamesWithReports: number;
   className?: string;
 }) {
+  // Honest totals: the catalog has ~10k games but only a few have reports, so
+  // "reports / game" over the whole catalog rounds to 0. Show reported games instead.
   const items = [
     { value: totalReports, label: 'reports' },
-    { value: totalGames, label: 'games' },
-    { value: avgReportsPerGame, label: 'reports / game' },
+    { value: gamesWithReports, label: 'games with reports' },
+    { value: totalGames, label: 'games in catalog' },
   ];
 
   return (
@@ -86,7 +89,7 @@ function TrendingGrid({
   if (trending.length === 0) {
     return (
       <div className="theme-card col-span-full border border-dashed border-border py-10 text-center text-muted-foreground">
-        <p>No trending games yet. Browse the catalog or submit a report.</p>
+        <p>No reports yet. Browse the catalog or submit the first report.</p>
         <div className="mt-3 flex justify-center gap-3 text-sm">
           <Link href="/games" className="text-primary hover:underline">
             Browse games
@@ -148,8 +151,9 @@ export default function Home() {
 
   const totalReports = countsQuery.data?.totalReports ?? 0;
   const totalGames = countsQuery.data?.totalGames ?? 0;
-  const avgReportsPerGame = totalGames > 0 ? Math.round(totalReports / totalGames) : 0;
+  const gamesWithReports = countsQuery.data?.gamesWithReports ?? 0;
   const loading = trendingQuery.isLoading;
+  const recentCounts = trendingQuery.data?.recentCounts ?? {};
 
   return (
     <>
@@ -183,7 +187,7 @@ export default function Home() {
             <HeroKpis
               totalReports={totalReports}
               totalGames={totalGames}
-              avgReportsPerGame={avgReportsPerGame}
+              gamesWithReports={gamesWithReports}
               className="mt-8 lg:hidden"
             />
           </div>
@@ -196,7 +200,7 @@ export default function Home() {
                 <HeroKpis
                   totalReports={totalReports}
                   totalGames={totalGames}
-                  avgReportsPerGame={avgReportsPerGame}
+                  gamesWithReports={gamesWithReports}
                   className="hidden lg:grid"
                 />
               </div>
@@ -204,7 +208,7 @@ export default function Home() {
             <HeroKpis
               totalReports={totalReports}
               totalGames={totalGames}
-              avgReportsPerGame={avgReportsPerGame}
+              gamesWithReports={gamesWithReports}
               className="mt-4 hidden md:grid lg:hidden"
             />
           </div>
@@ -214,7 +218,7 @@ export default function Home() {
       <div className="mx-auto max-w-7xl px-4 pb-16">
         <Reveal className="mb-8" as="section">
           <div className="mb-3 flex items-baseline justify-between gap-3">
-            <h2 className="theme-section-title">Trending right now</h2>
+            <h2 className="theme-section-title">{trendingHeading(recentCounts)}</h2>
             <Link
               href="/games"
               className="motion-link-arrow inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -222,7 +226,13 @@ export default function Home() {
               View all <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
-          <TrendingGrid trending={trending} gameStatsMap={gameStatsMap} loading={loading} />
+          {trendingQuery.isError ? (
+            <p role="alert" className="theme-card border border-dashed border-border py-10 text-center text-muted-foreground">
+              Couldn&apos;t load games right now. Please refresh to try again.
+            </p>
+          ) : (
+            <TrendingGrid trending={trending} gameStatsMap={gameStatsMap} loading={loading} />
+          )}
         </Reveal>
 
         <div className="mb-4">

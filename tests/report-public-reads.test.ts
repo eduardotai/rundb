@@ -4,7 +4,7 @@
  * RLS lets owners see their own pending reports and moderators see every status, so a
  * query without an explicit status filter leaks pending/rejected reports into public
  * lists and aggregates for those users. Every `.from('reports')` in the public data
- * adapter must carry `.eq('status', 'approved')` in the same query chain.
+ * adapter (lib/data.ts + lib/data-queries.ts) must carry `.eq('status', 'approved')` in the same query chain.
  *
  * Run: npx tsx --test tests/report-public-reads.test.ts
  */
@@ -26,9 +26,11 @@ function reportQueries(source: string): string[] {
   return out
 }
 
-test('every public report query in lib/data.ts filters status = approved', () => {
-  const src = readFileSync('lib/data.ts', 'utf8')
-  const queries = reportQueries(src)
+// lib/data-queries.ts holds the injected-client query cores that lib/data.ts calls.
+const PUBLIC_READ_FILES = ['lib/data.ts', 'lib/data-queries.ts']
+
+test('every public report query in lib/data.ts and lib/data-queries.ts filters status = approved', () => {
+  const queries = PUBLIC_READ_FILES.flatMap((f) => reportQueries(readFileSync(f, 'utf8')))
   assert.ok(queries.length >= 10, `expected the known public report reads, found ${queries.length}`)
   const missing = queries.filter((q) => !q.includes(".eq('status', 'approved')"))
   assert.deepEqual(missing, [], 'public report reads without an approved filter')

@@ -64,3 +64,22 @@ export function rankTrendingGameIds(
 
   return { ids, recentCounts }
 }
+
+/** True when at least one game got a new report inside the window. */
+export function hasRecentActivity(recentCounts: Record<string, number>): boolean {
+  return Object.values(recentCounts).some((n) => n > 0)
+}
+
+/**
+ * Honest section title. When the window had no new reports, the row is filled from the
+ * newest reports overall, so it must not claim "this week".
+ */
+export function trendingHeading(recentCounts: Record<string, number>): 'Trending this week' | 'Most active' {
+  return hasRecentActivity(recentCounts) ? 'Trending this week' : 'Most active'
+}
+
+/** "+N this week" badge for a game, or null when it had no reports in the window. */
+export function recentReportsBadge(recentCounts: Record<string, number>, gameId: string): string | null {
+  const n = recentCounts[gameId] ?? 0
+  return n > 0 ? `+${n} this week` : null
+}
