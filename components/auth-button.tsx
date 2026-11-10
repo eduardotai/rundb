@@ -54,8 +54,8 @@ export function AuthButton({ user }: AuthButtonProps) {
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" className="flex items-center gap-2 px-2">
-            <div className="h-8 w-8 rounded-full overflow-hidden border bg-muted flex-shrink-0 flex items-center justify-center text-xs font-medium">
+          <Button variant="ghost" size="sm" className="flex items-center gap-2 rounded-full pl-1 pr-2.5">
+            <div className="h-7 w-7 rounded-full overflow-hidden border bg-muted flex-shrink-0 flex items-center justify-center text-xs font-medium">
               {avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -114,7 +114,7 @@ export function AuthButton({ user }: AuthButtonProps) {
           <DropdownMenuItem
             onClick={handleSignOut}
             disabled={loading}
-            className="cursor-pointer py-2 text-red-400 focus:bg-red-500/10 focus:text-red-400"
+            className="cursor-pointer py-2 text-destructive focus:bg-destructive/10 focus:text-destructive"
           >
             <LogOut className="mr-2 h-4 w-4" />
             {loading ? 'Signing out…' : 'Sign out'}
@@ -127,7 +127,7 @@ export function AuthButton({ user }: AuthButtonProps) {
   // Dedicated sign-in / sign-up pages now handle all auth methods (OAuth, email/password, guest).
   // Header shows simple navigation to the full pages instead of duplicating actions in a dropdown.
   return (
-    <Button asChild variant="outline">
+    <Button asChild variant="ghost" size="sm" className="rounded-full">
       <Link href="/auth/sign-in">Sign in</Link>
     </Button>
   );

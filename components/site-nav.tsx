@@ -5,11 +5,19 @@ import { usePathname } from 'next/navigation';
 import { LayoutDashboard } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const links: { href: string; label: string }[] = [
+export const PRIMARY_LINKS: { href: string; label: string }[] = [
   { href: '/games', label: 'Games' },
   { href: '/reports', label: 'Reports' },
-  { href: '/compatibility', label: 'Will It Run?' },
+  { href: '/compatibility', label: 'Will it run?' },
 ];
+
+export function useIsActive() {
+  const pathname = usePathname();
+  return (href: string) => {
+    if (href === '/') return pathname === '/';
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
+}
 
 type SiteNavProps = {
   isAdmin: boolean;
@@ -19,34 +27,17 @@ type SiteNavProps = {
   includeHome?: boolean;
 };
 
-export function SiteNav({
-  isAdmin,
-  className,
-}: SiteNavProps) {
-  const pathname = usePathname();
-
-  const isActive = (href: string) => {
-    if (href === '/') return pathname === '/';
-    return pathname === href || pathname.startsWith(`${href}/`);
-  };
+export function SiteNav({ isAdmin, className }: SiteNavProps) {
+  const isActive = useIsActive();
 
   return (
-    <nav
-      className={cn(
-        'flex max-w-[min(100%,28rem)] items-center gap-0.5 overflow-x-auto text-sm scrollbar-none',
-        className
-      )}
-      aria-label="Primary"
-    >
-      {links.map(({ href, label }) => (
+    <nav className={cn('items-center gap-1 text-sm', className)} aria-label="Primary">
+      {PRIMARY_LINKS.map(({ href, label }) => (
         <Link
           key={href}
           href={href}
           aria-current={isActive(href) ? 'page' : undefined}
-          className={cn(
-            'theme-nav-link shrink-0 transition',
-            !isActive(href) && 'hover:text-foreground'
-          )}
+          className="theme-nav-link shrink-0"
         >
           {label}
         </Link>
@@ -55,7 +46,7 @@ export function SiteNav({
         <>
           <Link
             href="/admin"
-            className="theme-nav-link shrink-0 font-medium text-amber-400 transition hover:text-amber-300"
+            className="theme-nav-link shrink-0 text-brand"
             aria-current={isActive('/admin') ? 'page' : undefined}
           >
             Admin
@@ -63,7 +54,7 @@ export function SiteNav({
           {process.env.NODE_ENV === 'development' && (
             <Link
               href="/dashboard"
-              className="theme-nav-link hidden shrink-0 font-medium text-amber-400 transition hover:text-amber-300 sm:inline-flex"
+              className="theme-nav-link hidden shrink-0 text-brand xl:inline-flex"
               aria-current={isActive('/dashboard') ? 'page' : undefined}
             >
               <span className="inline-flex items-center gap-1">
@@ -77,4 +68,3 @@ export function SiteNav({
     </nav>
   );
 }
-
