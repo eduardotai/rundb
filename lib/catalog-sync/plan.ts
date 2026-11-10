@@ -33,6 +33,7 @@ export interface SteamGameInfo {
   appid: string
   name: string
   coverUrl: string | null
+  coverCandidates: string[]
   /** YYYY-MM-DD (UTC) or null when Steam has no date. */
   releaseDate: string | null
   releaseYear: number | null
@@ -104,16 +105,20 @@ export function steamAssetUrl(format: string | undefined, file: string | undefin
   return `${STEAM_STORE_ASSET_BASE}${path}`
 }
 
-/** Portrait library capsule (600x900) first; the landscape header only as a last resort. */
-export function steamCoverUrl(item: SteamStoreItem): string | null {
+/**
+ * Cover URLs in preference order: portrait library capsule (600x900) first, the landscape
+ * header only as a last resort. Steam occasionally lists an asset that is not on the CDN, so
+ * the run verifies these in order (lib/catalog-sync/run.ts verifyCovers).
+ */
+export function steamCoverCandidates(item: SteamStoreItem): string[] {
   const a = item.assets
-  if (!a) return null
-  return (
-    steamAssetUrl(a.asset_url_format, a.library_capsule_2x) ??
-    steamAssetUrl(a.asset_url_format, a.library_capsule) ??
-    steamAssetUrl(a.asset_url_format, a.header_2x) ??
-    steamAssetUrl(a.asset_url_format, a.header)
-  )
+  if (!a) return []
+  const files = [a.library_capsule_2x, a.library_capsule, a.header_2x, a.header]
+  return [...new Set(files.map((f) => steamAssetUrl(a.asset_url_format, f)).filter((u): u is string => Boolean(u)))]
+}
+
+export function steamCoverUrl(item: SteamStoreItem): string | null {
+  return steamCoverCandidates(item)[0] ?? null
 }
 
 function firstName(list?: { name?: string }[]): string | null {
@@ -130,6 +135,7 @@ export function mapSteamItem(item: SteamStoreItem): SteamGameInfo | null {
     appid,
     name: item.name.trim(),
     coverUrl: steamCoverUrl(item),
+    coverCandidates: steamCoverCandidates(item),
     releaseDate: date ? date.toISOString().slice(0, 10) : null,
     releaseYear: date ? date.getUTCFullYear() : null,
     developer: firstName(item.basic_info?.developers),

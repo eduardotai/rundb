@@ -4,8 +4,8 @@
  * dry runs can use a read-only snapshot. Dry runs never call a write method.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { planCatalogSync, toInsertRow, mapSteamItem, type CatalogRow, type GamePatch, type NewGameRow, type SyncPlan, type SteamGameInfo } from './plan'
-import { discoverPopularNewAppIds, fetchSteamGenres, fetchSteamItems, type SteamClientOptions, type SteamStoreItem } from './steam'
+import { isSyncManagedCover, planCatalogSync, toInsertRow, mapSteamItem, type CatalogRow, type GamePatch, type NewGameRow, type SyncPlan, type SteamGameInfo } from './plan'
+import { discoverPopularNewAppIds, fetchSteamGenres, fetchSteamItems, type FetchLike, type SteamClientOptions, type SteamStoreItem } from './steam'
 
 export interface CatalogStore {
   listGames(): Promise<CatalogRow[]>
@@ -30,6 +30,8 @@ export interface SteamSnapshot {
   items: SteamStoreItem[]
   candidateAppIds: string[]
   genres: Record<string, string[]>
+  /** appid -> first cover candidate that answered 200 (null = none did). Filled by verifyCovers. */
+  verifiedCovers?: Record<string, string | null>
 }
 
 export interface RunOptions {
@@ -43,6 +45,8 @@ export interface RunOptions {
   genreBackfillLimit?: number
   steam: SteamClientOptions | { snapshot: SteamSnapshot }
   concurrency?: number
+  /** HEAD-check new cover URLs before writing them (default true). */
+  checkUrl?: ((url: string) => Promise<boolean>) | false
   log?: (msg: string) => void
 }
 
@@ -101,6 +105,65 @@ export async function collectSteamSnapshot(
   return { fetchedAt: new Date().toISOString(), items: [...items.values()], candidateAppIds, genres }
 }
 
+/** HEAD request; true only for a 2xx image answer. */
+export function headCheck(fetchImpl: FetchLike): (url: string) => Promise<boolean> {
+  return async (url) => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await fetchImpl(url, { method: 'HEAD' })
+        if (res.ok) return true
+        if (res.status === 404 || res.status === 403) return false
+      } catch {
+        // retry once
+      }
+    }
+    return false
+  }
+}
+
+/**
+ * Pick, per app, the first cover candidate that actually loads, but only for apps whose cover
+ * would change (managed cover not already one of the candidates) or that would be inserted.
+ * Results are stored on the snapshot so a replayed dry run is deterministic.
+ */
+export async function verifyCovers(
+  rows: CatalogRow[],
+  steam: Map<string, SteamGameInfo>,
+  snapshot: SteamSnapshot,
+  checkUrl: ((url: string) => Promise<boolean>) | null,
+  concurrency: number
+): Promise<void> {
+  const verified = (snapshot.verifiedCovers ??= {})
+  const inCatalog = new Map<string, CatalogRow>()
+  for (const r of rows) if (r.steam_app_id) inCatalog.set(r.steam_app_id.trim(), r)
+  const todo: SteamGameInfo[] = []
+  for (const info of steam.values()) {
+    if (info.appid in verified) continue
+    const row = inCatalog.get(info.appid)
+    const needs = row
+      ? isSyncManagedCover(row.cover_url) && !info.coverCandidates.includes(row.cover_url ?? '')
+      : snapshot.candidateAppIds.includes(info.appid)
+    if (needs) todo.push(info)
+  }
+  if (!checkUrl) todo.length = 0
+  await pool(todo, concurrency, async (info) => {
+    let found: string | null = null
+    for (const url of info.coverCandidates) {
+      if (await checkUrl!(url)) {
+        found = url
+        break
+      }
+    }
+    verified[info.appid] = found
+  })
+  for (const info of steam.values()) {
+    if (info.appid in verified) info.coverUrl = verified[info.appid]
+    else if (inCatalog.get(info.appid)?.cover_url && info.coverCandidates.includes(inCatalog.get(info.appid)!.cover_url!)) {
+      info.coverUrl = inCatalog.get(info.appid)!.cover_url // already on a valid candidate: keep it
+    }
+  }
+}
+
 export async function runCatalogSync(opts: RunOptions): Promise<RunResult> {
   const log = opts.log ?? (() => {})
   const startedAt = new Date().toISOString()
@@ -117,6 +180,10 @@ export async function runCatalogSync(opts: RunOptions): Promise<RunResult> {
       const info = mapSteamItem(item)
       if (info) steam.set(info.appid, info)
     }
+    const checker =
+      opts.checkUrl === false ? null : (opts.checkUrl ?? ('fetch' in opts.steam ? headCheck(opts.steam.fetch) : null))
+    await verifyCovers(rows, steam, snapshot, checker, opts.concurrency ?? 8)
+    if (checker) log(`covers verified: ${Object.keys(snapshot.verifiedCovers ?? {}).length}`)
     const plan = planCatalogSync(rows, steam, snapshot.candidateAppIds, {
       since: opts.since,
       now: opts.now ?? new Date(),

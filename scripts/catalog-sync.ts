@@ -12,7 +12,7 @@
  *   npm run catalog:sync -- --appids-file=ids.txt --steam-cache-out=steam.json  # fetch only, no DB
  *
  * Options: --since=YYYY-MM-DD (new games released on/after; default 180 days ago),
- *   --min-reviews=50, --max-new=100, --genre-backfill=200, --report=out.json
+ *   --min-reviews=50, --max-new=100, --genre-backfill=200, --report=out.json, --no-verify (skip cover HEAD checks)
  * Env for DB access: NEXT_PUBLIC_SUPABASE_URL (or SUPABASE_URL), SUPABASE_SERVICE_ROLE_KEY.
  */
 import { readFileSync, writeFileSync } from 'fs'
@@ -20,6 +20,7 @@ import { createClient } from '@supabase/supabase-js'
 import { loadEnvLocal } from './load-env-local'
 import {
   collectSteamSnapshot,
+  headCheck,
   runCatalogSync,
   snapshotCatalogStore,
   supabaseCatalogStore,
@@ -82,6 +83,8 @@ async function main() {
     maxNew: num('max-new', 100),
     genreBackfillLimit: num('genre-backfill', 200),
     steam,
+    // Covers are HEAD-checked against the live CDN even when Steam data is replayed from a cache.
+    checkUrl: arg('no-verify') === 'true' ? false : headCheck(steamOpts.fetch),
     log,
   })
 

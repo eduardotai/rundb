@@ -10,9 +10,10 @@ import {
   type CatalogRow,
   type SteamGameInfo,
 } from '../lib/catalog-sync/plan'
-import { runCatalogSync, snapshotCatalogStore, type CatalogStore, type SteamSnapshot } from '../lib/catalog-sync/run'
+import { headCheck, runCatalogSync, snapshotCatalogStore, type CatalogStore, type SteamSnapshot } from '../lib/catalog-sync/run'
 import { buildGetItemsUrl, fetchSteamItems, parseSearchAppIds, type FetchLike, type SteamStoreItem } from '../lib/catalog-sync/steam'
 import { buildCoverLoaderUrl, extractSteamAppIdFromUrl, upgradeCoverImageSrc } from '../lib/cover-image-url'
+import { getCatalogCover } from '../lib/game-cover-catalog'
 
 const HASHED = 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/2483190/711e39/library_capsule_2x.jpg'
 const LEGACY = 'https://cdn.cloudflare.steamstatic.com/steam/apps/2483190/library_600x900_2x.jpg'
@@ -189,7 +190,7 @@ function memoryStore(initial: CatalogRow[]) {
   return { store, rows, runs, writes }
 }
 
-function mockSteamFetch(items: SteamStoreItem[], popularNew: number[]): { fetch: FetchLike; calls: string[] } {
+function mockSteamFetch(items: SteamStoreItem[], popularNew: number[], deadCovers = new Set<string>()): { fetch: FetchLike; calls: string[] } {
   const calls: string[] = []
   const fetch: FetchLike = async (url) => {
     calls.push(url)
@@ -205,6 +206,7 @@ function mockSteamFetch(items: SteamStoreItem[], popularNew: number[]): { fetch:
       const id = new URL(url).searchParams.get('appids')!
       return Response.json({ [id]: { success: true, data: { genres: [{ description: 'Action' }] } } })
     }
+    if (url.includes('steamstatic.com/')) return new Response(null, { status: deadCovers.has(url) ? 404 : 200 })
     return new Response('not found', { status: 404 })
   }
   return { fetch, calls }
@@ -233,6 +235,19 @@ test('apply run fixes covers, adds new games, logs the run, and a second run is 
   assert.equal(second.plan.updates.length, 0, 'idempotent: nothing left to update')
   assert.equal(second.plan.inserts.length, 0, 'idempotent: nothing left to insert')
   assert.deepEqual(mem.writes, writesAfterFirst)
+})
+
+test('a listed Steam asset that 404s falls back to the next candidate, and the choice is stable', async () => {
+  const two = item(9, { assets: { asset_url_format: 'steam/apps/9/${FILENAME}', library_capsule_2x: 'a/library_capsule_2x.jpg', library_capsule: 'a/library_capsule.jpg' } })
+  const dead = new Set(['https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/9/a/library_capsule_2x.jpg'])
+  const mem = memoryStore([row({ slug: 'g9', steam_app_id: '9', cover_url: 'https://cdn.cloudflare.steamstatic.com/steam/apps/9/library_600x900_2x.jpg' })])
+  const net = mockSteamFetch([two], [], dead)
+  const base = { store: mem.store, mode: 'apply' as const, since: OPTS.since, now: OPTS.now, steam: { fetch: net.fetch, sleep: async () => {} } }
+  await runCatalogSync(base)
+  assert.equal(mem.rows[0].cover_url, 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/9/a/library_capsule.jpg')
+  const again = await runCatalogSync(base)
+  assert.equal(again.plan.updates.length, 0, 'a verified fallback is not re-replaced by the dead 2x URL')
+  assert.equal(await headCheck(net.fetch)([...dead][0]), false)
 })
 
 test('dry run never writes (read-only snapshot store would throw) and replays a cached Steam fetch', async () => {
@@ -291,6 +306,13 @@ test('hashed Steam store-asset URLs are never rewritten back to the guessed lega
   assert.equal(
     upgradeCoverImageSrc('https://cdn.cloudflare.steamstatic.com/steam/apps/10/header.jpg'),
     'https://cdn.cloudflare.steamstatic.com/steam/apps/10/library_600x900_2x.jpg'
+  )
+})
+
+test('static starter catalog keeps hashed Steam asset URLs (Horizon Forbidden West has no portrait capsule)', () => {
+  assert.equal(
+    getCatalogCover('horizon-forbidden-west')?.url,
+    'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1656320/header.jpg'
   )
 })
 

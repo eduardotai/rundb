@@ -4,7 +4,7 @@
  * from overriding correct Steam library art at display time.
  */
 import { GAMES } from './starter-games'
-import { extractSteamAppIdFromUrl, steamLibraryCoverUrl, upgradeCoverImageSrc } from './cover-image-url'
+import { extractSteamAppIdFromUrl, isSteamStoreAssetUrl, steamLibraryCoverUrl, upgradeCoverImageSrc } from './cover-image-url'
 
 export interface CatalogCover {
   url: string
@@ -29,8 +29,9 @@ function buildCatalog(): Record<string, CatalogCover> {
     const isSteam = Boolean(steamAppId)
 
     catalog[game.slug] = {
+      // Content-hashed Steam asset URLs are authoritative; only legacy Steam URLs are normalized.
       url: upgradeCoverImageSrc(
-        isSteam ? steamLibraryCoverUrl(steamAppId!, true) : game.coverImage
+        isSteam && !isSteamStoreAssetUrl(game.coverImage) ? steamLibraryCoverUrl(steamAppId!, true) : game.coverImage
       ),
       steamAppId,
       source: isSteam ? 'steam' : 'igdb',
