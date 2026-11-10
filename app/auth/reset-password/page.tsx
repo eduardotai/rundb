@@ -114,8 +114,8 @@ export default function ResetPasswordPage() {
       <div className="mx-auto max-w-md px-4 py-16">
         <Card className="text-center">
           <CardHeader>
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
-              <CheckCircle2 className="h-6 w-6 text-green-600 dark:text-green-400" />
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-success/10 dark:bg-success/12">
+              <CheckCircle2 className="h-6 w-6 text-success dark:text-success" />
             </div>
             <CardTitle className="text-2xl">Password updated!</CardTitle>
             <CardDescription className="pt-2">
@@ -165,6 +165,7 @@ export default function ResetPasswordPage() {
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   tabIndex={-1}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>

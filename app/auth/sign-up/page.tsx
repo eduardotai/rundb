@@ -279,8 +279,8 @@ function SignUpForm() {
       <div className="mx-auto max-w-md px-4 py-12 sm/py-16">
         <Card className="text-center">
           <CardHeader>
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
-              <CheckCircle2 className="h-6 w-6 text-green-600 dark:text-green-400" />
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-success/10 dark:bg-success/12">
+              <CheckCircle2 className="h-6 w-6 text-success dark:text-success" />
             </div>
             <CardTitle className="text-2xl">Check your inbox</CardTitle>
             <CardDescription className="pt-2 text-base">
@@ -412,6 +412,7 @@ function SignUpForm() {
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   tabIndex={-1}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -469,7 +470,7 @@ function SignUpForm() {
 
             <Button 
               type="submit" 
-              className="w-full h-11 mt-2 font-medium bg-white text-black hover:bg-white/90" 
+              className="w-full h-11 mt-2 font-medium bg-primary text-primary-foreground hover:bg-primary/90" 
               disabled={isLoading}
             >
               {emailLoading ? (
@@ -501,7 +502,7 @@ function SignUpForm() {
 
           <div className="pt-2 text-center text-sm">
             <span className="text-muted-foreground">Already have an account? </span>
-            <Link href="/auth/sign-in" className="font-medium text-primary hover:underline">
+            <Link href="/auth/sign-in" className="font-medium text-brand hover:underline">
               Sign in
             </Link>
           </div>

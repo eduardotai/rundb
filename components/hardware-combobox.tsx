@@ -134,17 +134,17 @@ export function HardwareCombobox({
       <div className="flex w-full items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           {opts?.igpuBadge ? (
-            <CircuitBoard className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+            <CircuitBoard className="h-3.5 w-3.5 text-success shrink-0" />
           ) : entry.componentType === 'gpu' ? (
-            <Zap className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+            <Zap className="h-3.5 w-3.5 text-warning shrink-0" />
           ) : (
-            <Cpu className="h-3.5 w-3.5 text-sky-400 shrink-0" />
+            <Cpu className="h-3.5 w-3.5 text-info shrink-0" />
           )}
           <span className="truncate">{entry.canonical}</span>
         </div>
         <div className="flex items-center gap-2 text-[10px] text-muted-foreground shrink-0">
           {opts?.igpuBadge && (
-            <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-emerald-400 uppercase tracking-wider">
+            <span className="rounded bg-success/15 px-1.5 py-0.5 text-success uppercase tracking-wider">
               iGPU
             </span>
           )}

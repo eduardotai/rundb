@@ -73,7 +73,7 @@ export function SteamLinkButton({ status, onLinked, onUnlinked, size = 'default'
   if (linked && status) {
     return (
       <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1.5 text-xs text-emerald-400">
+        <div className="flex items-center gap-1.5 text-xs text-success">
           <LinkIcon className="h-3.5 w-3.5" />
           <span>Steam linked{status.persona ? ` as ${status.persona}` : ''}</span>
         </div>

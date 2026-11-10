@@ -48,14 +48,14 @@ export function DetectedHardwareBanner({
       className={cn(
         'mt-2 rounded-md border p-3 text-sm',
         applied
-          ? 'border-emerald-500/30 bg-emerald-500/5'
-          : 'border-amber-500/30 bg-amber-500/5',
+          ? 'border-success/30 bg-success/5'
+          : 'border-warning/30 bg-warning/5',
         className
       )}
       role="status"
     >
       <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="outline" className="border-amber-500/50 text-amber-300 bg-amber-500/10 text-[10px]">
+        <Badge variant="outline" className="border-warning/50 text-warning bg-warning/10 text-[10px]">
           {methodLabel} • {pct}% confidence
         </Badge>
 
@@ -67,7 +67,7 @@ export function DetectedHardwareBanner({
         </span>
 
         {isBrowserHint && (
-          <span className="text-[10px] text-amber-400/90">CPU/RAM are estimates — paste for accurate values</span>
+          <span className="text-[10px] text-warning/90">CPU/RAM are estimates — paste for accurate values</span>
         )}
 
         <div className="ml-auto flex items-center gap-1.5">
@@ -130,7 +130,7 @@ export function DetectedHardwareBanner({
             <ul className="list-disc pl-4">
               {limitations.map((l, i) => <li key={i}>{l}</li>)}
             </ul>
-            <p className="text-amber-300/80">Always review before saving. Paste from your system for highest accuracy.</p>
+            <p className="text-warning/80">Always review before saving. Paste from your system for highest accuracy.</p>
           </div>
         </details>
       )}

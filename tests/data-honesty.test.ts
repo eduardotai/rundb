@@ -250,3 +250,21 @@ test('reports browser does not claim "every" report and discloses the newest-N c
   const data = readFileSync(new URL('../lib/data.ts', import.meta.url), 'utf8')
   assert.match(data, /\.limit\(GLOBAL_REPORTS_CAP\)/)
 })
+
+test('copy matches behaviour: name-only search, rig storage, moderation reason for owners', async () => {
+  const { readFileSync } = await import('node:fs')
+  const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8')
+  // Server search matches names only (ilike on games.name / search_games RPC).
+  assert.doesNotMatch(read('app/games/page.tsx'), /games or developers/)
+  // Guests' rigs live in this browser; only signed-in rigs sync to the account.
+  for (const p of ['app/page.tsx', 'app/compatibility/page.tsx']) {
+    assert.doesNotMatch(read(p), /syncs to your account'|stays with your account/, p)
+  }
+  // Report writes require a registered (non-anonymous) user, see lib/server/report-write.ts.
+  assert.doesNotMatch(read('app/auth/sign-in/page.tsx'), /Guests can submit reports/)
+  // My reports shows why a report was held or rejected.
+  assert.match(read('lib/server/profile.ts'), /status, moderator_notes,/)
+  assert.match(read('components/profile/profile-reports-list.tsx'), /r\.moderatorNotes/)
+  // Unknown release year is stored as 0 and must not be shown as "0".
+  assert.doesNotMatch(read('app/reports/page.tsx'), /hint: String\(g\.releaseYear\)/)
+})

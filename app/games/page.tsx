@@ -220,8 +220,8 @@ export default function GamesPage() {
           <div className="relative md:w-96">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <Input
-              placeholder="Search games or developers…"
-              aria-label="Search games or developers"
+              placeholder="Search games by name…"
+              aria-label="Search games by name"
               value={search}
               onChange={(e) => setSearch(sanitizeSearchQuery(e.target.value))}
               className="h-11 rounded-full pl-9 pr-9"

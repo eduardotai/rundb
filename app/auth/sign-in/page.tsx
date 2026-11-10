@@ -249,6 +249,7 @@ function SignInForm() {
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   tabIndex={-1}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -260,7 +261,7 @@ function SignInForm() {
 
             <Button 
               type="submit" 
-              className="w-full h-11 font-medium bg-white text-black hover:bg-white/90" 
+              className="w-full h-11 font-medium bg-primary text-primary-foreground hover:bg-primary/90" 
               disabled={isLoading}
             >
               {emailLoading ? (
@@ -288,14 +289,14 @@ function SignInForm() {
               Continue as Guest (no account needed)
             </Button>
             <p className="mt-2 text-center text-xs text-muted-foreground">
-              Guests can submit reports and save a rig locally. Create an account later to sync across devices.
+              Guests can browse and save a rig in this browser. Submitting reports needs an account, which also keeps your rig with you.
             </p>
           </div>
 
           {/* Footer links */}
           <div className="pt-4 text-center text-sm">
             <span className="text-muted-foreground">Don&apos;t have an account? </span>
-            <Link href="/auth/sign-up" className="font-medium text-primary hover:underline">
+            <Link href="/auth/sign-up" className="font-medium text-brand hover:underline">
               Create one for free
             </Link>
           </div>

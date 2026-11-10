@@ -32,6 +32,8 @@ export interface ProfileReportLite {
   avgFps: number;
   performanceTier: PerformanceTier;
   status: 'pending' | 'approved' | 'rejected' | 'flagged';
+  /** Moderation reason (auto-review or moderator). Owners can read it on their own reports (RLS). */
+  moderatorNotes?: string | null;
   helpfulVotes: number;
   downvoteVotes: number;
   voteScore: number;
@@ -197,6 +199,7 @@ function mapReportRow(row: Record<string, unknown>): ProfileReportLite {
     avgFps: Number(row.avg_fps ?? 0),
     performanceTier: VALID_TIERS.has(tier) ? tier : 'Playable',
     status: ['pending', 'approved', 'rejected', 'flagged'].includes(status) ? status : 'pending',
+    moderatorNotes: typeof row.moderator_notes === 'string' && row.moderator_notes.trim() ? row.moderator_notes.trim() : null,
     helpfulVotes: Number(row.helpful_votes ?? 0),
     downvoteVotes: Number(row.downvote_votes ?? 0),
     voteScore: Number(row.vote_score ?? row.helpful_votes ?? 0),
@@ -235,7 +238,7 @@ export async function getProfileData(userId: string): Promise<ProfileData> {
       supabase
         .from('reports')
         .select(
-          'id, game_id, game_name, cpu, gpu, ram, ram_speed, resolution, refresh_rate, settings_preset, custom_settings_notes, avg_fps, fps_1_percent_low, performance_tier, status, notes, tweaks, issues, driver_version, helpful_votes, downvote_votes, vote_score, created_at'
+          'id, game_id, game_name, cpu, gpu, ram, ram_speed, resolution, refresh_rate, settings_preset, custom_settings_notes, avg_fps, fps_1_percent_low, performance_tier, status, moderator_notes, notes, tweaks, issues, driver_version, helpful_votes, downvote_votes, vote_score, created_at'
         )
         .eq('user_id', userId)
         .order('created_at', { ascending: false })

@@ -318,7 +318,7 @@ export function EditReportDialog({ report, open, onOpenChange, onSaved }: EditRe
               <Button
                 type="submit"
                 disabled={isSaving}
-                className="bg-white font-medium text-black hover:bg-white/90"
+                className="font-medium"
               >
                 {isSaving ? 'Saving…' : 'Save changes'}
               </Button>

@@ -171,7 +171,7 @@ export function AdminBulkImportDialog({ open, onOpenChange, onImportComplete }: 
           <Button 
             onClick={runBulkImport} 
             disabled={isImporting || parsedPreview.length === 0}
-            className="bg-white text-black font-medium hover:bg-white/90"
+            className="bg-primary text-primary-foreground font-medium hover:bg-primary/90"
           >
             {isImporting ? 'Importing…' : 'Run Import'}
           </Button>

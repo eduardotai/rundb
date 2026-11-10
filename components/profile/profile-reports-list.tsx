@@ -11,22 +11,22 @@ function StatusPill({ status }: { status: ProfileReportLite['status'] }) {
     approved: {
       icon: <CheckCircle2 className="h-3 w-3" />,
       label: 'Live',
-      cls: 'text-[var(--tier-excellent)] border-[#14532d] bg-[var(--tier-excellent-bg)]',
+      cls: 'text-[var(--tier-excellent)] border-[color-mix(in_srgb,var(--tier-excellent-fill)_35%,transparent)] bg-[var(--tier-excellent-bg)]',
     },
     pending: {
       icon: <Clock className="h-3 w-3" />,
       label: 'Pending',
-      cls: 'text-[var(--tier-playable)] border-[#713f12] bg-[var(--tier-playable-bg)]',
+      cls: 'text-[var(--tier-playable)] border-[color-mix(in_srgb,var(--tier-playable-fill)_35%,transparent)] bg-[var(--tier-playable-bg)]',
     },
     rejected: {
       icon: <XCircle className="h-3 w-3" />,
       label: 'Rejected',
-      cls: 'text-[var(--tier-unplayable)] border-[#991b1b] bg-[var(--tier-unplayable-bg)]',
+      cls: 'text-[var(--tier-unplayable)] border-[color-mix(in_srgb,var(--tier-unplayable-fill)_35%,transparent)] bg-[var(--tier-unplayable-bg)]',
     },
     flagged: {
       icon: <Flag className="h-3 w-3" />,
       label: 'Flagged',
-      cls: 'text-[var(--tier-struggling)] border-[#7c2d12] bg-[var(--tier-struggling-bg)]',
+      cls: 'text-[var(--tier-struggling)] border-[color-mix(in_srgb,var(--tier-struggling-fill)_35%,transparent)] bg-[var(--tier-struggling-bg)]',
     },
   }[status];
 
@@ -70,7 +70,7 @@ export function ProfileReportsList({
         <p className="text-sm text-muted-foreground">{emptyMessage}</p>
         <Link
           href="/submit"
-          className="mt-3 inline-flex text-sm font-medium text-primary hover:underline"
+          className="mt-3 inline-flex text-sm font-medium text-brand hover:underline"
         >
           Submit your first report →
         </Link>
@@ -79,11 +79,11 @@ export function ProfileReportsList({
   }
 
   return (
-    <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+    <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card shadow-xs">
       {shown.map((r) => (
         <li
           key={r.id}
-          className="report-card flex items-center gap-4 px-4 py-3 hover:bg-muted/30"
+          className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40 sm:gap-4"
         >
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
@@ -95,6 +95,12 @@ export function ProfileReportsList({
             <div className="mt-0.5 truncate text-xs text-muted-foreground">
               {[r.gpu, r.resolution, r.settingsPreset].filter(Boolean).join(' · ')}
             </div>
+            {r.status !== 'approved' && r.moderatorNotes && (
+              <p className="mt-1 line-clamp-2 text-xs text-warning" data-testid="moderation-reason">
+                <span className="font-medium">{r.status === 'rejected' ? 'Rejected: ' : 'Moderation note: '}</span>
+                {r.moderatorNotes}
+              </p>
+            )}
           </div>
 
           <div className="hidden items-center gap-1 text-xs text-muted-foreground sm:flex">
@@ -121,7 +127,7 @@ export function ProfileReportsList({
             <button
               type="button"
               onClick={() => onEdit(r)}
-              className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background/60 px-2 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-card px-2 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
               title={`Edit your ${r.gameName} report`}
             >
               <Pencil className="h-3 w-3" />

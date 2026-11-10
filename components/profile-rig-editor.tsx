@@ -274,7 +274,7 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
             onClick={handleSave}
             disabled={isSaving}
             size="lg"
-            className="bg-white font-medium text-black hover:bg-white/90"
+            className="font-medium"
           >
             {isSaving ? 'Saving...' : 'Save My Rig'}
           </Button>
@@ -300,7 +300,7 @@ export function ProfileRigEditor({ user }: ProfileRigEditorProps) {
           </div>
           {steamStatus?.linked && (
             <div className="space-y-1">
-              <p className="text-[11px] text-emerald-400/80">
+              <p className="text-[11px] text-success/80">
                 Linked{steamStatus.persona ? ` as ${steamStatus.persona}` : ''}.
               </p>
               {HARDWARE_DETECT_UI_ENABLED && (
