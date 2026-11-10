@@ -22,23 +22,23 @@ const VERDICT_COPY: Record<
 > = {
   exceeds_recommended: {
     title: 'Above recommended',
-    className: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200',
+    className: 'border-success/40 bg-success/10 text-success',
   },
   meets_recommended: {
     title: 'Meets recommended',
-    className: 'border-emerald-500/35 bg-emerald-500/10 text-emerald-200',
+    className: 'border-success/35 bg-success/10 text-success',
   },
   between_min_and_rec: {
     title: 'Between min & recommended',
-    className: 'border-amber-400/40 bg-amber-500/10 text-amber-100',
+    className: 'border-warning/40 bg-warning/10 text-warning',
   },
   meets_minimum: {
     title: 'Meets minimum',
-    className: 'border-amber-400/35 bg-amber-500/10 text-amber-100',
+    className: 'border-warning/35 bg-warning/10 text-warning',
   },
   below_minimum: {
     title: 'Below minimum',
-    className: 'border-destructive/40 bg-destructive/10 text-red-200',
+    className: 'border-destructive/40 bg-destructive/10 text-destructive',
   },
   unknown: {
     title: 'Can’t evaluate yet',
@@ -61,9 +61,9 @@ function CheckIcon({ status }: { status: ComponentCheck }) {
 }
 
 function statusClass(status: ComponentCheck): string {
-  if (status === 'pass') return 'text-emerald-400';
-  if (status === 'borderline') return 'text-amber-400';
-  if (status === 'fail') return 'text-red-400';
+  if (status === 'pass') return 'text-success';
+  if (status === 'borderline') return 'text-warning';
+  if (status === 'fail') return 'text-destructive';
   return 'text-muted-foreground';
 }
 
@@ -112,11 +112,11 @@ function ComponentRow({
 function TierTable({ min, rec }: { min?: SpecTierCheck; rec?: SpecTierCheck }) {
   if (!min && !rec) return null;
   return (
-    <div className="space-y-2 rounded-xl border border-border/80 bg-background/40 p-3">
+    <div className="space-y-2 rounded-xl border border-border/80 bg-muted/50 p-3">
       <div className="grid grid-cols-[4.5rem_1fr_1fr] gap-2 text-xs font-medium text-muted-foreground">
         <div />
-        <div className="text-amber-400">Minimum</div>
-        <div className="text-emerald-400">Recommended</div>
+        <div className="text-warning">Minimum</div>
+        <div className="text-success">Recommended</div>
       </div>
       <ComponentRow label="CPU" min={min?.cpu} rec={rec?.cpu} />
       <ComponentRow label="GPU" min={min?.gpu} rec={rec?.gpu} />
@@ -174,9 +174,9 @@ export function OfficialSpecCheck({
   // Lazy ensure in progress — only matters when we still have nothing to show
   if (!hasReqs && isLoadingReqs) {
     return (
-      <div className={cn('rounded-2xl border border-border bg-card p-4 text-sm', className)}>
-        <div className="text-sm font-medium text-muted-foreground mb-1">
-          QUICK CHECK — OFFICIAL SPECS
+      <div className={cn('surface p-5 text-sm', className)}>
+        <div className="mb-1.5 font-semibold tracking-tight text-foreground">
+          Quick check vs. official specs
         </div>
         <p className="text-muted-foreground">
           Loading this game’s Steam minimum and recommended requirements…
@@ -191,9 +191,9 @@ export function OfficialSpecCheck({
       reqsLoadError ||
       'Publisher min/recommended specs are not available for this title yet (Steam listing may omit PC requirements, or the game is not linked to a Steam App ID).';
     return (
-      <div className={cn('rounded-2xl border border-border bg-card p-4 text-sm', className)}>
-        <div className="text-sm font-medium text-muted-foreground mb-1">
-          QUICK CHECK — OFFICIAL SPECS
+      <div className={cn('surface p-5 text-sm', className)}>
+        <div className="mb-1.5 font-semibold tracking-tight text-foreground">
+          Quick check vs. official specs
         </div>
         <p className="text-muted-foreground">{emptyCopy}</p>
         <p className="text-muted-foreground/80 mt-2 text-xs">
@@ -207,9 +207,9 @@ export function OfficialSpecCheck({
   // No saved rig — still show that this is hardware-vs-publisher, not reports
   if (!myRig) {
     return (
-      <div className={cn('rounded-2xl border border-border bg-card p-4 text-sm', className)}>
-        <div className="text-sm font-medium text-muted-foreground mb-1">
-          QUICK CHECK — OFFICIAL SPECS
+      <div className={cn('surface p-5 text-sm', className)}>
+        <div className="mb-1.5 font-semibold tracking-tight text-foreground">
+          Quick check vs. official specs
         </div>
         <p className="text-foreground/90 mb-2">
           Save your rig to compare it against this game’s official Steam minimum and recommended
@@ -244,15 +244,14 @@ export function OfficialSpecCheck({
   return (
     <div
       className={cn(
-        'rounded-2xl border bg-card p-5 space-y-3',
-        isPrimary ? 'border-primary/25' : 'border-border',
+        'surface p-5 space-y-3',
         className
       )}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <div className="text-sm font-medium text-muted-foreground mb-1">
-            {isPrimary ? 'QUICK CHECK — OFFICIAL SPECS' : 'OFFICIAL SPECS (SECONDARY)'}
+          <div className="mb-1.5 font-semibold tracking-tight text-foreground">
+            {isPrimary ? 'Quick check vs. official specs' : 'Official specs (secondary)'}
           </div>
           <Badge variant="outline" className={cn('text-sm font-semibold', copy.className)}>
             {copy.title}

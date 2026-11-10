@@ -13,10 +13,10 @@ interface FpsResolutionBarsProps {
 
 // Bucket -> tier CSS variable (reuses globals.css palette; no new CSS).
 const bucketVar: Record<FpsBucket, string> = {
-  low: 'var(--tier-struggling)',
-  ok: 'var(--tier-playable)',
-  good: 'var(--tier-good)',
-  high: 'var(--tier-excellent)',
+  low: 'var(--tier-struggling-fill)',
+  ok: 'var(--tier-playable-fill)',
+  good: 'var(--tier-good-fill)',
+  high: 'var(--tier-excellent-fill)',
 };
 
 export function FpsResolutionBars({ avgFpsByResolution }: FpsResolutionBarsProps) {

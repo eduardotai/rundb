@@ -377,7 +377,7 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
 
                   {savedDevices.length > 1 && (
                     <select
-                      className="h-7 rounded-md border border-input bg-background px-2 text-xs"
+                      className="h-8 rounded-lg border border-input bg-card px-2.5 text-xs shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/20"
                       onChange={(e) => {
                         const dev = savedDevices.find((d) => d.id === e.target.value);
                         if (dev) {
@@ -589,7 +589,7 @@ export function SubmitReportDialog({ open, onOpenChange, game, onSuccess }: Subm
                 <Button
                   type="submit"
                   disabled={isSubmitting}
-                  className="bg-white text-black font-medium hover:bg-white/90"
+                  className="bg-primary text-primary-foreground font-medium hover:bg-primary/90"
                 >
                   {isSubmitting ? 'Submitting…' : 'Submit report'}
                 </Button>

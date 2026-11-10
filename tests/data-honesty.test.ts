@@ -234,3 +234,10 @@ test('home page derives the trending heading from real activity and shows real c
   assert.doesNotMatch(src, />\s*Trending this week\s*</, 'heading must not be hard-coded')
   assert.doesNotMatch(src, /label: 'reports per game'/, 'a rounded per-game average reads as 0 on the real catalog')
 })
+
+test('game detail credits sourced cover art (coverAttribution) next to the hero', async () => {
+  const { readFileSync } = await import('node:fs')
+  const src = readFileSync(new URL('../app/games/[slug]/page.tsx', import.meta.url), 'utf8')
+  assert.match(src, /\{game\.coverAttribution\}/)
+  assert.match(src, /GPU_SERIES_FILTER_OPTIONS/, 'GPU filter options come from the hardware catalog series')
+})

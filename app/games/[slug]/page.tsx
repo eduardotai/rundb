@@ -14,7 +14,8 @@ import { CompatibilityChecker } from '@/components/compatibility-checker';
 import { OfficialSpecCheck } from '@/components/official-spec-check';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { ShieldCheck, Sparkles, X } from 'lucide-react';
+import { ChevronLeft, Plus, ShieldCheck, SlidersHorizontal, Sparkles, X } from 'lucide-react';
+import { PerformanceBadge } from '@/components/performance-badge';
 import {
   loadMyRigAsync,
   voteReport,
@@ -22,6 +23,7 @@ import {
   computeGameStatsAsync,
   usePrediction,
   useGame,
+  getDominantTier,
 } from '@/lib/data';
 import { Report, ReportFilters, Game, UserPC } from '@/lib/types';
 import { GameCoverFrame } from '@/components/game-cover-frame';
@@ -42,23 +44,29 @@ export default function GameDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-8">
-        <div className="h-[320px] w-full rounded-2xl bg-muted animate-pulse mb-8" />
-        <div className="space-y-4">
-          <div className="h-8 w-2/3 bg-muted animate-pulse rounded" />
-          <div className="h-4 w-1/2 bg-muted animate-pulse rounded" />
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6" aria-busy="true">
+        <Skeleton className="h-4 w-24" />
+        <div className="mt-6 flex items-end gap-6">
+          <Skeleton className="aspect-[2/3] w-32 rounded-xl sm:w-44" />
+          <div className="flex-1 space-y-3">
+            <Skeleton className="h-6 w-40 rounded-full" />
+            <Skeleton className="h-10 w-2/3" />
+            <Skeleton className="h-4 w-1/3" />
+          </div>
         </div>
+        <Skeleton className="mt-8 h-24 w-full rounded-2xl" />
       </div>
     );
   }
 
   if (!game || error) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-20 text-center">
-        <h1 className="text-2xl font-semibold">Game not found</h1>
+      <div className="mx-auto max-w-lg px-4 py-24 text-center">
+        <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-muted text-2xl" aria-hidden>?</div>
+        <h1 className="mt-5 text-2xl font-semibold tracking-tight">Game not found</h1>
         <p className="mt-2 text-muted-foreground">The game you’re looking for doesn’t exist in our database yet.</p>
-        <Button asChild className="mt-6">
-          <Link href="/games">Back to Browse</Link>
+        <Button asChild className="mt-6 rounded-full">
+          <Link href="/games">Browse all games</Link>
         </Button>
       </div>
     );
@@ -324,308 +332,219 @@ function GameDetailInner({ game }: { game: Game }) {
   const communityPredictionConfidence =
     communityPredictedTier != null ? predictionQuery.data?.confidence : undefined;
 
+  const dominantTier = hasCommunityReports ? getDominantTier(stats) : null;
+  const activeFilterCount = (filters.resolution ? 1 : 0) + (filters.gpuSeries ? 1 : 0);
+
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
-      {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div>
-          <Link href="/games" className="text-sm text-muted-foreground hover:text-foreground">← All games</Link>
-          <div className="mt-1 flex flex-wrap items-center gap-3">
-            <h1 className="text-4xl font-semibold tracking-tighter">{game.name}</h1>
-            <Badge
-              variant="outline"
-              className={cn(
-                'gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold',
-                hasCommunityReports
-                  ? 'border-primary/35 bg-primary/10 text-primary'
-                  : 'border-amber-400/40 bg-amber-500/10 text-amber-200'
-              )}
-            >
-              {hasCommunityReports ? (
-                <ShieldCheck className="h-3.5 w-3.5" />
-              ) : (
-                <Sparkles className="h-3.5 w-3.5" />
-              )}
-              {statsQuery.isLoading
-                ? 'Checking reports'
-                : hasCommunityReports
-                  ? `${stats.totalReports} community ${stats.totalReports === 1 ? 'report' : 'reports'}`
-                  : 'Needs first report'}
-            </Badge>
-          </div>
-          <div className="mt-1 text-muted-foreground">
-            {game.developer} • {game.releaseYear} • {game.genres.join(', ')}
-          </div>
-        </div>
-        <Button size="lg" onClick={() => setShowSubmit(true)}>
-          Submit Your Report
-        </Button>
-      </div>
-
-      <div className="mt-6 grid gap-8 lg:grid-cols-12">
-        {/* Left column — Info + Stats */}
-        <div className="lg:col-span-5 space-y-6">
-          <div className="overflow-hidden rounded-2xl border border-border">
-            {/* Phase 1/3: Next Image + gameMediaLoader for real covers (IGDB/Steam/Supabase).
-               Priority for LCP. Error state + improved sizes + optional attribution polish.
-               Now uses portrait aspect-[2/3] to match actual cover sources (library_600x900 etc) for consistent fit with GameCard + report sections. */}
-            <div className="relative aspect-[2/3] w-full overflow-hidden">
-              {!heroImgError ? (
-                <GameCoverFrame
-                  src={game.coverImage}
-                  alt={game.name}
-                  steamAppId={game.steamAppId}
-                  className="h-full w-full"
-                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 60vw, 720px"
-                  quality={92}
-                  priority
-                  onError={() => setHeroImgError(true)}
-                />
-              ) : (
-                /* Consistent beautiful error fallback for hero (preserves layout + visual weight) */
-                <div className="absolute inset-0 bg-gradient-to-br from-muted/80 via-muted to-card flex items-center justify-center">
-                  <div className="text-center px-6">
-                    <div className="text-xs tracking-[3px] uppercase text-muted-foreground/60 mb-2">GAME COVER</div>
-                    <div className="text-xl md:text-2xl font-semibold tracking-tighter text-foreground/90">{game.name}</div>
-                  </div>
-                </div>
-              )}
-            </div>
-            {/* Optional attribution polish — subtle footer on hero for real sourced covers (no visual impact when absent) */}
-            {game.coverAttribution && !heroImgError && (
-              <div className="px-3 py-1 text-[10px] text-muted-foreground/70 bg-card border-t border-border rounded-b-2xl">
-                {game.coverAttribution}
-              </div>
-            )}
-          </div>
-
-          {/* Official Requirements (publisher list) — may appear after lazy Steam ensure */}
-          {(displayGame.officialMinReqs || displayGame.officialRecReqs) && (
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <div className="text-sm font-medium text-muted-foreground mb-3">OFFICIAL REQUIREMENTS</div>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                {displayGame.officialMinReqs && (
-                  <div>
-                    <div className="font-medium mb-1 text-amber-400">Minimum</div>
-                    <div className="space-y-0.5 text-muted-foreground">
-                      <div>CPU: {displayGame.officialMinReqs.cpu}</div>
-                      <div>GPU: {displayGame.officialMinReqs.gpu}</div>
-                      <div>RAM: {displayGame.officialMinReqs.ram} GB</div>
-                    </div>
-                  </div>
-                )}
-                {displayGame.officialRecReqs && (
-                  <div>
-                    <div className="font-medium mb-1 text-emerald-400">Recommended</div>
-                    <div className="space-y-0.5 text-muted-foreground">
-                      <div>CPU: {displayGame.officialRecReqs.cpu}</div>
-                      <div>GPU: {displayGame.officialRecReqs.gpu}</div>
-                      <div>RAM: {displayGame.officialRecReqs.ram} GB</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-              {/* Compact secondary line when community reports already lead */}
-              {hasCommunityReports && (
-                <div className="mt-3 pt-3 border-t border-border">
-                  <OfficialSpecCheck
-                    game={displayGame}
-                    myRig={myRig}
-                    hasCommunityReports
-                    compact
-                  />
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Loading skeleton while first-time Steam ensure runs (no specs yet) */}
-          {isLoadingOfficialReqs &&
-            !displayGame.officialMinReqs &&
-            !displayGame.officialRecReqs && (
-              <div className="rounded-2xl border border-border bg-card p-5">
-                <div className="text-sm font-medium text-muted-foreground mb-3">
-                  OFFICIAL REQUIREMENTS
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Loading Steam minimum and recommended requirements…
-                </p>
-              </div>
-            )}
-
-          {/*
-            Official hardware check is independent of community reports.
-            Always show: loading / empty reason / verdict vs saved rig.
-            Community reports live in the stats/list section below.
-          */}
-          {!statsQuery.isLoading && (
-            <OfficialSpecCheck
-              game={displayGame}
-              myRig={myRig}
-              hasCommunityReports={hasCommunityReports}
-              isLoadingReqs={isLoadingOfficialReqs}
-              reqsLoadError={officialReqsLoadError}
+    <div className="pb-16">
+      {/* Hero band: blurred cover wash + cover + title + key numbers */}
+      <section className="relative overflow-hidden border-b border-border">
+        {!heroImgError && (
+          <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.22] dark:opacity-[0.18]">
+            <GameCoverFrame
+              src={game.coverImage}
+              alt=""
+              steamAppId={game.steamAppId}
+              className="h-full w-full scale-125 blur-3xl"
+              sizes="200px"
+              blurBackdrop={false}
             />
-          )}
-
-          {/* Community Stats (now powered by RQ + real adapter when flag on) */}
-          <div className="rounded-2xl border border-border bg-card p-5">
-            <div className="text-sm font-medium text-muted-foreground mb-3">
-              COMMUNITY STATS — {stats.totalReports} REPORTS
-              {statsQuery.isLoading && ' (loading…)'}
-            </div>
-
-            {statsQuery.isError && (
-              <div className="text-xs text-amber-500 mb-2">Live stats unavailable — showing partial data.</div>
-            )}
-
-            {statsQuery.isLoading ? (
-              // Dense ProtonDB-style loading skeletons for stats (Phase 3 polish)
-              <div className="space-y-4">
-                <Skeleton className="h-4 w-full rounded-full" />
-                <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 sm:grid-cols-3">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <Skeleton key={i} className="h-3.5 w-full" />
-                  ))}
-                </div>
-                <div className="mt-3 border-t border-border pt-4 space-y-2">
-                  <Skeleton className="h-3.5 w-40" />
-                  {Array.from({ length: 3 }).map((_, i) => (
-                    <Skeleton key={i} className="h-3 w-full" />
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <>
-                <TierDistributionBar
-                  distribution={stats.tierDistribution}
-                  total={stats.totalReports}
-                  predictedTier={communityPredictedTier}
-                  confidence={communityPredictionConfidence}
-                />
-
-                <div className="mt-5 border-t border-border pt-4 text-sm">
-                  <div className="font-medium mb-2">Average FPS by Resolution</div>
-                  <FpsResolutionBars avgFpsByResolution={stats.avgFpsByResolution} />
-                </div>
-
-                {stats.mostCommonPreset && (
-                  <div className="mt-4 text-sm">
-                    Most common working preset: <span className="font-semibold">{stats.mostCommonPreset}</span>
+          </div>
+        )}
+        <div aria-hidden className="absolute inset-0 bg-gradient-to-b from-background/40 via-background/75 to-background" />
+        <div className="relative mx-auto max-w-7xl px-4 pb-8 pt-6 sm:px-6 md:pb-10 md:pt-8">
+          <nav aria-label="Breadcrumb" className="text-sm text-muted-foreground">
+            <Link href="/games" className="inline-flex items-center gap-1 hover:text-foreground">
+              <ChevronLeft className="h-4 w-4" aria-hidden /> All games
+            </Link>
+          </nav>
+          <div className="mt-5 flex flex-col gap-6 sm:flex-row sm:items-end">
+            <div className="w-32 shrink-0 overflow-hidden rounded-xl border border-border bg-muted shadow-lg sm:w-40 md:w-44">
+              <div className="relative aspect-[2/3] w-full">
+                {!heroImgError ? (
+                  <GameCoverFrame
+                    src={game.coverImage}
+                    alt={game.name}
+                    steamAppId={game.steamAppId}
+                    className="h-full w-full"
+                    sizes="(max-width: 640px) 128px, 176px"
+                    quality={92}
+                    priority
+                    blurBackdrop={false}
+                    onError={() => setHeroImgError(true)}
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center p-3 text-center">
+                    <div className="text-sm font-semibold leading-tight text-foreground/80">{game.name}</div>
                   </div>
                 )}
-              </>
-            )}
-          </div>
-
-          {/* Quick compatibility teaser */}
-          {myRig && (
-            <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm">
-              Your saved rig is active. Reports matching your hardware are highlighted below.
+              </div>
             </div>
-          )}
-        </div>
-
-        {/* Right column — Filters + Reports */}
-        <div className="lg:col-span-7">
-          {/* Report Filters */}
-          <div className="mb-4 space-y-2">
-            <div className="text-xs text-muted-foreground mb-2">
-              These reports from real players power the community stats, tier distributions, and similarity highlights on the left.
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="text-sm font-medium text-muted-foreground mr-1">Filter reports:</div>
-
-              <Select
-                value={filters.resolution || ANY_FILTER_VALUE}
-                onValueChange={(v) => handleFilterChange({ resolution: v === ANY_FILTER_VALUE ? undefined : v })}
-              >
-                <SelectTrigger
-                  className={cn(
-                    "h-9 w-[180px]",
-                    filters.resolution && "border-primary/70 bg-primary/5 ring-1 ring-inset ring-primary/25"
-                  )}
-                >
-                  <SelectValue placeholder="Any resolution" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ANY_FILTER_VALUE}>Any resolution</SelectItem>
-                  {resolutions.map((r) => (
-                    <SelectItem key={r} value={r}>{r}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select
-                value={filters.gpuSeries || ANY_FILTER_VALUE}
-                onValueChange={(v) => handleFilterChange({ gpuSeries: v === ANY_FILTER_VALUE ? undefined : v })}
-              >
-                <SelectTrigger
-                  className={cn(
-                    "h-9 w-[160px]",
-                    filters.gpuSeries && "border-primary/70 bg-primary/5 ring-1 ring-inset ring-primary/25"
-                  )}
-                >
-                  <SelectValue placeholder="Any GPU series" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ANY_FILTER_VALUE}>Any GPU series</SelectItem>
-                  {GPU_SERIES_FILTER_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              {(filters.resolution || filters.gpuSeries) && (
-                <Button
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge
                   variant="outline"
-                  size="sm"
-                  onClick={clearFilters}
-                  className="ml-0.5 border-destructive/40 text-destructive hover:bg-destructive/10 hover:border-destructive/60 hover:text-destructive gap-1.5"
+                  className={cn(
+                    'gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium',
+                    hasCommunityReports
+                      ? 'border-border bg-card text-foreground'
+                      : 'border-brand/30 bg-brand/10 text-brand'
+                  )}
                 >
-                  <X className="h-3.5 w-3.5" />
-                  Clear filters
-                </Button>
+                  {hasCommunityReports ? (
+                    <ShieldCheck className="h-3.5 w-3.5 text-success" />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5" />
+                  )}
+                  {statsQuery.isLoading
+                    ? 'Checking reports'
+                    : hasCommunityReports
+                      ? `${stats.totalReports} community ${stats.totalReports === 1 ? 'report' : 'reports'}`
+                      : 'Needs first report'}
+                </Badge>
+                {game.genres.slice(0, 3).map((g) => (
+                  <span key={g} className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                    {g}
+                  </span>
+                ))}
+              </div>
+              <h1 className="mt-3 text-balance text-3xl font-semibold tracking-tight sm:text-4xl md:text-5xl">{game.name}</h1>
+              <div className="mt-2 text-muted-foreground">
+                {[game.developer, game.releaseYear].filter(Boolean).join(' · ')}
+              </div>
+              {/* Credit for sourced cover art (e.g. Steam library art); hidden when the image failed. */}
+              {game.coverAttribution && !heroImgError && (
+                <p className="mt-2 text-xs text-muted-foreground/80" data-testid="cover-attribution">
+                  {game.coverAttribution}
+                </p>
               )}
             </div>
-
-            {/* Visual active filter indicators — chips make current selection obvious + easy to clear individually */}
-            {(filters.resolution || filters.gpuSeries) && (
-              <div className="flex flex-wrap items-center gap-2 pl-1">
-                <span className="text-[10px] font-medium uppercase tracking-[1px] text-muted-foreground/70">Active filters:</span>
-                {filters.resolution && (
-                  <Badge
-                    variant="outline"
-                    className="h-6 gap-1.5 border-primary/50 bg-primary/5 pl-2.5 pr-1 text-xs text-primary hover:bg-primary/10 cursor-pointer active:bg-primary/15"
-                    onClick={() => handleFilterChange({ resolution: undefined })}
-                  >
-                    {filters.resolution}
-                    <X className="h-3 w-3 opacity-70" />
-                  </Badge>
-                )}
-                {filters.gpuSeries && (
-                  <Badge
-                    variant="outline"
-                    className="h-6 gap-1.5 border-primary/50 bg-primary/5 pl-2.5 pr-1 text-xs text-primary hover:bg-primary/10 cursor-pointer active:bg-primary/15"
-                    onClick={() => handleFilterChange({ gpuSeries: undefined })}
-                  >
-                    {filters.gpuSeries}
-                    <X className="h-3 w-3 opacity-70" />
-                  </Badge>
-                )}
-              </div>
-            )}
+            <div className="flex shrink-0 gap-2 sm:pb-1">
+              <Button size="lg" className="w-full rounded-full sm:w-auto" onClick={() => setShowSubmit(true)}>
+                <Plus className="h-4 w-4" aria-hidden />
+                Submit your report
+              </Button>
+            </div>
           </div>
 
-          {/* Reports list — now from RQ cached real (or mock) adapter path with server filter when flag true */}
-          <div className="space-y-3">
+          {/* KPI row */}
+          <dl className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-xs md:grid-cols-4">
+            <div className="bg-card p-4 sm:p-5">
+              <dt className="eyebrow">Average FPS</dt>
+              <dd className="mt-2 flex items-baseline gap-1.5">
+                {statsQuery.isLoading ? (
+                  <Skeleton className="h-8 w-16" />
+                ) : (
+                  <>
+                    <span className="font-mono text-3xl font-semibold tabular-nums tracking-tight">
+                      {hasCommunityReports ? Math.round(stats.avgFpsOverall) : '—'}
+                    </span>
+                    {hasCommunityReports && <span className="text-sm text-muted-foreground">all resolutions</span>}
+                  </>
+                )}
+              </dd>
+            </div>
+            <div className="bg-card p-4 sm:p-5">
+              <dt className="eyebrow">Most reports say</dt>
+              <dd className="mt-2.5">
+                {statsQuery.isLoading ? (
+                  <Skeleton className="h-7 w-24 rounded-full" />
+                ) : dominantTier ? (
+                  <PerformanceBadge tier={dominantTier} size="lg" />
+                ) : (
+                  <span className="text-sm text-muted-foreground">Not enough data</span>
+                )}
+              </dd>
+            </div>
+            <div className="bg-card p-4 sm:p-5">
+              <dt className="eyebrow">Reports</dt>
+              <dd className="mt-2 font-mono text-3xl font-semibold tabular-nums tracking-tight">
+                {statsQuery.isLoading ? <Skeleton className="h-8 w-10" /> : stats.totalReports}
+              </dd>
+            </div>
+            <div className="bg-card p-4 sm:p-5">
+              <dt className="eyebrow">Common preset</dt>
+              <dd className="mt-2 text-2xl font-semibold tracking-tight">
+                {statsQuery.isLoading ? <Skeleton className="h-8 w-20" /> : stats.mostCommonPreset ?? '—'}
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <div className="mx-auto mt-8 grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-12">
+        {/* Main column — reports */}
+        <div className="min-w-0 lg:col-span-8">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="theme-section-title text-xl">Community reports</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Real players, real hardware. {myRig ? 'Reports close to your saved rig are highlighted.' : 'Save your rig to highlight reports like yours.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-xs">
+            <span className="flex items-center gap-1.5 px-2 text-sm font-medium text-muted-foreground">
+              <SlidersHorizontal className="h-4 w-4" aria-hidden />
+              Filter
+              {activeFilterCount > 0 && (
+                <span className="grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1 text-[11px] font-semibold text-primary-foreground">
+                  {activeFilterCount}
+                </span>
+              )}
+            </span>
+            <Select
+              value={filters.resolution || ANY_FILTER_VALUE}
+              onValueChange={(v) => handleFilterChange({ resolution: v === ANY_FILTER_VALUE ? undefined : v })}
+            >
+              <SelectTrigger
+                aria-label="Filter by resolution"
+                className={cn('h-9 w-[170px] rounded-full', filters.resolution && 'border-foreground/40 bg-muted')}
+              >
+                <SelectValue placeholder="Any resolution" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ANY_FILTER_VALUE}>Any resolution</SelectItem>
+                {resolutions.map((r) => (
+                  <SelectItem key={r} value={r}>{r}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={filters.gpuSeries || ANY_FILTER_VALUE}
+              onValueChange={(v) => handleFilterChange({ gpuSeries: v === ANY_FILTER_VALUE ? undefined : v })}
+            >
+              <SelectTrigger
+                aria-label="Filter by GPU series"
+                className={cn('h-9 w-[160px] rounded-full', filters.gpuSeries && 'border-foreground/40 bg-muted')}
+              >
+                <SelectValue placeholder="Any GPU series" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ANY_FILTER_VALUE}>Any GPU series</SelectItem>
+                {GPU_SERIES_FILTER_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {activeFilterCount > 0 && (
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="h-9 gap-1.5 rounded-full">
+                <X className="h-3.5 w-3.5" />
+                Clear
+              </Button>
+            )}
+            <span className="ml-auto hidden px-2 text-sm tabular-nums text-muted-foreground sm:inline" aria-live="polite">
+              {filteredReportsQuery.isLoading ? 'Loading…' : `${filteredReports.length} shown`}
+            </span>
+          </div>
+
+          <div className="mt-4 space-y-3">
             {filteredReportsQuery.isLoading ? (
-              // ProtonDB-dense style loading skeletons for report cards (Phase 3)
               Array.from({ length: 3 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="report-card rounded-2xl border border-border bg-card p-4 md:p-5 space-y-3"
-                >
+                <div key={i} className="surface space-y-3 p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1 space-y-2">
                       <Skeleton className="h-4 w-3/4" />
@@ -635,10 +554,6 @@ function GameDetailInner({ game }: { game: Game }) {
                   </div>
                   <Skeleton className="h-8 w-20" />
                   <Skeleton className="h-3 w-4/5" />
-                  <div className="flex items-center justify-between border-t border-border pt-3 text-xs">
-                    <Skeleton className="h-3 w-20" />
-                    <Skeleton className="h-3 w-10" />
-                  </div>
                 </div>
               ))
             ) : filteredReports.length > 0 ? (
@@ -652,31 +567,154 @@ function GameDetailInner({ game }: { game: Game }) {
                 />
               ))
             ) : (
-              <div className="rounded-xl border border-dashed border-border p-8 text-center text-muted-foreground">
-                No reports match these filters.
+              <div className="rounded-2xl border border-dashed border-border bg-card px-6 py-12 text-center">
+                <p className="font-medium">
+                  {activeFilterCount > 0 ? 'No reports match these filters' : 'No reports yet'}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {activeFilterCount > 0
+                    ? 'Try another resolution or GPU series.'
+                    : `Be the first to share how ${game.name} runs on your PC.`}
+                </p>
+                <div className="mt-5 flex justify-center gap-2">
+                  {activeFilterCount > 0 && (
+                    <Button variant="outline" size="sm" className="rounded-full" onClick={clearFilters}>
+                      Clear filters
+                    </Button>
+                  )}
+                  <Button size="sm" className="rounded-full" onClick={() => setShowSubmit(true)}>
+                    Submit a report
+                  </Button>
+                </div>
               </div>
             )}
           </div>
 
           {filteredReportsQuery.isError && (
-            <div className="mt-2 text-center text-sm text-amber-500">
+            <div className="mt-3 rounded-xl border border-warning/30 bg-warning/10 px-4 py-2 text-center text-sm text-warning">
               Error loading reports — showing available results.
             </div>
           )}
 
-          <div className="mt-4 text-center">
-            <Button onClick={() => setShowSubmit(true)} variant="outline" className="w-full md:w-auto">
-              + Submit your own report for {game.name}
-            </Button>
-          </div>
+          {filteredReports.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowSubmit(true)}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-border px-4 py-4 text-sm font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:bg-card hover:text-foreground"
+            >
+              <Plus className="h-4 w-4" aria-hidden />
+              Add your own report for {game.name}
+            </button>
+          )}
         </div>
+
+        {/* Sidebar — stats + official specs */}
+        <aside className="space-y-4 lg:col-span-4" aria-label="Game performance summary">
+          <div className="surface p-5">
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold tracking-tight">Community stats</h2>
+              <span className="text-xs text-muted-foreground">
+                {stats.totalReports} {stats.totalReports === 1 ? 'report' : 'reports'}
+              </span>
+            </div>
+
+            {statsQuery.isError && (
+              <div className="mt-2 text-xs text-warning">Live stats unavailable — showing partial data.</div>
+            )}
+
+            {statsQuery.isLoading ? (
+              <div className="mt-4 space-y-4">
+                <Skeleton className="h-4 w-full rounded-full" />
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Skeleton key={i} className="h-3.5 w-full" />
+                  ))}
+                </div>
+                <Skeleton className="h-16 w-full" />
+              </div>
+            ) : (
+              <>
+                <div className="mt-4">
+                  <TierDistributionBar
+                    distribution={stats.tierDistribution}
+                    total={stats.totalReports}
+                    predictedTier={communityPredictedTier}
+                    confidence={communityPredictionConfidence}
+                  />
+                </div>
+                <div className="mt-5 border-t border-border pt-4">
+                  <div className="eyebrow mb-3">Average FPS by resolution</div>
+                  <FpsResolutionBars avgFpsByResolution={stats.avgFpsByResolution} />
+                </div>
+              </>
+            )}
+          </div>
+
+          {myRig && (
+            <div className="flex items-start gap-3 rounded-2xl border border-success/30 bg-success/10 p-4 text-sm">
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden />
+              <span>Your saved rig is active. Reports matching your hardware are highlighted.</span>
+            </div>
+          )}
+
+          {(displayGame.officialMinReqs || displayGame.officialRecReqs) && (
+            <div className="surface p-5">
+              <h2 className="font-semibold tracking-tight">Official requirements</h2>
+              <div className="mt-4 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                {displayGame.officialMinReqs && (
+                  <div className="rounded-xl bg-muted/60 p-3">
+                    <div className="eyebrow mb-2">Minimum</div>
+                    <dl className="space-y-1.5">
+                      <div><dt className="text-xs text-muted-foreground">CPU</dt><dd className="font-medium leading-snug">{displayGame.officialMinReqs.cpu}</dd></div>
+                      <div><dt className="text-xs text-muted-foreground">GPU</dt><dd className="font-medium leading-snug">{displayGame.officialMinReqs.gpu}</dd></div>
+                      <div><dt className="text-xs text-muted-foreground">RAM</dt><dd className="font-medium">{displayGame.officialMinReqs.ram} GB</dd></div>
+                    </dl>
+                  </div>
+                )}
+                {displayGame.officialRecReqs && (
+                  <div className="rounded-xl bg-muted/60 p-3">
+                    <div className="eyebrow mb-2">Recommended</div>
+                    <dl className="space-y-1.5">
+                      <div><dt className="text-xs text-muted-foreground">CPU</dt><dd className="font-medium leading-snug">{displayGame.officialRecReqs.cpu}</dd></div>
+                      <div><dt className="text-xs text-muted-foreground">GPU</dt><dd className="font-medium leading-snug">{displayGame.officialRecReqs.gpu}</dd></div>
+                      <div><dt className="text-xs text-muted-foreground">RAM</dt><dd className="font-medium">{displayGame.officialRecReqs.ram} GB</dd></div>
+                    </dl>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {isLoadingOfficialReqs &&
+            !displayGame.officialMinReqs &&
+            !displayGame.officialRecReqs && (
+              <div className="surface p-5">
+                <h2 className="font-semibold tracking-tight">Official requirements</h2>
+                <p className="mt-2 text-sm text-muted-foreground">Loading Steam minimum and recommended requirements…</p>
+              </div>
+            )}
+
+          {/* Official hardware check — independent of community reports (single instance). */}
+          {!statsQuery.isLoading && (
+            <OfficialSpecCheck
+              game={displayGame}
+              myRig={myRig}
+              hasCommunityReports={hasCommunityReports}
+              isLoadingReqs={isLoadingOfficialReqs}
+              reqsLoadError={officialReqsLoadError}
+            />
+          )}
+        </aside>
       </div>
 
       {/* Compatibility section at bottom */}
-      <div className="mt-12">
-        <h3 className="mb-3 text-lg font-semibold tracking-tight">See how your rig would perform</h3>
-        <CompatibilityChecker preselectedGameSlug={game.slug} />
-      </div>
+      <section className="mx-auto mt-16 max-w-7xl px-4 sm:px-6" aria-labelledby="rig-check">
+        <h2 id="rig-check" className="theme-section-title text-xl">How would your rig perform?</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Save your hardware once and get a prediction from similar community reports.</p>
+        <div className="mt-5">
+          <CompatibilityChecker preselectedGameSlug={game.slug} embedded />
+        </div>
+      </section>
 
       <SubmitReportDialog
         open={showSubmit}

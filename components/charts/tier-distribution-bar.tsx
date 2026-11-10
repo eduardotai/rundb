@@ -13,11 +13,11 @@ interface TierDistributionBarProps {
 
 // Reuse the same palette as PerformanceBadge via the CSS variables in globals.css.
 const tierVar: Record<PerformanceTier, string> = {
-  Excellent: 'var(--tier-excellent)',
-  Good: 'var(--tier-good)',
-  Playable: 'var(--tier-playable)',
-  Struggling: 'var(--tier-struggling)',
-  Unplayable: 'var(--tier-unplayable)',
+  Excellent: 'var(--tier-excellent-fill)',
+  Good: 'var(--tier-good-fill)',
+  Playable: 'var(--tier-playable-fill)',
+  Struggling: 'var(--tier-struggling-fill)',
+  Unplayable: 'var(--tier-unplayable-fill)',
 };
 
 export function TierDistributionBar({
