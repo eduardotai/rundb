@@ -241,3 +241,12 @@ test('game detail credits sourced cover art (coverAttribution) next to the hero'
   assert.match(src, /\{game\.coverAttribution\}/)
   assert.match(src, /GPU_SERIES_FILTER_OPTIONS/, 'GPU filter options come from the hardware catalog series')
 })
+
+test('reports browser does not claim "every" report and discloses the newest-N cap', async () => {
+  const { readFileSync } = await import('node:fs')
+  const src = readFileSync(new URL('../app/reports/page.tsx', import.meta.url), 'utf8')
+  assert.doesNotMatch(src, /every community report/i)
+  assert.match(src, /GLOBAL_REPORTS_CAP/)
+  const data = readFileSync(new URL('../lib/data.ts', import.meta.url), 'utf8')
+  assert.match(data, /\.limit\(GLOBAL_REPORTS_CAP\)/)
+})

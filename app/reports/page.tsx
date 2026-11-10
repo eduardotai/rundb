@@ -7,6 +7,7 @@ import {
   getFilteredGlobalReportsAsync,
   getAllHardwareCatalogAsync,
   voteReport,
+  GLOBAL_REPORTS_CAP,
 } from '@/lib/data';
 import { Report, PerformanceTier, Game } from '@/lib/types';
 import { PerformanceBadge } from '@/components/performance-badge';
@@ -18,7 +19,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { GameCoverFrame } from '@/components/game-cover-frame';
 import { createClient } from '@/lib/supabase/client';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { X, LayoutGrid, Rows3, Loader2 } from 'lucide-react';
+import { GPU_SERIES_FILTER_OPTIONS } from '@/lib/gpu-series';
+import { X, LayoutGrid, Rows3, Loader2, ChevronRight, SearchX } from 'lucide-react';
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 
 // /reports — global, browsable, filterable reports explorer.
@@ -167,7 +169,12 @@ export default function ReportsBrowser() {
     }
     const seriesOpts: FilterOption[] = Array.from(seriesBest.keys())
       .sort((a, b) => (seriesBest.get(b)! - seriesBest.get(a)!))
-      .map((s) => ({ value: s, label: s, group: 'Series' }));
+      .map((s) => ({
+        value: s,
+        // Friendly label for architecture names ("RDNA 3" -> "RX 7000 (RDNA 3)"), same as game pages.
+        label: GPU_SERIES_FILTER_OPTIONS.find((o) => o.value === s)?.label ?? s,
+        group: 'Series',
+      }));
 
     // Model options — value is the vendor-stripped model so it matches real report.gpu strings.
     const modelOpts: FilterOption[] = [...gpus]
@@ -278,23 +285,33 @@ export default function ReportsBrowser() {
     await voteReport(reportId, value);
   };
 
+  const maxRowFps = gameRows.reduce((m, r) => Math.max(m, r.avgFps), 0) || 1;
+  const tierFillVar: Record<PerformanceTier, string> = {
+    Excellent: 'var(--tier-excellent-fill)',
+    Good: 'var(--tier-good-fill)',
+    Playable: 'var(--tier-playable-fill)',
+    Struggling: 'var(--tier-struggling-fill)',
+    Unplayable: 'var(--tier-unplayable-fill)',
+  };
+
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="mx-auto max-w-7xl px-4 pb-16 pt-10 sm:px-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">All Reports Browser</h1>
-          <p className="text-muted-foreground">
-            Advanced filtering across every game and hardware configuration.
+          <h1 className="theme-page-title">Reports</h1>
+          <p className="mt-1.5 text-muted-foreground">
+            Approved community reports, filterable by game, GPU, FPS and tier.
           </p>
         </div>
 
-        {/* View toggle */}
-        <div className="inline-flex rounded-lg border border-border p-0.5">
+        {/* View toggle (segmented control) */}
+        <div className="inline-flex rounded-full border border-border bg-muted p-1" role="group" aria-label="View">
           <button
             onClick={() => setView('games')}
-            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+            aria-pressed={view === 'games'}
+            className={`inline-flex h-8 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition ${
               view === 'games'
-                ? 'bg-accent text-foreground'
+                ? 'bg-card text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -302,9 +319,10 @@ export default function ReportsBrowser() {
           </button>
           <button
             onClick={() => setView('reports')}
-            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+            aria-pressed={view === 'reports'}
+            className={`inline-flex h-8 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition ${
               view === 'reports'
-                ? 'bg-accent text-foreground'
+                ? 'bg-card text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -314,117 +332,117 @@ export default function ReportsBrowser() {
       </div>
 
       {/* Filters */}
-      <div className="mt-6 flex flex-wrap items-center gap-3">
-        <FilterCombobox
-          value={gameSlug}
-          onChange={pickGame}
-          options={gameOptions}
-          placeholder="All games"
-          searchPlaceholder="Search games…"
-          triggerClassName="w-[200px]"
-          onSearchChange={setGameSearch}
-          loading={gamesQuery.isFetching}
-          selectedLabel={selectedGame?.name}
-        />
-
-        <FilterCombobox
-          value={gpuSeries}
-          onChange={setGpuSeries}
-          options={gpuOptions}
-          placeholder="Any GPU"
-          searchPlaceholder="Search GPU series or model…"
-          allowCustom
-          triggerClassName="w-[220px]"
-        />
-
-        {/* Min FPS — quick presets + free numeric, never disabled mid-type */}
-        <div className="flex items-center gap-1">
-          <input
-            type="number"
-            inputMode="numeric"
-            placeholder="Min FPS"
-            value={minFps || ''}
-            onChange={(e) => setMinFps(Number(e.target.value) || 0)}
-            className="h-9 w-24 rounded-md border border-input bg-background px-3 text-sm"
+      <div className="mt-6 rounded-2xl border border-border bg-card p-3 shadow-xs">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <FilterCombobox
+            value={gameSlug}
+            onChange={pickGame}
+            options={gameOptions}
+            placeholder="All games"
+            searchPlaceholder="Search games…"
+            triggerClassName="w-full sm:w-[200px]"
+            onSearchChange={setGameSearch}
+            loading={gamesQuery.isFetching}
+            selectedLabel={selectedGame?.name}
           />
-          {MIN_FPS_PRESETS.map((f) => (
-            <button
-              key={f}
-              onClick={() => setMinFps((cur) => (cur === f ? 0 : f))}
-              className={`h-9 rounded-md border px-2 text-xs font-medium transition ${
-                minFps === f
-                  ? 'border-primary/60 bg-primary/15 text-foreground'
-                  : 'border-input text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {f}+
-            </button>
-          ))}
-        </div>
 
-        <Select
-          value={selectedTier || ANY_TIER_VALUE}
-          onValueChange={(v) => setSelectedTier((v === ANY_TIER_VALUE ? '' : v) as PerformanceTier)}
-        >
-          <SelectTrigger className="h-9 w-[150px]">
-            <SelectValue placeholder="Any tier" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ANY_TIER_VALUE}>Any tier</SelectItem>
-            {TIERS.map((t) => (
-              <SelectItem key={t} value={t}>{t}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          <FilterCombobox
+            value={gpuSeries}
+            onChange={setGpuSeries}
+            options={gpuOptions}
+            placeholder="Any GPU"
+            searchPlaceholder="Search GPU series or model…"
+            allowCustom
+            triggerClassName="w-full sm:w-[210px]"
+          />
 
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">Sort</span>
-          <Select value={sortKey} onValueChange={(v) => setSortKey(v as SortKey)}>
-            <SelectTrigger className="h-9 w-[170px]">
-              <SelectValue />
+          <Select
+            value={selectedTier || ANY_TIER_VALUE}
+            onValueChange={(v) => setSelectedTier((v === ANY_TIER_VALUE ? '' : v) as PerformanceTier)}
+          >
+            <SelectTrigger className="h-10 w-[150px]" aria-label="Filter by tier">
+              <SelectValue placeholder="Any tier" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="reports">{view === 'games' ? 'Most reports' : 'Newest'}</SelectItem>
-              <SelectItem value="fps">Highest avg FPS</SelectItem>
-              <SelectItem value="name">Game name (A–Z)</SelectItem>
+              <SelectItem value={ANY_TIER_VALUE}>Any tier</SelectItem>
+              {TIERS.map((t) => (
+                <SelectItem key={t} value={t}>{t}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
+
+          {/* Min FPS — quick presets + free numeric, never disabled mid-type */}
+          <div className="flex items-center gap-1 rounded-[calc(var(--radius)-2px)] border border-input bg-card p-1 shadow-xs" role="group" aria-label="Minimum FPS">
+            <input
+              type="number"
+              inputMode="numeric"
+              placeholder="Min FPS"
+              aria-label="Minimum average FPS"
+              value={minFps || ''}
+              onChange={(e) => setMinFps(Number(e.target.value) || 0)}
+              className="h-8 w-20 rounded-md bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground"
+            />
+            {MIN_FPS_PRESETS.map((f) => (
+              <button
+                key={f}
+                onClick={() => setMinFps((cur) => (cur === f ? 0 : f))}
+                aria-pressed={minFps === f}
+                className={`h-8 rounded-md px-2.5 text-xs font-medium tabular-nums transition ${
+                  minFps === f
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                }`}
+              >
+                {f}+
+              </button>
+            ))}
+          </div>
+
+          <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
+            <span className="text-sm text-muted-foreground">Sort</span>
+            <Select value={sortKey} onValueChange={(v) => setSortKey(v as SortKey)}>
+              <SelectTrigger className="h-10 flex-1 sm:w-[170px] sm:flex-none" aria-label="Sort">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="reports">{view === 'games' ? 'Most reports' : 'Newest'}</SelectItem>
+                <SelectItem value="fps">Highest avg FPS</SelectItem>
+                <SelectItem value="name">Game name (A–Z)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
+
+        {/* Active filter chips + reset (only when something is active) */}
+        {hasActiveFilters && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
+            {activeFilters.map((f) => (
+              <button
+                key={f.key}
+                onClick={f.clear}
+                className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-foreground hover:bg-accent"
+              >
+                {f.label}
+                <X className="h-3 w-3 opacity-60" />
+              </button>
+            ))}
+            <Button variant="ghost" size="sm" onClick={resetFilters} className="h-7 gap-1.5 rounded-full px-2.5 text-xs">
+              <X className="h-3.5 w-3.5" />
+              Reset all
+            </Button>
+          </div>
+        )}
       </div>
 
-      {/* Active filter chips + reset (only when something is active) */}
-      {hasActiveFilters && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {activeFilters.map((f) => (
-            <button
-              key={f.key}
-              onClick={f.clear}
-              className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/50 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted"
-            >
-              {f.label}
-              <X className="h-3 w-3 opacity-60" />
-            </button>
-          ))}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={resetFilters}
-            className="h-7 gap-1.5 px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-          >
-            <X className="h-3.5 w-3.5" />
-            Reset all
-          </Button>
-        </div>
-      )}
-
-      <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+      <div className="mt-5 flex items-center gap-2 text-sm text-muted-foreground" aria-live="polite">
         {isInitialLoading ? (
           'Loading reports…'
         ) : (
           <>
             <span>
-              {reports.length} {reports.length === 1 ? 'report' : 'reports'} across {gameRows.length}{' '}
-              {gameRows.length === 1 ? 'game' : 'games'}
+              <span className="font-medium text-foreground">{reports.length}</span> {reports.length === 1 ? 'report' : 'reports'} across{' '}
+              <span className="font-medium text-foreground">{gameRows.length}</span> {gameRows.length === 1 ? 'game' : 'games'}
+              {reports.length >= GLOBAL_REPORTS_CAP && ` (newest ${GLOBAL_REPORTS_CAP}; narrow the filters to see older ones)`}
             </span>
             {isRefetching && <Loader2 className="h-3.5 w-3.5 animate-spin opacity-70" />}
           </>
@@ -432,103 +450,106 @@ export default function ReportsBrowser() {
       </div>
 
       {/* Results */}
-      <div className="mt-5">
+      <div className="mt-3">
         {isInitialLoading ? (
-          <div className="space-y-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="flex overflow-hidden rounded-2xl border border-border bg-card">
-                <Skeleton className="aspect-[2/3] w-40 flex-shrink-0" />
-                <div className="flex-1 space-y-3 p-4">
-                  <Skeleton className="h-6 w-2/3" />
+          <div className="surface divide-y divide-border overflow-hidden">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 px-4 py-3">
+                <Skeleton className="h-14 w-10 rounded-md" />
+                <div className="flex-1 space-y-2">
                   <Skeleton className="h-4 w-1/3" />
+                  <Skeleton className="h-3 w-1/5" />
                 </div>
-                <div className="flex items-center gap-8 pr-6">
-                  <Skeleton className="h-9 w-14" />
-                  <Skeleton className="h-7 w-24 rounded-full" />
-                </div>
+                <Skeleton className="hidden h-6 w-24 sm:block" />
+                <Skeleton className="h-6 w-20 rounded-full" />
               </div>
             ))}
           </div>
+        ) : reportsQuery.isError && !reportsQuery.data ? (
+          <div role="alert" className="rounded-2xl border border-dashed border-border bg-card px-6 py-14 text-center">
+            <SearchX className="mx-auto h-8 w-8 text-muted-foreground" aria-hidden />
+            <div className="mt-3 font-medium">Couldn&apos;t load reports right now</div>
+            <p className="mt-1 text-sm text-muted-foreground">Please try again in a moment.</p>
+            <Button variant="outline" size="sm" className="mt-5 rounded-full" onClick={() => void reportsQuery.refetch()}>
+              Try again
+            </Button>
+          </div>
         ) : gameRows.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border p-12 text-center">
-            <div className="text-lg text-muted-foreground">No reports match your current filters.</div>
-            <p className="mt-1 text-sm text-muted-foreground/80">
+          <div className="rounded-2xl border border-dashed border-border bg-card px-6 py-14 text-center">
+            <SearchX className="mx-auto h-8 w-8 text-muted-foreground" aria-hidden />
+            <div className="mt-3 font-medium">No reports match your current filters</div>
+            <p className="mt-1 text-sm text-muted-foreground">
               Try widening the filters{hasActiveFilters ? ' or resetting them' : ''}.
             </p>
             {hasActiveFilters && (
-              <Button variant="outline" size="sm" className="mt-4" onClick={resetFilters}>
+              <Button variant="outline" size="sm" className="mt-5 rounded-full" onClick={resetFilters}>
                 Reset all filters
               </Button>
             )}
           </div>
         ) : view === 'games' ? (
-          /* -------- Grouped game-banner rows -------- */
-          <div className="space-y-3">
-            {gameRows.map(({ game, reportCount, avgFps, dominantTier }) => (
-              <Link
-                key={game.id}
-                href={`/games/${game.slug}`}
-                className="group flex overflow-hidden rounded-2xl border border-border bg-card transition-all hover:border-slate-600/70 hover:shadow-xl focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
-              >
-                <div className="relative w-40 flex-shrink-0">
-                  {!bannerErrors[game.id] ? (
-                    <GameCoverFrame
-                      src={game.coverImage}
-                      alt={game.name}
-                      steamAppId={game.steamAppId}
-                      className="aspect-[2/3] w-full"
-                      sizes="160px"
-                      hoverZoom
-                      onError={() => setBannerErrors((prev) => ({ ...prev, [game.id]: true }))}
-                    />
-                  ) : (
-                    <div className="relative aspect-[2/3] w-full overflow-hidden bg-muted">
-                      <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted to-muted/70">
-                        <div className="px-2 text-center">
-                          <div className="text-[9px] uppercase tracking-widest text-muted-foreground/60">COVER</div>
-                          <div className="mt-0.5 line-clamp-2 text-[11px] font-semibold leading-tight text-foreground/85">{game.name}</div>
+          /* -------- Compact, scannable game rows -------- */
+          <div className="surface overflow-hidden">
+            <div className="hidden grid-cols-[minmax(0,1fr)_6rem_12rem_8rem_1.5rem] items-center gap-4 border-b border-border bg-surface-2 px-4 py-2.5 text-xs font-medium text-muted-foreground md:grid">
+              <span>Game</span>
+              <span className="text-right">Reports</span>
+              <span>Average FPS</span>
+              <span>Most reports</span>
+              <span />
+            </div>
+            <ul className="divide-y divide-border">
+              {gameRows.map(({ game, reportCount, avgFps, dominantTier }) => (
+                <li key={game.id}>
+                  <Link
+                    href={`/games/${game.slug}`}
+                    className="group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-4 py-3 transition-colors hover:bg-muted/50 focus-visible:bg-muted/60 focus-visible:outline-none md:grid-cols-[minmax(0,1fr)_6rem_12rem_8rem_1.5rem]"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      {!bannerErrors[game.id] ? (
+                        <GameCoverFrame
+                          src={game.coverImage}
+                          alt=""
+                          steamAppId={game.steamAppId}
+                          className="h-14 w-10 shrink-0 rounded-md border border-border"
+                          sizes="48px"
+                          blurBackdrop={false}
+                          onError={() => setBannerErrors((prev) => ({ ...prev, [game.id]: true }))}
+                        />
+                      ) : (
+                        <div className="h-14 w-10 shrink-0 rounded-md border border-border bg-muted" aria-hidden />
+                      )}
+                      <div className="min-w-0">
+                        <div className="truncate font-medium text-foreground">{game.name}</div>
+                        <div className="truncate text-sm text-muted-foreground">
+                          {[game.developer, game.releaseYear].filter(Boolean).join(' · ')}
+                          <span className="md:hidden"> · {reportCount} {reportCount === 1 ? 'report' : 'reports'}</span>
                         </div>
                       </div>
                     </div>
-                  )}
-                  <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/25 to-transparent" />
-                  <div className="absolute bottom-2 left-2 rounded-full bg-black/75 px-2 py-px text-[10px] font-medium text-white backdrop-blur">
-                    {reportCount} {reportCount === 1 ? 'report' : 'reports'}
-                  </div>
-                </div>
-
-                <div className="flex min-w-0 flex-1 flex-col justify-center px-5 py-3">
-                  <div className="text-[21px] font-semibold leading-none tracking-[-0.3px] text-foreground transition-colors group-hover:text-primary">
-                    {game.name}
-                  </div>
-                  <div className="mt-1.5 text-sm text-muted-foreground">
-                    {game.developer} • {game.releaseYear}
-                  </div>
-                  <div className="mt-2 text-xs text-muted-foreground/80">Matching your filters</div>
-                </div>
-
-                <div className="flex items-center gap-7 pr-5 text-right">
-                  <div>
-                    <div className="font-mono text-4xl font-semibold tabular-nums tracking-tighter text-foreground">
-                      {avgFps}
+                    <div className="hidden text-right text-sm tabular-nums text-muted-foreground md:block">{reportCount}</div>
+                    <div className="hidden items-center gap-3 md:flex">
+                      <span className="w-10 font-mono text-lg font-semibold tabular-nums">{avgFps}</span>
+                      <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted" aria-hidden>
+                        <span
+                          className="block h-full rounded-full"
+                          style={{ width: `${Math.max(6, Math.round((avgFps / maxRowFps) * 100))}%`, backgroundColor: tierFillVar[dominantTier] }}
+                        />
+                      </span>
                     </div>
-                    <div className="-mt-1 text-[10px] font-medium text-muted-foreground">AVG FPS</div>
-                  </div>
-                  <div>
-                    <PerformanceBadge tier={dominantTier} size="md" className="px-3.5 py-1 text-sm" />
-                  </div>
-                  <div className="flex items-center gap-1.5 pl-1 text-sm text-muted-foreground transition group-hover:text-foreground">
-                    View reports
-                    <span className="inline-block transition group-hover:translate-x-0.5">→</span>
-                  </div>
-                </div>
-              </Link>
-            ))}
+                    <div className="flex items-center gap-3 md:block">
+                      <span className="font-mono text-lg font-semibold tabular-nums md:hidden">{avgFps}<span className="ml-0.5 text-xs font-normal text-muted-foreground">fps</span></span>
+                      <PerformanceBadge tier={dominantTier} size="sm" />
+                    </div>
+                    <ChevronRight className="hidden h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground md:block" aria-hidden />
+                  </Link>
+                </li>
+              ))}
+            </ul>
           </div>
         ) : (
           /* -------- Individual report cards (browsable at report granularity) -------- */
           <>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               {sortedReports.slice(0, reportsShown).map((r) => {
                 const game = gameById.get(r.gameId);
                 return (
@@ -536,7 +557,7 @@ export default function ReportsBrowser() {
                     {game && (
                       <Link
                         href={`/games/${game.slug}`}
-                        className="px-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+                        className="px-1 text-sm font-medium text-foreground hover:text-brand"
                       >
                         {game.name}
                       </Link>
@@ -550,6 +571,7 @@ export default function ReportsBrowser() {
               <div className="mt-6 text-center">
                 <Button
                   variant="outline"
+                  className="rounded-full"
                   onClick={() => setReportsShown((n) => n + INITIAL_REPORTS_SHOWN)}
                 >
                   Show more ({sortedReports.length - reportsShown} remaining)
@@ -560,9 +582,12 @@ export default function ReportsBrowser() {
         )}
       </div>
 
-      {(gamesQuery.isError || reportsQuery.isError) && (
-        <div className="mt-2 text-center text-sm text-amber-500">
-          Some live data unavailable — results may be partial.
+      {gamesQuery.isError && (
+        <div className="mt-2 text-center text-sm text-warning">Game search is unavailable right now.</div>
+      )}
+      {reportsQuery.isError && reportsQuery.data && (
+        <div className="mt-2 text-center text-sm text-warning">
+          Couldn&apos;t refresh reports; showing the last results.
         </div>
       )}
     </div>

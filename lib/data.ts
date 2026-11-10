@@ -1363,6 +1363,9 @@ export async function getMatchesForRigAsync(
  * Adds more error handling + fallback.
  * Aligns with Master Plan for real reports reads when NEXT_PUBLIC_USE_REAL_DATA=true.
  */
+/** Newest approved reports fetched by the reports browser; the UI says so when it hits the cap. */
+export const GLOBAL_REPORTS_CAP = 300
+
 export async function getFilteredGlobalReportsAsync(filters: {
   gameSlug?: string
   gpuSeries?: string
@@ -1391,7 +1394,7 @@ export async function getFilteredGlobalReportsAsync(filters: {
         .select('*, game:games(id, slug, name, cover_url, genres, release_year, developer, publisher, steam_app_id, igdb_id)')
         .eq('status', 'approved')
         .order('created_at', { ascending: false })
-        .limit(300)
+        .limit(GLOBAL_REPORTS_CAP)
 
       if (filters.gameSlug && !gameIdForFilter) return []
       if (gameIdForFilter) {
