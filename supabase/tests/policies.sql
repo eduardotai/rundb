@@ -21,7 +21,9 @@ INSERT INTO public.games (slug, name, report_count) VALUES
   ('sg-cyber-hook', 'Cyber Hook', 0),
   ('sg-100-orange-juice', '100% Orange Juice', 0),
   ('sg-game-1000', 'Game 1000', 0),
-  ('sg-axb-test', 'AxB Test', 0);
+  ('sg-axb-test', 'AxB Test', 0),
+  ('sg-cyberpunkdreams', 'cyberpunkdreams', 0),
+  ('sg-cyberpunk-ue', 'Cyberpunk 2077: Ultimate Edition', 0);
 INSERT INTO public.games (slug, name) SELECT 'sg-bulk-' || i, 'Bulk Game ' || i FROM generate_series(1, 60) i;
 INSERT INTO public.reports (id, game_id, user_id, game_name, cpu, gpu, ram, resolution, settings_preset, avg_fps, performance_tier, status) VALUES
   ('00000000-0000-0000-0000-0000000a1a01', '00000000-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-00000000a11c', 'Policy Game', 'CPU', 'GPU', 16, '1080p', 'High', 60, 'Good', 'approved'),
@@ -233,12 +235,15 @@ DO $t$
 DECLARE names text[];
 BEGIN
   SELECT array_agg(name) INTO names FROM public.search_games('cyber', 8);
-  IF array_length(names, 1) IS DISTINCT FROM 4 THEN RAISE EXCEPTION 'search_games(cyber) expected 4 rows, got %', names; END IF;
-  IF names[1] <> 'Cyberpunk 2077' OR names[2] <> 'Cyber Hook' THEN
-    RAISE EXCEPTION 'search_games(cyber) expected prefix hits first (more reports first), got %', names;
+  IF array_length(names, 1) IS DISTINCT FROM 6 THEN RAISE EXCEPTION 'search_games(cyber) expected 6 rows, got %', names; END IF;
+  IF names[1] <> 'Cyber Hook' THEN RAISE EXCEPTION 'search_games(cyber) expected the whole-word prefix hit first, got %', names; END IF;
+  IF names[2] <> 'Cyberpunk 2077' THEN RAISE EXCEPTION 'search_games(cyber) expected prefix hits with more reports next, got %', names; END IF;
+  IF NOT (names[5:6] @> ARRAY['A-Tech Cybernetic VR', 'Bomb Rush Cyberfunk']) THEN
+    RAISE EXCEPTION 'search_games(cyber) expected word/substring hits after prefix hits, got %', names;
   END IF;
-  IF names[4] <> 'A-Tech Cybernetic VR' AND names[3] <> 'A-Tech Cybernetic VR' THEN
-    RAISE EXCEPTION 'search_games(cyber) expected substring hits after prefix hits, got %', names;
+  SELECT array_agg(name) INTO names FROM public.search_games('cyberpunk', 3);
+  IF names[1] <> 'Cyberpunk 2077' OR names[2] <> 'Cyberpunk 2077: Ultimate Edition' OR names[3] <> 'cyberpunkdreams' THEN
+    RAISE EXCEPTION 'search_games(cyberpunk) expected whole-word prefix hits before in-word ones, got %', names;
   END IF;
   IF (SELECT name FROM public.search_games('  CYBER HOOK ', 8) LIMIT 1) <> 'Cyber Hook' THEN
     RAISE EXCEPTION 'search_games: exact (trimmed, case-insensitive) match must rank first';
